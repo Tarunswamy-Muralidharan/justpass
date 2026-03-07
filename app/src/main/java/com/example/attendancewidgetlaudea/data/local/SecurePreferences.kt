@@ -1,0 +1,173 @@
+package com.example.attendancewidgetlaudea.data.local
+
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+import com.example.attendancewidgetlaudea.data.model.AttendanceData
+
+class SecurePreferences(context: Context) {
+
+    private val masterKey = MasterKey.Builder(context)
+        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+        .build()
+
+    private val securePrefs: SharedPreferences = EncryptedSharedPreferences.create(
+        context,
+        SECURE_PREFS_NAME,
+        masterKey,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
+
+    private val regularPrefs: SharedPreferences = context.getSharedPreferences(
+        REGULAR_PREFS_NAME,
+        Context.MODE_PRIVATE
+    )
+
+    // Secure storage for sensitive data
+    var rollNumber: String?
+        get() = securePrefs.getString(KEY_ROLL_NUMBER, null)
+        set(value) = securePrefs.edit().putString(KEY_ROLL_NUMBER, value).apply()
+
+    var password: String?
+        get() = securePrefs.getString(KEY_PASSWORD, null)
+        set(value) = securePrefs.edit().putString(KEY_PASSWORD, value).apply()
+
+    private var _loggedIn: Boolean
+        get() = securePrefs.getBoolean(KEY_LOGGED_IN, false)
+        set(value) = securePrefs.edit().putBoolean(KEY_LOGGED_IN, value).apply()
+
+    var accessToken: String?
+        get() = securePrefs.getString(KEY_ACCESS_TOKEN, null)
+        set(value) = securePrefs.edit().putString(KEY_ACCESS_TOKEN, value).apply()
+
+    var refreshToken: String?
+        get() = securePrefs.getString(KEY_REFRESH_TOKEN, null)
+        set(value) = securePrefs.edit().putString(KEY_REFRESH_TOKEN, value).apply()
+
+    var tokenExpiryTime: Long
+        get() = securePrefs.getLong(KEY_TOKEN_EXPIRY, 0L)
+        set(value) = securePrefs.edit().putLong(KEY_TOKEN_EXPIRY, value).apply()
+
+    // Regular storage for non-sensitive data (attendance cache)
+    var cachedPresentCount: Int
+        get() = regularPrefs.getInt(KEY_PRESENT_COUNT, 0)
+        set(value) = regularPrefs.edit().putInt(KEY_PRESENT_COUNT, value).apply()
+
+    var cachedPresentWithExemptionCount: Int
+        get() = regularPrefs.getInt(KEY_PRESENT_WITH_EXEMPTION_COUNT, 0)
+        set(value) = regularPrefs.edit().putInt(KEY_PRESENT_WITH_EXEMPTION_COUNT, value).apply()
+
+    var cachedAbsentCount: Int
+        get() = regularPrefs.getInt(KEY_ABSENT_COUNT, 0)
+        set(value) = regularPrefs.edit().putInt(KEY_ABSENT_COUNT, value).apply()
+
+    var cachedEnteredTillDate: Int
+        get() = regularPrefs.getInt(KEY_ENTERED_TILL_DATE, 0)
+        set(value) = regularPrefs.edit().putInt(KEY_ENTERED_TILL_DATE, value).apply()
+
+    var cachedNotEnteredTillDate: Int
+        get() = regularPrefs.getInt(KEY_NOT_ENTERED_TILL_DATE, 0)
+        set(value) = regularPrefs.edit().putInt(KEY_NOT_ENTERED_TILL_DATE, value).apply()
+
+    var cachedAttendancePercentage: Double
+        get() = Double.fromBits(regularPrefs.getLong(KEY_ATTENDANCE_PERCENTAGE, 0.0.toBits()))
+        set(value) = regularPrefs.edit().putLong(KEY_ATTENDANCE_PERCENTAGE, value.toBits()).apply()
+
+    var cachedAttendanceWithExemption: Double
+        get() = Double.fromBits(regularPrefs.getLong(KEY_ATTENDANCE_WITH_EXEMPTION, 0.0.toBits()))
+        set(value) = regularPrefs.edit().putLong(KEY_ATTENDANCE_WITH_EXEMPTION, value.toBits()).apply()
+
+    var cachedExemptionCount: Int
+        get() = regularPrefs.getInt(KEY_EXEMPTION_COUNT, 0)
+        set(value) = regularPrefs.edit().putInt(KEY_EXEMPTION_COUNT, value).apply()
+
+    var lastUpdatedTime: Long
+        get() = regularPrefs.getLong(KEY_LAST_UPDATED, 0L)
+        set(value) = regularPrefs.edit().putLong(KEY_LAST_UPDATED, value).apply()
+
+    fun saveAttendanceData(data: AttendanceData) {
+        cachedPresentCount = data.presentCount
+        cachedPresentWithExemptionCount = data.presentWithExemptionCount
+        cachedAbsentCount = data.absentCount
+        cachedEnteredTillDate = data.enteredTillDate
+        cachedNotEnteredTillDate = data.notEnteredTillDate
+        cachedAttendancePercentage = data.attendancePercentage
+        cachedAttendanceWithExemption = data.attendanceWithExemption
+        cachedExemptionCount = data.exemptionCount
+        lastUpdatedTime = data.lastUpdated
+    }
+
+    fun getAttendanceData(): AttendanceData {
+        return AttendanceData(
+            presentCount = cachedPresentCount,
+            presentWithExemptionCount = cachedPresentWithExemptionCount,
+            absentCount = cachedAbsentCount,
+            enteredTillDate = cachedEnteredTillDate,
+            notEnteredTillDate = cachedNotEnteredTillDate,
+            attendancePercentage = cachedAttendancePercentage,
+            attendanceWithExemption = cachedAttendanceWithExemption,
+            exemptionCount = cachedExemptionCount,
+            lastUpdated = lastUpdatedTime
+        )
+    }
+
+    fun isLoggedIn(): Boolean {
+        return _loggedIn && !rollNumber.isNullOrEmpty() && !password.isNullOrEmpty()
+    }
+
+    fun setLoggedIn(value: Boolean) {
+        _loggedIn = value
+    }
+
+    fun isTokenExpired(): Boolean {
+        val currentTime = System.currentTimeMillis()
+        val bufferTime = 5 * 60 * 1000 // 5 minutes buffer
+        return currentTime >= (tokenExpiryTime - bufferTime)
+    }
+
+    fun clearAll() {
+        securePrefs.edit().clear().apply()
+        regularPrefs.edit().clear().apply()
+    }
+
+    fun clearTokens() {
+        securePrefs.edit()
+            .remove(KEY_ACCESS_TOKEN)
+            .remove(KEY_REFRESH_TOKEN)
+            .remove(KEY_TOKEN_EXPIRY)
+            .apply()
+    }
+
+    companion object {
+        private const val SECURE_PREFS_NAME = "laudea_secure_prefs"
+        private const val REGULAR_PREFS_NAME = "laudea_prefs"
+
+        private const val KEY_ROLL_NUMBER = "roll_number"
+        private const val KEY_PASSWORD = "password"
+        private const val KEY_LOGGED_IN = "logged_in"
+        private const val KEY_ACCESS_TOKEN = "access_token"
+        private const val KEY_REFRESH_TOKEN = "refresh_token"
+        private const val KEY_TOKEN_EXPIRY = "token_expiry"
+
+        private const val KEY_PRESENT_COUNT = "present_count"
+        private const val KEY_PRESENT_WITH_EXEMPTION_COUNT = "present_with_exemption_count"
+        private const val KEY_ABSENT_COUNT = "absent_count"
+        private const val KEY_ENTERED_TILL_DATE = "entered_till_date"
+        private const val KEY_NOT_ENTERED_TILL_DATE = "not_entered_till_date"
+        private const val KEY_ATTENDANCE_PERCENTAGE = "attendance_percentage"
+        private const val KEY_ATTENDANCE_WITH_EXEMPTION = "attendance_with_exemption"
+        private const val KEY_EXEMPTION_COUNT = "exemption_count"
+        private const val KEY_LAST_UPDATED = "last_updated"
+
+        @Volatile
+        private var instance: SecurePreferences? = null
+
+        fun getInstance(context: Context): SecurePreferences {
+            return instance ?: synchronized(this) {
+                instance ?: SecurePreferences(context.applicationContext).also { instance = it }
+            }
+        }
+    }
+}

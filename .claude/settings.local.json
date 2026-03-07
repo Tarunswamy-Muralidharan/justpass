@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd /c \"gradlew.bat assembleDebug --console=plain 2>&1\")",
+      "mcp__ide__getDiagnostics",
+      "Bash(gradlew.bat assembleDebug:*)",
+      "Bash(.\\gradlew.bat assembleDebug:*)",
+      "Bash(cmd /c \"gradlew.bat assembleDebug --console=plain\")",
+      "Bash(cmd /c \"C:\\Users\\tmswa\\AndroidStudioProjects\\AttendanceWidgetLaudea\\gradlew.bat assembleDebug --console=plain 2>&1\")",
+      "Bash(cmd /c \"gradlew.bat assembleDebug --info --console=plain\")",
+      "Bash(.gradlew.bat assembleDebug --console=plain)",
+      "Bash(C:UserstmswaAndroidStudioProjectsAttendanceWidgetLaudeagradlew.bat assembleDebug --console=plain)",
+      "Bash(./gradlew assembleDebug:*)",
+      "Bash(JAVA_HOME=\"C:/Program Files/Android/Android Studio/jbr\" ./gradlew assembleDebug:*)",
+      "Bash(./gradlew installBenchmark:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
