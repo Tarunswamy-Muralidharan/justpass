@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <!-- Dot Matrix Container -->
+    <LinearLayout
+        android:id="@+id/dot_matrix_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/dot_row_1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+
+        <LinearLayout
+            android:id="@+id/dot_row_2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal" />
+
+        <LinearLayout
+            android:id="@+id/dot_row_3"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal" />
+
+    </LinearLayout>
+
+    <!-- Percentage Display -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="bottom"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/text_percentage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/nothing_font"
+            android:letterSpacing="0.02"
+            android:text="75"
+            android:textColor="#FFFFFF"
+            android:textSize="44sp" />
+
+        <TextView
+            android:id="@+id/text_decimal"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:layout_marginBottom="6dp"
+            android:fontFamily="@font/nothing_font"
+            android:letterSpacing="0.02"
+            android:text=".0"
+            android:textColor="#AAAAAA"
+            android:textSize="22sp" />
+
+        <TextView
+            android:id="@+id/text_percent_sign"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:layout_marginBottom="6dp"
+            android:layout_marginStart="2dp"
+            android:fontFamily="@font/nothing_font"
+            android:letterSpacing="0.02"
+            android:text="%"
+            android:textColor="#6E6E6E"
+            android:textSize="16sp" />
+
+    </LinearLayout>
+
+    <!-- Label -->
+    <TextView
+        android:id="@+id/text_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/nothing_font"
+        android:letterSpacing="0.15"
+        android:text="ATTENDANCE"
+        android:textColor="#6E6E6E"
+        android:textSize="10sp" />
+
+    <!-- Spacer -->
+    <FrameLayout
+        android:layout_width="1dp"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- Present/Absent Row -->
+    <LinearLayout
+        android:id="@+id/stats_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/text_present"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/nothing_font"
+            android:letterSpacing="0.05"
+            android:text="P: 0"
+            android:textColor="#4CD964"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/text_absent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:fontFamily="@font/nothing_font"
+            android:letterSpacing="0.05"
+            android:text="A: 0"
+            android:textColor="#FF3B30"
+            android:textSize="12sp" />
+
+    </LinearLayout>
+
+    <!-- Last Refreshed Time -->
+    <TextView
+        android:id="@+id/text_last_refreshed"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:fontFamily="@font/nothing_font"
+        android:letterSpacing="0.05"
+        android:text="Updated: --:--"
+        android:textColor="#4A4A4A"
+        android:textSize="9sp" />
+
+    <!-- Refresh Button -->
+    <TextView
+        android:id="@+id/btn_refresh"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/refresh_button_background"
+        android:fontFamily="@font/nothing_font"
+        android:letterSpacing="0.1"
+        android:paddingStart="14dp"
+        android:paddingTop="5dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="5dp"
+        android:text="REFRESH"
+        android:textColor="#AAAAAA"
+        android:textSize="9sp" />
+
+    <!-- Loading Indicator (hidden by default) -->
+    <ProgressBar
+        android:id="@+id/progress_loading"
+        style="@android:style/Widget.ProgressBar.Small"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_marginTop="6dp"
+        android:indeterminate="true"
+        android:visibility="gone" />
+
+    <!-- Not Logged In Text (hidden by default) -->
+    <TextView
+        android:id="@+id/text_not_logged_in"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/nothing_font"
+        android:letterSpacing="0.1"
+        android:text="TAP TO LOGIN"
+        android:textColor="#6E6E6E"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
+</LinearLayout>
