@@ -12,7 +12,11 @@
       "Bash(C:UserstmswaAndroidStudioProjectsAttendanceWidgetLaudeagradlew.bat assembleDebug --console=plain)",
       "Bash(./gradlew assembleDebug:*)",
       "Bash(JAVA_HOME=\"C:/Program Files/Android/Android Studio/jbr\" ./gradlew assembleDebug:*)",
-      "Bash(./gradlew installBenchmark:*)"
+      "Bash(./gradlew installBenchmark:*)",
+      "Bash(ls RELEASE:*)",
+      "Bash(gh:*)",
+      "Bash(winget install:*)",
+      "Bash(export:*)"
     ],
     "deny": [],
     "ask": []
