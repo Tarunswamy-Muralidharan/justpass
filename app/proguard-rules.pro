@@ -1,5 +1,6 @@
 # Keep data classes for Gson serialization/deserialization
 -keep class com.example.attendancewidgetlaudea.data.model.** { *; }
+-keep class com.example.attendancewidgetlaudea.data.update.** { *; }
 
 # Keep ALL classes/methods annotated with @JavascriptInterface (anonymous objects in WebView)
 -keepclassmembers class * {

@@ -11,7 +11,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import android.content.Intent
+import android.net.Uri
 import com.example.attendancewidgetlaudea.data.repository.AttendanceRepository
+import com.example.attendancewidgetlaudea.data.update.UpdateChecker
+import com.example.attendancewidgetlaudea.data.update.UpdateInfo
 import com.example.attendancewidgetlaudea.ui.screens.AbsentDaysScreen
 import com.example.attendancewidgetlaudea.ui.screens.CAMarksScreen
 import com.example.attendancewidgetlaudea.ui.screens.DashboardScreen
@@ -52,6 +56,48 @@ fun AttendanceApp() {
 
     // Global logout loading state
     var isLoggingOut by remember { mutableStateOf(false) }
+
+    // Update check
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    LaunchedEffect(Unit) {
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        val currentVersion = packageInfo.versionName ?: "1.0"
+        updateInfo = UpdateChecker.checkForUpdate(currentVersion)
+    }
+
+    // Update available dialog
+    updateInfo?.let { update ->
+        AlertDialog(
+            onDismissRequest = { updateInfo = null },
+            title = { Text("Update Available") },
+            text = {
+                Column {
+                    Text("Version ${update.versionName} is available!")
+                    if (!update.releaseNotes.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = update.releaseNotes,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(update.downloadUrl))
+                    context.startActivity(intent)
+                    updateInfo = null
+                }) {
+                    Text("Download")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { updateInfo = null }) {
+                    Text("Later")
+                }
+            }
+        )
+    }
 
     // Show loading dialog at app level (persists across screen changes)
     if (isLoggingOut) {
