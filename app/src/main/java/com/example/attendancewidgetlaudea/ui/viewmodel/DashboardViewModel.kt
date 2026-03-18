@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.attendancewidgetlaudea.data.model.AttendanceData
 import com.example.attendancewidgetlaudea.data.repository.AttendanceRepository
 import com.example.attendancewidgetlaudea.data.repository.Result
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +29,29 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     init {
         loadInitialData()
+        startBackgroundRefresh()
+    }
+
+    /**
+     * Silently refresh attendance every 8 minutes while the app is open.
+     * Keeps the token alive so manual refresh is always instant.
+     */
+    private fun startBackgroundRefresh() {
+        viewModelScope.launch {
+            while (true) {
+                delay(8 * 60 * 1000L) // 8 minutes
+                android.util.Log.d("DashboardVM", "Background token keep-alive refresh")
+                repository.refreshAttendance() // Silent — don't update UI loading state
+                    .let { result ->
+                        if (result is Result.Success) {
+                            _uiState.value = _uiState.value.copy(
+                                attendanceData = result.data,
+                                rollNumber = repository.getRollNumber() ?: ""
+                            )
+                        }
+                    }
+            }
+        }
     }
 
     private fun loadInitialData() {
