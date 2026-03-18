@@ -314,6 +314,11 @@ Test performance in release builds from day one. Debug builds are for correctnes
 | Pre-computed display strings | Avoid SimpleDateFormat and string operations during composition |
 | EncryptedSharedPreferences | Credentials stored securely on device |
 | WorkManager for background refresh | Survives app kills, respects battery optimization |
+| offline_access scope on password grant | Never-expiring refresh token — widget works forever |
+| Self-chaining OneTimeWorkRequest (8 min) | More frequent than PeriodicWorkRequest (min 15 min) |
+| Battery whitelist dialog | Ensures WorkManager actually runs in background |
+| Background update notification | Users know about new versions without opening app |
+| JWT name extraction for analytics | Track who uses the app via Firebase user properties |
 
 ---
 
@@ -389,7 +394,7 @@ Widget Flow:
 - Applied 3-tier strategy to all data fetchers: attendance, CA marks, and absent days
 - Error handled: If direct Keycloak grant is disabled by the college server, the app gracefully falls back to the WebView path — no regression
 
-### Phase 8: Firebase Analytics (March 18, 2026)
+### Phase 8: Firebase Analytics & Name Tracking (March 18, 2026)
 - Wanted to track how many people are downloading and using the app
 - Set up Firebase project "AttendanceWidget" on Firebase Console (Spark/free plan)
 - Registered Android app with package name `com.example.attendancewidgetlaudea`
@@ -415,6 +420,81 @@ Widget Flow:
 - Added `google-services.json` to `.gitignore` (contains Firebase API key)
 - Build successful, released as v1.1
 
+### Phase 9: Offline Tokens & Instant Refresh — The Breakthrough (March 18, 2026)
+
+The holy grail: making the widget refresh instantly at any time, even after the phone has been off for days.
+
+**Challenge 12: SIS API Rejecting Password Grant Tokens**
+
+Earlier testing showed that tokens from `loginViaKeycloak()` (grant_type=password) were rejected by the SIS API with HTTP 500, while auth-code flow tokens (from WebView) worked fine. This meant every refresh still potentially needed the slow WebView path.
+
+**The offline_access Discovery:**
+- Added `scope=openid offline_access` to the password grant request
+- Keycloak returned `refresh_expires_in=0` — a never-expiring offline refresh token!
+- But the critical question remained: would the SIS API accept tokens obtained this way?
+
+**Testing Methodology (On-Device via ADB):**
+
+*Test 1: Invalidate cached token, force refresh path*
+- Set `cachedAuthToken = "INVALID_TOKEN_FOR_TESTING"`
+- Fast path → HTTP 500 (expected — garbage token)
+- Refresh path → `refreshAccessToken()` used stored refresh token → new access token
+- SIS API → HTTP 200! Attendance fetched successfully
+- BUT: `refresh_expires_in=1800s, scope=openid` — this was the auth-code refresh token, not offline
+
+*Test 2: Force fresh password grant, test SIS API directly*
+- Forced `loginViaKeycloak()` at the start of `refreshAttendance()`
+- Logs: `token expires in 600s, refresh expires in 0s, scope=openid offline_access`
+- Immediately called SIS API with this password-grant token
+- **Result: HTTP 200! `PASSWORD GRANT TOKEN WORKS WITH SIS API! Attendance: 88.4%`**
+
+**Why it works now (contradiction resolved):**
+Previously, password grant tokens were rejected (HTTP 500). With `offline_access` scope added, they're now accepted. The scope likely changes the token's claims or audience in a way the SIS server accepts.
+
+**What this means:**
+- Offline refresh token never expires → can always get a fresh access token
+- Fresh access token works with SIS API → can always fetch attendance
+- **Widget refresh is instant at ANY time**, no matter how long since last use
+- WebView is essentially never needed for refreshes anymore
+
+**Implementation:**
+- `loginViaKeycloak()`: added `scope=openid%20offline_access`
+- `refreshAccessToken()`: added `scope=openid%20offline_access`
+- Self-chaining WorkManager (OneTimeWorkRequest every 8 min) replaces old 4-hour periodic
+- Battery optimization whitelist dialog ensures background execution
+- Cleaned up test code after confirming results
+
+**Challenge 13: Background Update Notifications**
+
+Users needed to know when a new version was available, even without opening the app.
+
+**Solution:**
+- Added `POST_NOTIFICATIONS` permission to AndroidManifest
+- Created notification channel "App Updates" in the worker
+- `AttendanceRefreshWorker.doWork()` now calls `checkForUpdateAndNotify()`
+- Checks GitHub releases API, compares versions, shows notification with download link
+- Tracks `last_notified_version` in SharedPreferences to avoid duplicate notifications
+- Runtime permission request for Android 13+ (TIRAMISU) in MainActivity
+
+**Released as v1.2** — committed, pushed, and created GitHub release with signed APK.
+
+---
+
+### Phase 9 Architecture Update
+
+```
+Refresh Flow (v1.2 — instant at any time):
+  Cached Token (valid) → Direct HTTP (~750ms)
+  Token Expired → Offline Refresh Token (never expires) → New Access Token → HTTP (~1.5s)
+  Refresh Failed → Password Grant + offline_access → New Token → HTTP (~1.5s)
+  Everything Failed → WebView Fallback (~15s, essentially never happens)
+
+Background:
+  WorkManager (self-chaining, 8 min) → Refresh Attendance + Check Updates
+  Battery Whitelist → Ensures WorkManager runs reliably
+  Notification → Alert users of new versions
+```
+
 ---
 
 ## Resources That Helped
@@ -433,17 +513,24 @@ Widget Flow:
 - Cached token refresh gives near-instant data updates
 - Auto re-login means zero friction for users
 - The app provides a much better mobile experience than the website
+- The offline_access breakthrough means the widget works forever without re-login
+- Methodical on-device testing (invalidate token → test refresh → verify API) confirmed the solution
 
 **What could have been better:**
 - Should have used git from the start to avoid losing working code
 - Should have tested release builds earlier for performance
 - Should have copied API field names directly instead of typing them
+- Should have tested offline_access scope earlier — it was the key to instant refresh all along
 
 **Skills gained:**
 - WebView JavaScript interception and bridge communication
 - Keycloak/SSO authentication flows (including direct `grant_type=password` token requests)
+- Keycloak offline_access scope and never-expiring refresh tokens
 - Android ProGuard/R8 configuration
 - Jetpack Compose performance optimization
 - Glance widget development
 - Firebase Analytics integration and custom event tracking
 - Multi-tier authentication strategies with graceful fallbacks
+- Self-chaining WorkManager pattern for frequent background tasks
+- Android notification channels and runtime permission requests (Android 13+)
+- On-device testing via ADB for token flow verification
