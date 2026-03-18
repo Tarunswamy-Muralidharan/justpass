@@ -11,8 +11,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.example.attendancewidgetlaudea.data.analytics.Analytics
 import com.example.attendancewidgetlaudea.data.repository.AttendanceRepository
 import com.example.attendancewidgetlaudea.data.update.UpdateChecker
@@ -33,6 +41,14 @@ class MainActivity : ComponentActivity() {
 
         // Initialize analytics
         Analytics.init(this)
+
+        // Request notification permission (Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
+            }
+        }
 
         // Schedule periodic background refresh
         AttendanceRefreshWorker.schedulePeriodicRefresh(this)
@@ -55,10 +71,14 @@ fun AttendanceApp() {
     val initialScreen = if (repository.isLoggedIn()) Screen.Dashboard else Screen.Login
     var currentScreen by remember { mutableStateOf(initialScreen) }
 
-    // Set user ID if already logged in
+    // Set user ID and name if already logged in, log app open
     LaunchedEffect(Unit) {
+        Analytics.logAppOpen()
         if (repository.isLoggedIn()) {
-            repository.getRollNumber()?.let { Analytics.setUser(it) }
+            val rollNumber = repository.getRollNumber()
+            val token = repository.getCachedToken()
+            val displayName = token?.let { Analytics.extractNameFromToken(it) }
+            rollNumber?.let { Analytics.setUser(it, displayName) }
         }
     }
 
@@ -79,6 +99,41 @@ fun AttendanceApp() {
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
         val currentVersion = packageInfo.versionName ?: "1.0"
         updateInfo = UpdateChecker.checkForUpdate(currentVersion)
+    }
+
+    // Battery optimization whitelist — ensures background refresh runs reliably
+    var showBatteryDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (!powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
+            showBatteryDialog = true
+        }
+    }
+
+    if (showBatteryDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatteryDialog = false },
+            title = { Text("Keep Widget Updated") },
+            text = {
+                Text("To keep your attendance widget updated in the background, please allow unrestricted battery usage for this app.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
+                    showBatteryDialog = false
+                }) {
+                    Text("Allow")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatteryDialog = false }) {
+                    Text("Later")
+                }
+            }
+        )
     }
 
     // Update available dialog

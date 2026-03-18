@@ -23,6 +23,8 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
+class InvalidCredentialsException(message: String) : Exception(message)
+
 class WebViewAuthenticator(private val context: Context) {
 
     private val gson = Gson()
@@ -64,22 +66,77 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.readTimeout = 10000
 
                 val params = "grant_type=password&client_id=ies_sis" +
+                    "&scope=openid%20offline_access" +
                     "&username=" + java.net.URLEncoder.encode(username, "UTF-8") +
                     "&password=" + java.net.URLEncoder.encode(password, "UTF-8")
+                connection.outputStream.use { it.write(params.toByteArray()) }
+
+                val responseCode = connection.responseCode
+                if (responseCode == 200) {
+                    val json = connection.inputStream.bufferedReader().use { it.readText() }
+                    val tokenResponse = gson.fromJson(json, TokenResponse::class.java)
+                    cachedAuthToken = tokenResponse.accessToken
+                    // Save refresh token and expiry for silent token renewal
+                    val prefs = com.example.attendancewidgetlaudea.data.local.SecurePreferences.getInstance(context)
+                    prefs.refreshToken = tokenResponse.refreshToken
+                    prefs.tokenExpiryTime = System.currentTimeMillis() + (tokenResponse.expiresIn * 1000)
+                    android.util.Log.d("WebViewAuth", "Direct Keycloak login successful, token expires in ${tokenResponse.expiresIn}s, refresh expires in ${tokenResponse.refreshExpiresIn}s, scope=${tokenResponse.scope}")
+                    true
+                } else if (responseCode == 401 || responseCode == 400) {
+                    // Invalid credentials — don't fall back to WebView
+                    android.util.Log.e("WebViewAuth", "Direct Keycloak login: invalid credentials (HTTP $responseCode)")
+                    throw InvalidCredentialsException("Invalid roll number or password")
+                } else {
+                    android.util.Log.e("WebViewAuth", "Direct Keycloak login failed: HTTP $responseCode")
+                    false
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Direct Keycloak login error: ${e.message}")
+                false
+            }
+        }
+    }
+
+    /**
+     * Silently refresh the access token using the stored refresh token.
+     * Much faster than a full password login since no credentials are sent.
+     * Returns true if a new access token was obtained.
+     */
+    suspend fun refreshAccessToken(): Boolean {
+        val prefs = com.example.attendancewidgetlaudea.data.local.SecurePreferences.getInstance(context)
+        val refreshToken = prefs.refreshToken ?: return false
+
+        return withContext(Dispatchers.IO) {
+            try {
+                android.util.Log.d("WebViewAuth", "Refreshing access token via refresh_token")
+                val url = java.net.URL(KEYCLOAK_TOKEN_URL)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                connection.doOutput = true
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val params = "grant_type=refresh_token&client_id=ies_sis" +
+                    "&scope=openid%20offline_access" +
+                    "&refresh_token=" + java.net.URLEncoder.encode(refreshToken, "UTF-8")
                 connection.outputStream.use { it.write(params.toByteArray()) }
 
                 if (connection.responseCode == 200) {
                     val json = connection.inputStream.bufferedReader().use { it.readText() }
                     val tokenResponse = gson.fromJson(json, TokenResponse::class.java)
                     cachedAuthToken = tokenResponse.accessToken
-                    android.util.Log.d("WebViewAuth", "Direct Keycloak login successful, token expires in ${tokenResponse.expiresIn}s")
+                    prefs.refreshToken = tokenResponse.refreshToken
+                    prefs.tokenExpiryTime = System.currentTimeMillis() + (tokenResponse.expiresIn * 1000)
+                    android.util.Log.d("WebViewAuth", "Token refresh successful, expires in ${tokenResponse.expiresIn}s, refresh expires in ${tokenResponse.refreshExpiresIn}s, scope=${tokenResponse.scope}")
                     true
                 } else {
-                    android.util.Log.e("WebViewAuth", "Direct Keycloak login failed: HTTP ${connection.responseCode}")
+                    android.util.Log.e("WebViewAuth", "Token refresh failed: HTTP ${connection.responseCode}")
+                    prefs.refreshToken = null
                     false
                 }
             } catch (e: Exception) {
-                android.util.Log.e("WebViewAuth", "Direct Keycloak login error: ${e.message}")
+                android.util.Log.e("WebViewAuth", "Token refresh error: ${e.message}")
                 false
             }
         }
@@ -92,23 +149,15 @@ class WebViewAuthenticator(private val context: Context) {
     ): Result<AttendanceData> = suspendCoroutine { continuation ->
         mainHandler.post {
             try {
-                // STEP 1: Clear ALL existing session data before login
+                // STEP 1: Set up cookie manager (don't clear — preserve Keycloak session cookies)
                 val cookieManager = CookieManager.getInstance()
-                cookieManager.removeAllCookies(null)
-                cookieManager.removeSessionCookies(null)
-                cookieManager.flush()
-                android.webkit.WebStorage.getInstance().deleteAllData()
-                android.util.Log.d("WebViewAuth", "Cleared all cookies and storage before login")
+                android.util.Log.d("WebViewAuth", "Starting login (preserving existing cookies)")
 
                 // STEP 2: Create fresh WebView with no-cache settings
                 val webView = WebView(context).apply {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.databaseEnabled = true
-                    settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
-                    clearCache(true)
-                    clearHistory()
-                    clearFormData()
                 }
 
                 // STEP 3: Enable cookies for this session
@@ -129,6 +178,8 @@ class WebViewAuthenticator(private val context: Context) {
                         try {
                             val response = gson.fromJson(jsonData, AttendanceResponse::class.java)
                             val attendanceData = AttendanceData.fromResponse(response)
+                            // Persist Keycloak session cookies so they survive process death
+                            cookieManager.flush()
                             mainHandler.post {
                                 webView.destroy()
                             }
@@ -145,6 +196,14 @@ class WebViewAuthenticator(private val context: Context) {
                     fun onAuthToken(token: String) {
                         cachedAuthToken = token
                         android.util.Log.d("WebViewAuth", "Auth token cached for fast refresh")
+                    }
+
+                    @JavascriptInterface
+                    fun onRefreshToken(refreshToken: String, expiresIn: Int) {
+                        val prefs = com.example.attendancewidgetlaudea.data.local.SecurePreferences.getInstance(context)
+                        prefs.refreshToken = refreshToken
+                        prefs.tokenExpiryTime = System.currentTimeMillis() + (expiresIn * 1000L)
+                        android.util.Log.d("WebViewAuth", "Auth-code refresh token captured (expires in ${expiresIn}s)")
                     }
 
                     @JavascriptInterface
@@ -325,6 +384,62 @@ class WebViewAuthenticator(private val context: Context) {
                             var tokenValue = value.replace('Bearer ', '');
                             Android.onAuthToken(tokenValue);
                         } catch(e) {}
+                        // Try to capture refresh token from Keycloak JS adapter
+                        try {
+                            var kc = null;
+                            // Check common Keycloak variable names
+                            var kcNames = ['keycloak', 'Keycloak', 'kc', '_keycloak', 'auth', 'keycloakAuth'];
+                            for (var n = 0; n < kcNames.length; n++) {
+                                try {
+                                    if (window[kcNames[n]] && window[kcNames[n]].refreshToken) {
+                                        kc = window[kcNames[n]];
+                                        console.log('Found Keycloak at window.' + kcNames[n]);
+                                        break;
+                                    }
+                                } catch(e2) {}
+                            }
+                            // Search all window properties
+                            if (!kc) {
+                                var keys = Object.keys(window);
+                                for (var i = 0; i < keys.length; i++) {
+                                    try {
+                                        var obj = window[keys[i]];
+                                        if (obj && typeof obj === 'object' && obj.authenticated === true && obj.refreshToken && obj.tokenParsed) {
+                                            kc = obj;
+                                            console.log('Found Keycloak at window.' + keys[i]);
+                                            break;
+                                        }
+                                    } catch(e2) {}
+                                }
+                            }
+                            // Try Angular injector
+                            if (!kc) {
+                                try {
+                                    var injector = angular.element(document.body).injector();
+                                    if (injector) {
+                                        var authService = injector.get('Auth') || injector.get('auth') || injector.get('keycloak');
+                                        if (authService && authService.refreshToken) {
+                                            kc = authService;
+                                            console.log('Found Keycloak via Angular injector');
+                                        }
+                                    }
+                                } catch(e2) {
+                                    console.log('Angular injector search failed:', e2.message);
+                                }
+                            }
+                            if (kc && kc.refreshToken) {
+                                var expiry = 1800;
+                                if (kc.refreshTokenParsed && kc.refreshTokenParsed.exp) {
+                                    expiry = Math.floor(kc.refreshTokenParsed.exp - Date.now()/1000);
+                                }
+                                console.log('Captured refresh token, expires in ' + expiry + 's');
+                                Android.onRefreshToken(kc.refreshToken, expiry);
+                            } else {
+                                console.log('Keycloak refresh token not found on window');
+                            }
+                        } catch(e) {
+                            console.log('Could not capture refresh token:', e.message);
+                        }
                     }
                     return origSetHeader.apply(this, arguments);
                 };
@@ -336,6 +451,23 @@ class WebViewAuthenticator(private val context: Context) {
 
                 XMLHttpRequest.prototype.send = function() {
                     var self = this;
+                    // Intercept Keycloak token exchange to capture the refresh token
+                    if (self._url && self._url.indexOf('/openid-connect/token') >= 0) {
+                        console.log('Intercepted Keycloak token exchange XHR');
+                        self.addEventListener('load', function() {
+                            if (self.status === 200) {
+                                try {
+                                    var tokenData = JSON.parse(self.responseText);
+                                    if (tokenData.refresh_token) {
+                                        console.log('Captured refresh token from auth code flow');
+                                        Android.onRefreshToken(tokenData.refresh_token, tokenData.expires_in || 600);
+                                    }
+                                } catch(e) {
+                                    console.log('Failed to parse token response:', e.message);
+                                }
+                            }
+                        });
+                    }
                     if (self._url && self._url.indexOf('/attendance/') >= 0) {
                         console.log('Intercepted attendance XHR:', self._url);
                         self.addEventListener('load', function() {
@@ -361,7 +493,7 @@ class WebViewAuthenticator(private val context: Context) {
                 console.log('Navigating to #!/attendanceStudentView ...');
                 window.location.hash = '#!/attendanceStudentView';
 
-                // Fallback: if XHR intercept didn't fire in 10 seconds, try direct fetch
+                // Fallback: if XHR intercept didn't fire in 3 seconds, try direct fetch
                 setTimeout(function() {
                     if (captured) return;
                     console.log('XHR intercept timeout, trying direct fetch with captured auth...');
@@ -393,7 +525,7 @@ class WebViewAuthenticator(private val context: Context) {
                         console.log('Fallback fetch error:', err.message);
                         Android.onError('Could not fetch attendance: ' + err.message);
                     });
-                }, 10000);
+                }, 3000);
             })();
         """.trimIndent()
 
@@ -418,7 +550,8 @@ class WebViewAuthenticator(private val context: Context) {
                     settings.domStorageEnabled = true
                 }
 
-                CookieManager.getInstance().setAcceptCookie(true)
+                val cookieManager = CookieManager.getInstance()
+                cookieManager.setAcceptCookie(true)
 
                 var dataFetched = false
 
@@ -431,6 +564,8 @@ class WebViewAuthenticator(private val context: Context) {
                         try {
                             val response = gson.fromJson(jsonData, AttendanceResponse::class.java)
                             val attendanceData = AttendanceData.fromResponse(response)
+                            // Persist cookies so Keycloak session survives process death
+                            cookieManager.flush()
                             mainHandler.post { webView.destroy() }
                             continuation.resume(Result.success(attendanceData))
                         } catch (e: Exception) {
@@ -443,6 +578,14 @@ class WebViewAuthenticator(private val context: Context) {
                     fun onAuthToken(token: String) {
                         cachedAuthToken = token
                         android.util.Log.d("WebViewAuth", "Auth token cached from refresh")
+                    }
+
+                    @JavascriptInterface
+                    fun onRefreshToken(refreshToken: String, expiresIn: Int) {
+                        val prefs = com.example.attendancewidgetlaudea.data.local.SecurePreferences.getInstance(context)
+                        prefs.refreshToken = refreshToken
+                        prefs.tokenExpiryTime = System.currentTimeMillis() + (expiresIn * 1000L)
+                        android.util.Log.d("WebViewAuth", "Auth-code refresh token captured from refresh (expires in ${expiresIn}s)")
                     }
 
                     @JavascriptInterface

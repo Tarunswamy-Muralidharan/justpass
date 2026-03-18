@@ -15,22 +15,51 @@ object Analytics {
         firebaseAnalytics = FirebaseAnalytics.getInstance(context)
     }
 
-    /** Set the logged-in user's roll number as the user ID */
-    fun setUser(rollNumber: String) {
+    /** Set the logged-in user's roll number and name */
+    fun setUser(rollNumber: String, displayName: String? = null) {
         firebaseAnalytics?.setUserId(rollNumber)
         firebaseAnalytics?.setUserProperty("roll_number", rollNumber)
+        displayName?.let {
+            firebaseAnalytics?.setUserProperty("display_name", it)
+        }
+    }
+
+    /** Extract display name from a Keycloak JWT token */
+    fun extractNameFromToken(token: String): String? {
+        return try {
+            // JWT is 3 base64 parts separated by dots — payload is the 2nd part
+            val parts = token.split(".")
+            if (parts.size < 2) return null
+            val payload = String(
+                android.util.Base64.decode(parts[1], android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING),
+                Charsets.UTF_8
+            )
+            val json = org.json.JSONObject(payload)
+            // Keycloak puts the name in "name" or "preferred_username"
+            json.optString("name").ifEmpty {
+                json.optString("preferred_username").ifEmpty { null }
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     fun clearUser() {
         firebaseAnalytics?.setUserId(null)
         firebaseAnalytics?.setUserProperty("roll_number", null)
+        firebaseAnalytics?.setUserProperty("display_name", null)
     }
 
-    fun logLogin(rollNumber: String) {
+    fun logLogin(rollNumber: String, displayName: String? = null) {
         firebaseAnalytics?.logEvent(FirebaseAnalytics.Event.LOGIN, Bundle().apply {
             putString(FirebaseAnalytics.Param.METHOD, "keycloak")
             putString("roll_number", rollNumber)
+            displayName?.let { putString("display_name", it) }
         })
+    }
+
+    fun logAppOpen() {
+        firebaseAnalytics?.logEvent(FirebaseAnalytics.Event.APP_OPEN, null)
     }
 
     fun logScreenView(screenName: String) {

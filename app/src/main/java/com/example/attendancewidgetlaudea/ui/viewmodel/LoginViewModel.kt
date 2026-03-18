@@ -52,8 +52,11 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
 
             when (val result = repository.login(currentState.rollNumber, currentState.password)) {
                 is Result.Success -> {
-                    Analytics.setUser(currentState.rollNumber)
-                    Analytics.logLogin(currentState.rollNumber)
+                    // Extract name from JWT token for analytics
+                    val token = repository.getCachedToken()
+                    val displayName = token?.let { Analytics.extractNameFromToken(it) }
+                    Analytics.setUser(currentState.rollNumber, displayName)
+                    Analytics.logLogin(currentState.rollNumber, displayName)
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         isLoggedIn = true,
