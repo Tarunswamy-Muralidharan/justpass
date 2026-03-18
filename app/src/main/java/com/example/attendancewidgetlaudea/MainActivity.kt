@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import android.content.Intent
 import android.net.Uri
+import com.example.attendancewidgetlaudea.data.analytics.Analytics
 import com.example.attendancewidgetlaudea.data.repository.AttendanceRepository
 import com.example.attendancewidgetlaudea.data.update.UpdateChecker
 import com.example.attendancewidgetlaudea.data.update.UpdateInfo
@@ -29,6 +30,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Initialize analytics
+        Analytics.init(this)
 
         // Schedule periodic background refresh
         AttendanceRefreshWorker.schedulePeriodicRefresh(this)
@@ -50,6 +54,18 @@ fun AttendanceApp() {
     // Determine initial screen based on login status
     val initialScreen = if (repository.isLoggedIn()) Screen.Dashboard else Screen.Login
     var currentScreen by remember { mutableStateOf(initialScreen) }
+
+    // Set user ID if already logged in
+    LaunchedEffect(Unit) {
+        if (repository.isLoggedIn()) {
+            repository.getRollNumber()?.let { Analytics.setUser(it) }
+        }
+    }
+
+    // Track screen views
+    LaunchedEffect(currentScreen) {
+        Analytics.logScreenView(currentScreen.name)
+    }
 
     // Counter to force LoginScreen recreation after logout
     var loginScreenKey by remember { mutableIntStateOf(0) }
@@ -140,6 +156,8 @@ fun AttendanceApp() {
                         isLoggingOut = true
 
                         // Perform actual logout - clear all data
+                        Analytics.logLogout()
+                        Analytics.clearUser()
                         repository.logout()
 
                         // Wait for async clearing to complete
@@ -153,9 +171,11 @@ fun AttendanceApp() {
                     currentScreen = Screen.PrivacyPolicy
                 },
                 onCAMarksClick = {
+                    Analytics.logFeatureUsed("ca_marks")
                     currentScreen = Screen.CAMarks
                 },
                 onAbsentDaysClick = {
+                    Analytics.logFeatureUsed("absent_days")
                     currentScreen = Screen.AbsentDays
                 }
             )

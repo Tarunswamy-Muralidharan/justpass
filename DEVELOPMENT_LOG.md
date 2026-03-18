@@ -304,6 +304,10 @@ Test performance in release builds from day one. Debug builds are for correctnes
 | WebView-based auth instead of direct API | LAUDEA uses Keycloak SSO with complex redirect flows that can't be replicated with simple HTTP |
 | XHR interception instead of token hunting | Reliable — captures the exact token Angular uses, guaranteed to work |
 | Cached token + direct HTTP for refresh | 200ms vs 15-20 seconds. Massive UX improvement |
+| 3-tier refresh (token → Keycloak → WebView) | Handles every failure scenario: cached token, expired token, disabled grant |
+| Persist token in EncryptedSharedPreferences | Survives process death — no more slow refreshes after Android kills the app |
+| Firebase Analytics for usage tracking | Free, automatic tracking of active users, sessions, and custom events |
+| Roll number as Firebase user ID | Lets us see exactly who is using the app |
 | Auto re-login on token expiry | Users never see login screen again after initial setup |
 | Flattened LazyColumn list | Prevents jitter from nested forEach inside items |
 | Surface/Box instead of Card | Cards render shadows which are expensive in lists |
@@ -319,11 +323,14 @@ Test performance in release builds from day one. Debug builds are for correctnes
 Login Flow:
   WebView → Keycloak SSO → XHR Intercept → Capture Token + Data → Cache Token
 
-Refresh Flow (Fast):
-  Cached Token → Direct HTTP → 200ms response
+Refresh Flow (Fast — ~200ms):
+  Persisted Token → Direct HTTP → Instant response
 
-Refresh Flow (Fallback):
-  Token Expired → WebView Session → XHR Intercept → New Token
+Refresh Flow (Medium — ~500ms):
+  Token Expired → Direct Keycloak password grant → New Token → Direct HTTP
+
+Refresh Flow (Slow — ~15s, last resort):
+  Keycloak grant disabled → Full WebView login → XHR Intercept → New Token
 
 Data Flow:
   WebViewAuthenticator → AttendanceRepository → ViewModel → Compose UI
@@ -367,6 +374,46 @@ Widget Flow:
 - Fixed ProGuard/R8 rules for release builds
 - Set up GitHub repository
 - Prepared for release distribution
+- Added in-app update checker via GitHub Releases API
+
+### Phase 7: 3-Tier Token Refresh (March 14, 2026)
+- Upgraded from 2-tier to 3-tier refresh strategy
+- Problem: After a few days, refresh was slow again (~15s). The cached token was only in-memory, so when Android killed the process, it was lost. Every refresh after that fell back to the slow WebView path.
+- Solution: Implemented 3-tier refresh:
+  1. **Fast path (~200ms)**: Direct HTTP with cached token (now persisted to EncryptedSharedPreferences)
+  2. **Medium path (~500ms)**: Direct Keycloak `grant_type=password` POST to get a fresh token, then direct HTTP fetch
+  3. **Slow path (~15s)**: Full WebView login (only if Keycloak direct grant is disabled by the server)
+- Added `loginViaKeycloak()` to WebViewAuthenticator — sends username/password directly to the Keycloak token endpoint, bypassing WebView entirely
+- Changed `cachedAuthToken` from in-memory variable to a property backed by `SecurePreferences.accessToken` so it survives process death
+- Fixed `fetchAttendanceOnly` (slow path) to also capture tokens via `onAuthToken` JS interface, so even after a slow-path refresh, subsequent refreshes are fast
+- Applied 3-tier strategy to all data fetchers: attendance, CA marks, and absent days
+- Error handled: If direct Keycloak grant is disabled by the college server, the app gracefully falls back to the WebView path — no regression
+
+### Phase 8: Firebase Analytics (March 18, 2026)
+- Wanted to track how many people are downloading and using the app
+- Set up Firebase project "AttendanceWidget" on Firebase Console (Spark/free plan)
+- Registered Android app with package name `com.example.attendancewidgetlaudea`
+- Downloaded `google-services.json` and placed in `app/` directory
+- Challenge: Firebase Console kept rejecting the package name — turned out to be invisible characters or typos when pasting. Had to type it manually character by character.
+- Added Firebase dependencies via version catalog (`libs.versions.toml`):
+  - `com.google.gms:google-services` plugin (v4.4.2) in both root and app gradle
+  - `firebase-bom` (v33.7.0) for version management
+  - `firebase-analytics-ktx` for the analytics SDK
+- Created `Analytics.kt` utility object wrapping Firebase Analytics with these events:
+  - `setUser()` — sets roll number as Firebase user ID (so we can see who logged in)
+  - `logLogin()` — tracks login events with roll number
+  - `logScreenView()` — tracks which screens users visit
+  - `logRefresh()` — tracks attendance refreshes
+  - `logLogout()` — tracks logouts
+  - `logFeatureUsed()` — tracks CA marks and absent days usage
+- Wired analytics into:
+  - `MainActivity.onCreate()` — initialize Firebase Analytics
+  - `AttendanceApp` composable — set user ID on app start, track screen views on navigation
+  - `LoginViewModel` — log login event + set user ID on successful login
+  - `MainActivity` logout handler — log logout + clear user ID
+  - Navigation callbacks — log feature usage for CA marks and absent days
+- Added `google-services.json` to `.gitignore` (contains Firebase API key)
+- Build successful, released as v1.1
 
 ---
 
@@ -394,7 +441,9 @@ Widget Flow:
 
 **Skills gained:**
 - WebView JavaScript interception and bridge communication
-- Keycloak/SSO authentication flows
+- Keycloak/SSO authentication flows (including direct `grant_type=password` token requests)
 - Android ProGuard/R8 configuration
 - Jetpack Compose performance optimization
 - Glance widget development
+- Firebase Analytics integration and custom event tracking
+- Multi-tier authentication strategies with graceful fallbacks

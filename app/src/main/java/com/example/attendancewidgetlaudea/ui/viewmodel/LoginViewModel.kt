@@ -3,6 +3,7 @@ package com.example.attendancewidgetlaudea.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.attendancewidgetlaudea.data.analytics.Analytics
 import com.example.attendancewidgetlaudea.data.repository.AttendanceRepository
 import com.example.attendancewidgetlaudea.data.repository.Result
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +52,8 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
 
             when (val result = repository.login(currentState.rollNumber, currentState.password)) {
                 is Result.Success -> {
+                    Analytics.setUser(currentState.rollNumber)
+                    Analytics.logLogin(currentState.rollNumber)
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         isLoggedIn = true,

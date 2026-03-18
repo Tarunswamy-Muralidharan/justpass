@@ -80,15 +80,34 @@ class AttendanceRepository(private val context: Context) {
                 return Result.Success(attendanceData)
             }
         } catch (e: Exception) {
-            android.util.Log.d("AttendanceRepo", "Fast refresh failed, falling back to WebView")
+            android.util.Log.d("AttendanceRepo", "Fast refresh failed, trying direct Keycloak login")
         }
 
-        // SLOW PATH: Fall back to WebView (token expired or not cached)
+        // MEDIUM PATH: Get fresh token via direct Keycloak HTTP POST (~200ms)
+        try {
+            val tokenRefreshed = webViewAuthenticator.loginViaKeycloak(rollNumber!!, password!!)
+            if (tokenRefreshed) {
+                val retryResult = webViewAuthenticator.fetchAttendanceDirect(rollNumber)
+                if (retryResult != null && retryResult.isSuccess) {
+                    val attendanceData = retryResult.getOrThrow()
+                    securePrefs.saveAttendanceData(attendanceData)
+                    try {
+                        com.example.attendancewidgetlaudea.widget.AttendanceWidgetReceiver.updateWidget(context)
+                    } catch (e: Exception) {}
+                    android.util.Log.d("AttendanceRepo", "Direct Keycloak refresh successful: ${attendanceData.attendanceWithExemption}%")
+                    return Result.Success(attendanceData)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.d("AttendanceRepo", "Direct Keycloak login failed, falling back to WebView")
+        }
+
+        // SLOW PATH: Fall back to WebView (only if direct Keycloak grant is disabled)
         return withContext(Dispatchers.Main) {
             try {
                 android.util.Log.d("AttendanceRepo", "WebView refresh for: $rollNumber")
 
-                val result = webViewAuthenticator.fetchAttendanceOnly(rollNumber!!)
+                val result = webViewAuthenticator.fetchAttendanceOnly(rollNumber)
 
                 result.fold(
                     onSuccess = { attendanceData ->
@@ -102,7 +121,7 @@ class AttendanceRepository(private val context: Context) {
                     onFailure = { exception ->
                         // Session might have expired, try full login
                         android.util.Log.d("AttendanceRepo", "Session expired, re-logging in")
-                        login(rollNumber, password!!)
+                        login(rollNumber, password)
                     }
                 )
             } catch (e: Exception) {
@@ -135,12 +154,25 @@ class AttendanceRepository(private val context: Context) {
             android.util.Log.e("AttendanceRepo", "CA marks fast fetch error: ${e.message}")
         }
 
-        // Token expired or missing — silently re-login to get a fresh token
+        // Token expired — get fresh token via direct Keycloak login (fast)
         if (!password.isNullOrEmpty()) {
-            android.util.Log.d("AttendanceRepo", "Token expired, re-logging in for CA marks")
+            android.util.Log.d("AttendanceRepo", "Token expired, direct Keycloak login for CA marks")
+            try {
+                val tokenRefreshed = webViewAuthenticator.loginViaKeycloak(rollNumber, password)
+                if (tokenRefreshed) {
+                    val retryResult = webViewAuthenticator.fetchCAMarksDirect(rollNumber)
+                    if (retryResult != null && retryResult.isSuccess) {
+                        return Result.Success(retryResult.getOrThrow())
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("AttendanceRepo", "CA marks direct login error: ${e.message}")
+            }
+
+            // Last resort: full WebView login
+            android.util.Log.d("AttendanceRepo", "Direct login failed, falling back to WebView for CA marks")
             val loginResult = login(rollNumber, password)
             if (loginResult is Result.Success) {
-                // Retry with new token
                 try {
                     val retryResult = webViewAuthenticator.fetchCAMarksDirect(rollNumber)
                     if (retryResult != null && retryResult.isSuccess) {
@@ -172,12 +204,25 @@ class AttendanceRepository(private val context: Context) {
             android.util.Log.e("AttendanceRepo", "Absent days error: ${e.message}")
         }
 
-        // Token expired or missing — silently re-login to get a fresh token
+        // Token expired — get fresh token via direct Keycloak login (fast)
         if (!password.isNullOrEmpty()) {
-            android.util.Log.d("AttendanceRepo", "Token expired, re-logging in for absent days")
+            android.util.Log.d("AttendanceRepo", "Token expired, direct Keycloak login for absent days")
+            try {
+                val tokenRefreshed = webViewAuthenticator.loginViaKeycloak(rollNumber, password)
+                if (tokenRefreshed) {
+                    val retryResult = webViewAuthenticator.fetchAbsentDays(rollNumber)
+                    if (retryResult != null && retryResult.isSuccess) {
+                        return Result.Success(retryResult.getOrThrow())
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("AttendanceRepo", "Absent days direct login error: ${e.message}")
+            }
+
+            // Last resort: full WebView login
+            android.util.Log.d("AttendanceRepo", "Direct login failed, falling back to WebView for absent days")
             val loginResult = login(rollNumber, password)
             if (loginResult is Result.Success) {
-                // Retry with new token
                 try {
                     val retryResult = webViewAuthenticator.fetchAbsentDays(rollNumber)
                     if (retryResult != null && retryResult.isSuccess) {

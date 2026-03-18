@@ -15,6 +15,7 @@ import com.example.attendancewidgetlaudea.data.model.AbsentDay
 import com.example.attendancewidgetlaudea.data.model.AttendanceData
 import com.example.attendancewidgetlaudea.data.model.AttendanceResponse
 import com.example.attendancewidgetlaudea.data.model.CourseMarks
+import com.example.attendancewidgetlaudea.data.model.TokenResponse
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
@@ -27,8 +28,14 @@ class WebViewAuthenticator(private val context: Context) {
     private val gson = Gson()
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // Cache the auth token for fast refreshes
-    var cachedAuthToken: String? = null
+    // Cache the auth token for fast refreshes — persisted to SecurePreferences
+    var cachedAuthToken: String?
+        get() = _cachedAuthToken ?: com.example.attendancewidgetlaudea.data.local.SecurePreferences.getInstance(context).accessToken.also { _cachedAuthToken = it }
+        set(value) {
+            _cachedAuthToken = value
+            com.example.attendancewidgetlaudea.data.local.SecurePreferences.getInstance(context).accessToken = value
+        }
+    private var _cachedAuthToken: String? = null
 
     companion object {
         private const val SIS_BASE_URL = "https://laudea.psgitech.ac.in/sis/"
@@ -36,6 +43,46 @@ class WebViewAuthenticator(private val context: Context) {
         private const val ATTENDANCE_API_PATTERN = "/sis/attendance/"
         private const val CA_MARKS_API_URL = "https://laudea.psgitech.ac.in/sis/ca/marks/v2/"
         private const val ATTENDANCE_API_BASE = "https://laudea.psgitech.ac.in/sis/attendance/"
+        private const val KEYCLOAK_TOKEN_URL = "https://accounts.psgitech.ac.in/realms/itech/protocol/openid-connect/token"
+    }
+
+    /**
+     * Get a fresh access token via direct Keycloak HTTP POST (no WebView).
+     * Uses grant_type=password — ~200ms vs 15s WebView login.
+     * Returns true if a new token was obtained.
+     */
+    suspend fun loginViaKeycloak(username: String, password: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                android.util.Log.d("WebViewAuth", "Direct Keycloak login for: $username")
+                val url = java.net.URL(KEYCLOAK_TOKEN_URL)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                connection.doOutput = true
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val params = "grant_type=password&client_id=ies_sis" +
+                    "&username=" + java.net.URLEncoder.encode(username, "UTF-8") +
+                    "&password=" + java.net.URLEncoder.encode(password, "UTF-8")
+                connection.outputStream.use { it.write(params.toByteArray()) }
+
+                if (connection.responseCode == 200) {
+                    val json = connection.inputStream.bufferedReader().use { it.readText() }
+                    val tokenResponse = gson.fromJson(json, TokenResponse::class.java)
+                    cachedAuthToken = tokenResponse.accessToken
+                    android.util.Log.d("WebViewAuth", "Direct Keycloak login successful, token expires in ${tokenResponse.expiresIn}s")
+                    true
+                } else {
+                    android.util.Log.e("WebViewAuth", "Direct Keycloak login failed: HTTP ${connection.responseCode}")
+                    false
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Direct Keycloak login error: ${e.message}")
+                false
+            }
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -390,6 +437,12 @@ class WebViewAuthenticator(private val context: Context) {
                             mainHandler.post { webView.destroy() }
                             continuation.resume(Result.failure(Exception("Failed to parse: ${e.message}")))
                         }
+                    }
+
+                    @JavascriptInterface
+                    fun onAuthToken(token: String) {
+                        cachedAuthToken = token
+                        android.util.Log.d("WebViewAuth", "Auth token cached from refresh")
                     }
 
                     @JavascriptInterface
