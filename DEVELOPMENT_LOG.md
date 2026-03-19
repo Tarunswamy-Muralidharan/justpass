@@ -590,3 +590,47 @@ Background:
 - ui/screens/SubjectAttendanceScreen.kt — Per-subject attendance breakdown
 - ui/viewmodel/SubjectAttendanceViewModel.kt — Calculates subject attendance from timetable + absent days
 - data/model/SubjectAttendance.kt — Data model for subject-wise attendance
+
+### Additional v1.3 Changes (2026-03-19 continued)
+
+#### New Features
+6. **Subject Detail Screen** — Tap any subject in Subject Attendance to see day-by-day attendance
+   - Chronological list of every session: Present (green), Absent (red), Exemption (blue)
+   - Stats summary: Present/Absent/Exemption/Total counts
+   - 80% target warning: "Attend X more hours without absence to reach 80%"
+
+7. **Exemptions Screen** — View all exemption applications
+   - Fetches from `/sis/remote/exemptions/{rollNumber}` API
+   - Shows exemption type, category (Day/Session), date range, session times, reason, status
+   - Accessible by tapping the Exemption count on Dashboard
+
+8. **Accurate Subject Attendance** — No more estimates
+   - Present days from `/sis/attendance/present/{rollNumber}` (new API)
+   - Absent days from `/sis/attendance/absent/{rollNumber}` (existing)
+   - Exemptions mapped to subjects via timetable (Day → all subjects, Session → time-matched)
+   - Exact totals: Present + Absent + Exemption = Total per subject
+
+9. **75% Warning on Dashboard** — "Attend X more hours (~Y days) to reach 75%"
+   - Formula: hours = ceil((0.75 * total - present) / 0.25)
+   - Approx days = hours / 6 (avg classes per day)
+
+10. **UI Polish**
+    - All headers: LiquidGlassCard → GlassListCard for crisp readable text
+    - CA Marks: "Tap to expand" / "Awaiting marks" (context-aware, not generic "No marks yet")
+    - Profile: Attendance Overview card + App Info card with version
+    - Crossfade tab transitions (200ms)
+    - Bolder attendance % (52sp, Black weight, -1sp letter-spacing)
+    - Brighter attendance tint colors (vivid red #FF5252, green #00E676)
+    - "Tap for subject-wise details →" in primary blue
+
+#### Obstacles Overcome (continued)
+8. **Exemption sessions field type** — API returns `sessions` as JSON array (not string). Gson crashed with "Expected string but was BEGIN_ARRAY". Fixed by changing model from `String?` to `List<String>?`.
+9. **Brown-looking red tint** — Dark red (#FF1744) at high alpha on dark navy gradient looked brown. Fixed by using lighter red (#FF5252) at lower alpha (18%).
+10. **Header text readability** — LiquidGlassCard refraction distorted header text making it unreadable. Switched all headers to lightweight GlassListCard with explicit `onSurface` text colors.
+11. **CA Marks "No marks yet"** — Showed even when IAT marks were entered (total was 0 but components had values). Fixed with component-level check: if any sub-marks exist, show "Tap to expand".
+
+#### New Files (continued)
+- ui/screens/SubjectDetailScreen.kt — Per-subject day-by-day attendance with exemption mapping
+- ui/screens/ExemptionsScreen.kt — Exemption list with glass cards
+- ui/viewmodel/ExemptionsViewModel.kt — Fetches exemptions from API
+- data/model/Exemption.kt — Exemption data class with Gson annotations
