@@ -534,3 +534,59 @@ Background:
 - Self-chaining WorkManager pattern for frequent background tasks
 - Android notification channels and runtime permission requests (Android 13+)
 - On-device testing via ADB for token flow verification
+
+---
+
+## v1.3 Development (2026-03-19) — Glass UI + Subject Attendance (IN PROGRESS)
+
+### Changes Made
+1. **iOS Liquid Glass UI** — Integrated FletchMcKee/liquid library (v1.1.1) for GPU-accelerated frosted glass effects
+   - Dual LiquidState architecture: cardState for card refraction, barState for bottom bar blur
+   - Real AGSL shader effects: refraction, edge reflections, chromatic dispersion, lensing
+   - Content inside liquefiable layer so glass bottom bar blurs actual scrolling content
+   - Lightweight GlassListCard for scrolling items (zero GPU cost)
+   - LiquidGlassCard for static elements (headers, main cards) with real glass refraction
+
+2. **Floating Glass Bottom Bar** — iOS-style pill-shaped floating navigation
+   - Frosted glass blur (28dp frost) with rounded corners
+   - Animated sliding glass bubble indicator between tabs (bouncy spring: dampingRatio=0.7)
+   - Haptic feedback on every tab press
+   - Bouncy icon scale animation (1.3x → spring back) on tap
+
+3. **Glass Light Reflection Animation** — Diagonal specular beam on refresh
+   - Realistic light sweep from top-left to bottom-right across header card
+   - Soft white highlight band with blue tint, smooth fade in/out
+
+4. **Subject-wise Attendance** — New feature calculating per-subject attendance
+   - Combines timetable (periods/week) + absent days (absences per subject)
+   - Estimates total classes per subject from timetable proportions
+   - Color-coded progress bars (red < 65%, yellow 65-75%, green ≥ 75%)
+   - Accessible by tapping the main attendance % card on Dashboard
+
+5. **Custom Glass Theme** — Custom dark/light color schemes with translucent surfaces
+   - Disabled dynamic colors for consistent glass look
+   - Gradient backgrounds on all screens
+
+### Dependency Upgrades
+- Kotlin: 2.0.21 → 2.3.0
+- Compose BOM: 2024.09.00 → 2025.10.00 (Foundation 1.9.3)
+- Added: io.github.fletchmckee.liquid:liquid:1.1.1
+- Added: material-icons-extended
+- Navigation: 2.7.7 → 2.8.5
+- LifecycleViewModel: 2.7.0 → 2.8.7
+- kotlinOptions DSL → kotlin.compilerOptions DSL (Kotlin 2.3 requirement)
+
+### Obstacles Overcome
+1. **Library compatibility** — Kyant0/AndroidLiquidGlass required Kotlin 2.3.10 + AGP 9.0 (too aggressive). Mortd3kay/liquid-glass-android was v0.1.0 experimental. FletchMcKee/liquid worked with Kotlin 2.3.0 + AGP 8.13.1.
+2. **Scroll performance** — Initially every card used liquid() GPU shaders causing lag. Solution: only static elements use LiquidGlassCard, scrolling items use lightweight GlassListCard with canvas drawing.
+3. **Content visibility through glass** — Bottom bar initially only blurred gradient background, not scrolling content. Solution: dual LiquidState architecture with content inside liquefiable layer.
+4. **SIGSEGV constraint** — Liquid library crashes if liquid() nodes are descendants of liquefiable() with same state. Solution: separate cardState and barState, cards use cardState while bar uses barState.
+5. **Glow animation rendering** — Canvas overlay was hidden by liquid() shader's GPU rendering layer. Solution: Canvas drawn as sibling AFTER the liquid card in compose tree (z-order).
+6. **Kotlin 2.3 migration** — kotlinOptions { jvmTarget } was removed in Kotlin 2.3. Migrated to kotlin { compilerOptions { jvmTarget.set(...) } }.
+7. **Compose BOM icons split** — New BOM (2025.10.00) moved Material Icons to separate dependency. Added material-icons-extended.
+
+### New Files
+- ui/components/GlassComponents.kt — LiquidGlassScaffold, LiquidGlassCard, GlassBottomBar, GlassListCard
+- ui/screens/SubjectAttendanceScreen.kt — Per-subject attendance breakdown
+- ui/viewmodel/SubjectAttendanceViewModel.kt — Calculates subject attendance from timetable + absent days
+- data/model/SubjectAttendance.kt — Data model for subject-wise attendance

@@ -1,6 +1,7 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,89 +12,52 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.attendancewidgetlaudea.data.model.AbsentDay
+import com.example.attendancewidgetlaudea.ui.components.GlassListCard
+import com.example.attendancewidgetlaudea.ui.components.LiquidGlassScaffold
 import com.example.attendancewidgetlaudea.ui.viewmodel.AbsentDaysViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
-// Pre-allocate shapes to avoid recreating on every recomposition
-private val RowShape = RoundedCornerShape(12.dp)
+private val RowShape = RoundedCornerShape(14.dp)
 private val PillShape = RoundedCornerShape(8.dp)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AbsentDaysScreen(
-    viewModel: AbsentDaysViewModel = viewModel(),
-    onBack: () -> Unit
-) {
+fun AbsentDaysScreen(viewModel: AbsentDaysViewModel = viewModel(), onBack: () -> Unit) {
     val uiState by viewModel.uiState.collectAsState()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Absent Days") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
+    Column(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
+        GlassListCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                Text("Absent Days", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            }
         }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            when {
-                uiState.isLoading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-                }
-                uiState.errorMessage != null -> {
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = uiState.errorMessage!!,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = { viewModel.fetchAbsentDays() }) {
-                            Text("Retry")
-                        }
-                    }
-                }
-                uiState.absentDays.isEmpty() -> {
-                    Text(
-                        text = "No absent days found",
-                        modifier = Modifier.align(Alignment.Center),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                else -> {
-                    // Pre-compute all display strings outside of composition
-                    val flatItems = remember(uiState.absentDays) {
-                        buildFlatList(uiState.absentDays)
-                    }
 
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
-                    ) {
-                        items(
-                            items = flatItems,
-                            key = { it.stableKey },
-                            contentType = { it.type }
-                        ) { item ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            when {
+                uiState.isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                uiState.errorMessage != null -> {
+                    Column(modifier = Modifier.align(Alignment.Center).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(uiState.errorMessage!!, color = MaterialTheme.colorScheme.error)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = { viewModel.fetchAbsentDays() }) { Text("Retry") }
+                    }
+                }
+                uiState.absentDays.isEmpty() -> Text("No absent days found", modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> {
+                    val flatItems = remember(uiState.absentDays) { buildFlatList(uiState.absentDays) }
+                    LazyColumn(modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 100.dp)) {
+                        items(items = flatItems, key = { it.stableKey }, contentType = { it.type }) { item ->
                             when (item) {
                                 is FlatItem.DateHeader -> DateHeaderRow(item)
                                 is FlatItem.SessionRow -> SessionRowItem(item)
@@ -109,58 +73,21 @@ fun AbsentDaysScreen(
 private sealed class FlatItem {
     abstract val stableKey: String
     abstract val type: Int
-
-    data class DateHeader(
-        val formattedDate: String,
-        val sessionCount: Int,
-        override val stableKey: String
-    ) : FlatItem() {
-        override val type: Int = 0
-    }
-
-    data class SessionRow(
-        val timeText: String,
-        val courseTitle: String,
-        val courseCode: String,
-        val sessionLabel: String?,
-        val isLastInDay: Boolean,
-        override val stableKey: String
-    ) : FlatItem() {
-        override val type: Int = 1
-    }
+    data class DateHeader(val formattedDate: String, val sessionCount: Int, override val stableKey: String) : FlatItem() { override val type = 0 }
+    data class SessionRow(val timeText: String, val courseTitle: String, val courseCode: String, val sessionLabel: String?, val isLastInDay: Boolean, override val stableKey: String) : FlatItem() { override val type = 1 }
 }
 
-// Pre-compute formatted dates and display strings during list building (off composition)
-private val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
-    timeZone = TimeZone.getTimeZone("UTC")
-}
+private val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
 private val outputFormat = SimpleDateFormat("EEE, MMM d", Locale.US)
-
-private fun formatDate(isoDate: String): String {
-    return try {
-        val date = inputFormat.parse(isoDate)
-        outputFormat.format(date!!)
-    } catch (e: Exception) {
-        isoDate
-    }
-}
+private fun formatDate(isoDate: String): String = try { outputFormat.format(inputFormat.parse(isoDate)!!) } catch (_: Exception) { isoDate }
 
 private fun buildFlatList(absentDays: List<AbsentDay>): List<FlatItem> {
-    val list = ArrayList<FlatItem>(absentDays.size * 4) // pre-size
+    val list = ArrayList<FlatItem>(absentDays.size * 4)
     for (day in absentDays) {
-        val formattedDate = formatDate(day.date)
-        list.add(FlatItem.DateHeader(formattedDate, day.sessions.size, "d_${day.date}"))
+        list.add(FlatItem.DateHeader(formatDate(day.date), day.sessions.size, "d_${day.date}"))
         day.sessions.forEachIndexed { index, session ->
-            list.add(
-                FlatItem.SessionRow(
-                    timeText = "${session.startTime}\n${session.endTime}",
-                    courseTitle = session.courseTitle,
-                    courseCode = session.courseCode,
-                    sessionLabel = session.session?.replace("Session ", "S"),
-                    isLastInDay = index == day.sessions.lastIndex,
-                    stableKey = "s_${day.date}_$index"
-                )
-            )
+            list.add(FlatItem.SessionRow("${session.startTime}\n${session.endTime}", session.courseTitle, session.courseCode,
+                session.session?.replace("Session ", "S"), index == day.sessions.lastIndex, "s_${day.date}_$index"))
         }
     }
     return list
@@ -168,80 +95,38 @@ private fun buildFlatList(absentDays: List<AbsentDay>): List<FlatItem> {
 
 @Composable
 private fun DateHeaderRow(item: FlatItem.DateHeader) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 16.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = item.formattedDate,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = "${item.sessionCount} hrs",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier
-                .background(MaterialTheme.colorScheme.errorContainer, PillShape)
-                .padding(horizontal = 10.dp, vertical = 4.dp)
-        )
+    val isDark = isSystemInDarkTheme()
+    Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(item.formattedDate, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+        Text("${item.sessionCount} hrs", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.clip(PillShape).drawBehind { drawRect(if (isDark) Color(0xFFF44336).copy(alpha = 0.15f) else Color(0xFFF44336).copy(alpha = 0.10f)) }
+                .border(0.5.dp, if (isDark) Color(0xFFF44336).copy(alpha = 0.25f) else Color(0xFFF44336).copy(alpha = 0.20f), PillShape)
+                .padding(horizontal = 10.dp, vertical = 4.dp))
     }
 }
 
 @Composable
 private fun SessionRowItem(item: FlatItem.SessionRow) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = if (item.isLastInDay) 4.dp else 6.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant, RowShape)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Time pill
-        Text(
-            text = item.timeText,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            lineHeight = 14.sp,
-            modifier = Modifier
-                .background(MaterialTheme.colorScheme.primaryContainer, PillShape)
-                .padding(horizontal = 10.dp, vertical = 6.dp)
-        )
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.courseTitle,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                lineHeight = 16.sp
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = item.courseCode,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        if (item.sessionLabel != null) {
-            Text(
-                text = item.sessionLabel,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier
-                    .background(MaterialTheme.colorScheme.secondaryContainer, PillShape)
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            )
+    GlassListCard(modifier = Modifier.fillMaxWidth().padding(bottom = if (item.isLastInDay) 4.dp else 6.dp), shape = RowShape) {
+        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            val isDark = isSystemInDarkTheme()
+            val pillFill = if (isDark) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+            Text(item.timeText, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary, lineHeight = 14.sp,
+                modifier = Modifier.clip(PillShape).drawBehind { drawRect(pillFill) }.border(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.20f), PillShape)
+                    .padding(horizontal = 10.dp, vertical = 6.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(item.courseTitle, fontSize = 13.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(item.courseCode, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (item.sessionLabel != null) {
+                val sessionFill = if (isDark) MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.secondary.copy(alpha = 0.10f)
+                Text(item.sessionLabel, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.clip(PillShape).drawBehind { drawRect(sessionFill) }.border(0.5.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.20f), PillShape)
+                        .padding(horizontal = 8.dp, vertical = 4.dp))
+            }
         }
     }
 }

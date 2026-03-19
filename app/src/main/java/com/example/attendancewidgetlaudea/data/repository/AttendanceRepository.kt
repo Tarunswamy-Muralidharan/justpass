@@ -5,6 +5,7 @@ import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.data.model.AbsentDay
 import com.example.attendancewidgetlaudea.data.model.AttendanceData
 import com.example.attendancewidgetlaudea.data.model.CourseMarks
+import com.example.attendancewidgetlaudea.data.model.TimetableResponse
 import com.example.attendancewidgetlaudea.data.webview.InvalidCredentialsException
 import com.example.attendancewidgetlaudea.data.webview.WebViewAuthenticator
 import kotlinx.coroutines.Dispatchers
@@ -249,6 +250,61 @@ class AttendanceRepository(private val context: Context) {
         return Result.Error("Could not fetch absent details. Try refreshing first.")
     }
 
+    suspend fun fetchTimetable(): Result<TimetableResponse> {
+        val rollNumber = securePrefs.rollNumber
+        val password = securePrefs.password
+        // Semester config ID — hardcoded for 2025-2026 even semester
+        val configId = securePrefs.timetableConfigId ?: DEFAULT_TIMETABLE_CONFIG_ID
+
+        if (rollNumber.isNullOrEmpty()) {
+            return Result.Error("Not logged in")
+        }
+
+        // Fast path: direct HTTP with cached token
+        try {
+            val result = webViewAuthenticator.fetchTimetableDirect(configId, rollNumber)
+            if (result != null && result.isSuccess) {
+                android.util.Log.d("AttendanceRepo", "Timetable fast fetch successful")
+                return Result.Success(result.getOrThrow())
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Timetable fast fetch error: ${e.message}")
+        }
+
+        // Token expired — try refresh token first, then password login
+        android.util.Log.d("AttendanceRepo", "Token expired for timetable, trying refresh token")
+        try {
+            val refreshed = webViewAuthenticator.refreshAccessToken()
+                || (!password.isNullOrEmpty() && webViewAuthenticator.loginViaKeycloak(rollNumber, password))
+            if (refreshed) {
+                val retryResult = webViewAuthenticator.fetchTimetableDirect(configId, rollNumber)
+                if (retryResult != null && retryResult.isSuccess) {
+                    return Result.Success(retryResult.getOrThrow())
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Timetable token refresh error: ${e.message}")
+        }
+
+        // Last resort: full WebView login
+        if (!password.isNullOrEmpty()) {
+            android.util.Log.d("AttendanceRepo", "Falling back to WebView for timetable")
+            val loginResult = login(rollNumber, password)
+            if (loginResult is Result.Success) {
+                try {
+                    val retryResult = webViewAuthenticator.fetchTimetableDirect(configId, rollNumber)
+                    if (retryResult != null && retryResult.isSuccess) {
+                        return Result.Success(retryResult.getOrThrow())
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("AttendanceRepo", "Timetable retry error: ${e.message}")
+                }
+            }
+        }
+
+        return Result.Error("Could not fetch timetable. Try refreshing first.")
+    }
+
     fun isLoggedIn(): Boolean {
         return securePrefs.isLoggedIn()
     }
@@ -275,6 +331,9 @@ class AttendanceRepository(private val context: Context) {
     }
 
     companion object {
+        // Semester config ID for timetable API (2025-2026 even semester)
+        private const val DEFAULT_TIMETABLE_CONFIG_ID = "65d6ee42722e1e6d3ed430b0"
+
         @Volatile
         private var instance: AttendanceRepository? = null
 
