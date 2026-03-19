@@ -11,6 +11,8 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,7 +43,9 @@ import com.example.attendancewidgetlaudea.ui.screens.CAMarksScreen
 import com.example.attendancewidgetlaudea.ui.screens.DashboardScreen
 import com.example.attendancewidgetlaudea.ui.screens.LoginScreen
 import com.example.attendancewidgetlaudea.ui.screens.ProfileScreen
+import com.example.attendancewidgetlaudea.ui.screens.ExemptionsScreen
 import com.example.attendancewidgetlaudea.ui.screens.SubjectAttendanceScreen
+import com.example.attendancewidgetlaudea.ui.screens.SubjectDetailScreen
 import com.example.attendancewidgetlaudea.ui.screens.TimetableScreen
 import com.example.attendancewidgetlaudea.ui.theme.AttendanceWidgetLaudeaTheme
 import com.example.attendancewidgetlaudea.worker.AttendanceRefreshWorker
@@ -69,7 +73,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Screen {
-    Login, Dashboard, AbsentDays, SubjectAttendance, PrivacyPolicy, CAMarks, Timetable, Profile
+    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, PrivacyPolicy, CAMarks, Timetable, Profile
 }
 
 private val bottomTabs = listOf(
@@ -89,6 +93,8 @@ fun AttendanceApp() {
     val isLoggedIn = repository.isLoggedIn()
     var currentScreen by remember { mutableStateOf(if (isLoggedIn) Screen.Dashboard else Screen.Login) }
     var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var selectedCourseCode by remember { mutableStateOf("") }
+    var selectedCourseTitle by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf(securePrefs.displayName ?: "") }
 
     LaunchedEffect(Unit) {
@@ -229,45 +235,76 @@ fun AttendanceApp() {
                     )
                 }
             ) { cardState ->
-                when {
-                    currentScreen == Screen.AbsentDays -> AbsentDaysScreen(onBack = {
-                        currentScreen = Screen.Dashboard
-                        selectedTabIndex = 0
-                    })
-                    currentScreen == Screen.SubjectAttendance -> SubjectAttendanceScreen(
-                        cardState = cardState,
-                        onBack = {
+                Crossfade(
+                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions)) currentScreen.name
+                                  else "tab_$selectedTabIndex",
+                    animationSpec = tween(200),
+                    label = "screenFade"
+                ) { target ->
+                    when (target) {
+                        Screen.AbsentDays.name -> AbsentDaysScreen(onBack = {
                             currentScreen = Screen.Dashboard
                             selectedTabIndex = 0
-                        }
-                    )
-                    selectedTabIndex == 0 -> DashboardScreen(
-                        cardState = cardState,
-                        displayName = displayName,
-                        onLogout = handleLogout,
-                        onAbsentDaysClick = {
-                            Analytics.logFeatureUsed("absent_days")
-                            currentScreen = Screen.AbsentDays
-                        },
-                        onSubjectAttendanceClick = {
-                            Analytics.logFeatureUsed("subject_attendance")
-                            currentScreen = Screen.SubjectAttendance
-                        }
-                    )
-                    selectedTabIndex == 1 -> TimetableScreen(cardState = cardState)
-                    selectedTabIndex == 2 -> CAMarksScreen(
-                        cardState = cardState,
-                        onBack = {
-                            selectedTabIndex = 0
-                            currentScreen = Screen.Dashboard
-                        }
-                    )
-                    selectedTabIndex == 3 -> ProfileScreen(
-                        cardState = cardState,
-                        displayName = displayName,
-                        onLogout = handleLogout,
-                        onPrivacyPolicyClick = { currentScreen = Screen.PrivacyPolicy }
-                    )
+                        })
+                        Screen.SubjectAttendance.name -> SubjectAttendanceScreen(
+                            cardState = cardState,
+                            onBack = {
+                                currentScreen = Screen.Dashboard
+                                selectedTabIndex = 0
+                            },
+                            onSubjectClick = { code, title ->
+                                selectedCourseCode = code
+                                selectedCourseTitle = title
+                                currentScreen = Screen.SubjectDetail
+                            }
+                        )
+                        Screen.SubjectDetail.name -> SubjectDetailScreen(
+                            cardState = cardState,
+                            courseCode = selectedCourseCode,
+                            courseTitle = selectedCourseTitle,
+                            onBack = {
+                                currentScreen = Screen.SubjectAttendance
+                            }
+                        )
+                        Screen.Exemptions.name -> ExemptionsScreen(
+                            cardState = cardState,
+                            onBack = {
+                                currentScreen = Screen.Dashboard
+                                selectedTabIndex = 0
+                            }
+                        )
+                        "tab_0" -> DashboardScreen(
+                            cardState = cardState,
+                            displayName = displayName,
+                            onLogout = handleLogout,
+                            onAbsentDaysClick = {
+                                Analytics.logFeatureUsed("absent_days")
+                                currentScreen = Screen.AbsentDays
+                            },
+                            onSubjectAttendanceClick = {
+                                Analytics.logFeatureUsed("subject_attendance")
+                                currentScreen = Screen.SubjectAttendance
+                            },
+                            onExemptionsClick = {
+                                Analytics.logFeatureUsed("exemptions")
+                                currentScreen = Screen.Exemptions
+                            }
+                        )
+                        "tab_1" -> TimetableScreen(cardState = cardState)
+                        "tab_2" -> CAMarksScreen(
+                            cardState = cardState,
+                            onBack = {
+                                selectedTabIndex = 0
+                                currentScreen = Screen.Dashboard
+                            }
+                        )
+                        "tab_3" -> ProfileScreen(
+                            cardState = cardState,
+                            displayName = displayName,
+                            onLogout = handleLogout,
+                            onPrivacyPolicyClick = { currentScreen = Screen.PrivacyPolicy }
+                        )
+                    }
                 }
             }
         }

@@ -1,8 +1,10 @@
+@file:Suppress("UNUSED_PARAMETER")
 package com.example.attendancewidgetlaudea.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -26,7 +29,6 @@ import com.example.attendancewidgetlaudea.data.model.CourseMarks
 import com.example.attendancewidgetlaudea.data.model.SubComponent
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
-import com.example.attendancewidgetlaudea.ui.components.LiquidGlassCard
 import com.example.attendancewidgetlaudea.ui.viewmodel.CAMarksViewModel
 import io.github.fletchmckee.liquid.LiquidState
 
@@ -35,13 +37,16 @@ fun CAMarksScreen(cardState: LiquidState, viewModel: CAMarksViewModel = viewMode
     val uiState by viewModel.uiState.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-        // Header — real liquid glass
-        LiquidGlassCard(cardState = cardState,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        // Header — lightweight glass for crisp text readability
+        GlassListCard(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            shape = com.example.attendancewidgetlaudea.ui.components.GlassCardShape
+        ) {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-                Text("CA Marks", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text("CA Marks", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurface)
                 IconButton(onClick = { viewModel.fetchCAMarks() }, enabled = !uiState.isLoading) { Icon(Icons.Default.Refresh, "Refresh") }
             }
         }
@@ -72,27 +77,53 @@ fun CAMarksScreen(cardState: LiquidState, viewModel: CAMarksViewModel = viewMode
 @Composable
 private fun CourseCard(course: CourseMarks) {
     var expanded by remember { mutableStateOf(false) }
-    GlassListCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(course.courseCode, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
-                    Text(course.courseTitle, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    val secured = course.testDetails.total.getSecuredAsDouble()
+    val max = course.testDetails.total.getMaxAsDouble()
+    val accentColor = getMarksAccentColor(secured, max)
+    val tintColor = accentColor.copy(alpha = 0.06f)
+
+    GlassListCard(modifier = Modifier.fillMaxWidth(), tintColor = tintColor) {
+        Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            // Colored left accent bar
+            Box(modifier = Modifier
+                .width(4.dp)
+                .fillMaxHeight()
+                .background(accentColor))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(course.courseCode, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Text(course.courseTitle, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    if (max <= 0.0 && (secured == null || secured <= 0.0)) {
+                        // Check if any components have marks even if total is 0
+                        val hasAnyMarks = course.testDetails.components.any { c ->
+                            c.marks?.scaled?.getSecuredAsDouble()?.let { it > 0 } == true ||
+                            (c.hasSubComponent && c.subComponents?.any { s ->
+                                s.marks?.scaled?.getSecuredAsDouble()?.let { it > 0 } == true
+                            } == true)
+                        }
+                        Text(
+                            if (hasAnyMarks) "Tap to expand" else "Awaiting marks",
+                            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    } else {
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(course.testDetails.total.getSecuredDisplay(), fontWeight = FontWeight.Bold, fontSize = 22.sp,
+                                color = accentColor)
+                            Text("/ ${max.toInt()}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, if (expanded) "Collapse" else "Expand")
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(course.testDetails.total.getSecuredDisplay(), fontWeight = FontWeight.Bold, fontSize = 20.sp,
-                        color = getMarksColor(course.testDetails.total.getSecuredAsDouble(), course.testDetails.total.getMaxAsDouble()))
-                    Text("/ ${course.testDetails.total.getMaxAsDouble().toInt()}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, if (expanded) "Collapse" else "Expand")
-            }
-            AnimatedVisibility(expanded, enter = expandVertically(), exit = shrinkVertically()) {
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-                    course.testDetails.components.forEach { ComponentCard(it) }
+                AnimatedVisibility(expanded, enter = expandVertically(), exit = shrinkVertically()) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                        course.testDetails.components.forEach { ComponentCard(it) }
+                    }
                 }
             }
         }
@@ -141,9 +172,28 @@ private fun ComponentCard(component: Component) {
     }
 }
 
+private val MarksGreen = Color(0xFF4CAF50)
+private val MarksYellow = Color(0xFFFFC107)
+private val MarksRed = Color(0xFFF44336)
+private val MarksGray = Color(0xFF9E9E9E)
+
+private fun getMarksAccentColor(secured: Double?, max: Double): Color {
+    if (secured == null || max <= 0.0) return MarksGray
+    val pct = (secured / max) * 100
+    return when {
+        pct >= 75 -> MarksGreen
+        pct >= 50 -> MarksYellow
+        else -> MarksRed
+    }
+}
+
 @Composable
-private fun getMarksColor(secured: Double?, max: Double): androidx.compose.ui.graphics.Color {
+private fun getMarksColor(secured: Double?, max: Double): Color {
     if (secured == null) return MaterialTheme.colorScheme.onSurface
     val pct = if (max > 0) (secured / max) * 100 else 0.0
-    return when { pct >= 75 -> MaterialTheme.colorScheme.primary; pct >= 50 -> MaterialTheme.colorScheme.tertiary; else -> MaterialTheme.colorScheme.error }
+    return when {
+        pct >= 75 -> MarksGreen
+        pct >= 50 -> MarksYellow
+        else -> MarksRed
+    }
 }

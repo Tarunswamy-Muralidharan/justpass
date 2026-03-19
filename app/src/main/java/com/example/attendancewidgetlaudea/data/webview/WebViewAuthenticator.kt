@@ -782,6 +782,83 @@ class WebViewAuthenticator(private val context: Context) {
     }
 
     /**
+     * Fetch present days using cached auth token (fast direct HTTP).
+     * Response format is identical to absent days.
+     */
+    suspend fun fetchPresentDays(rollNumber: String): Result<List<AbsentDay>>? {
+        val token = cachedAuthToken ?: return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                android.util.Log.d("WebViewAuth", "Fetching present days for: $rollNumber")
+                val url = java.net.URL("https://laudea.psgitech.ac.in/sis/attendance/present/$rollNumber")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Accept", "application/json, text/plain, */*")
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val responseCode = connection.responseCode
+                android.util.Log.d("WebViewAuth", "Present days response: $responseCode")
+
+                if (responseCode == 200) {
+                    val jsonData = connection.inputStream.bufferedReader().use { it.readText() }
+                    val listType = object : TypeToken<List<AbsentDay>>() {}.type
+                    val presentDays: List<AbsentDay> = gson.fromJson(jsonData, listType)
+                    Result.success(presentDays)
+                } else if (responseCode == 401) {
+                    cachedAuthToken = null
+                    null
+                } else {
+                    Result.failure(Exception("HTTP $responseCode"))
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Present days error: ${e.message}")
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * Fetch exemptions using cached auth token (fast direct HTTP).
+     */
+    suspend fun fetchExemptionsDirect(rollNumber: String): Result<List<com.example.attendancewidgetlaudea.data.model.Exemption>>? {
+        val token = cachedAuthToken ?: return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                android.util.Log.d("WebViewAuth", "Fetching exemptions for: $rollNumber")
+                val url = java.net.URL("https://laudea.psgitech.ac.in/sis/remote/exemptions/$rollNumber")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Accept", "application/json, text/plain, */*")
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val responseCode = connection.responseCode
+                android.util.Log.d("WebViewAuth", "Exemptions response: $responseCode")
+
+                if (responseCode == 200) {
+                    val jsonData = connection.inputStream.bufferedReader().use { it.readText() }
+                    val listType = object : TypeToken<List<com.example.attendancewidgetlaudea.data.model.Exemption>>() {}.type
+                    val exemptions: List<com.example.attendancewidgetlaudea.data.model.Exemption> = gson.fromJson(jsonData, listType)
+                    Result.success(exemptions)
+                } else if (responseCode == 401) {
+                    cachedAuthToken = null
+                    null
+                } else {
+                    Result.failure(Exception("HTTP $responseCode"))
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Exemptions error: ${e.message}")
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
      * Fetch timetable using cached auth token (fast direct HTTP).
      */
     suspend fun fetchTimetableDirect(configId: String, rollNumber: String): Result<TimetableResponse>? {
