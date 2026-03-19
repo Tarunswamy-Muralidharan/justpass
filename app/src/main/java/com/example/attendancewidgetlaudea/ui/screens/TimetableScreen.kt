@@ -22,7 +22,7 @@ import com.example.attendancewidgetlaudea.data.model.SessionInfo
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.components.GlassListSurface
-import com.example.attendancewidgetlaudea.ui.components.LiquidGlassCard
+
 import com.example.attendancewidgetlaudea.ui.viewmodel.TimetableViewModel
 import io.github.fletchmckee.liquid.LiquidState
 import java.util.Calendar
@@ -37,8 +37,7 @@ fun TimetableScreen(cardState: LiquidState, viewModel: TimetableViewModel = view
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         // Day tabs — real liquid glass
         if (uiState.days.isNotEmpty()) {
-            LiquidGlassCard(
-                cardState = cardState,
+            GlassListCard(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 shape = RoundedCornerShape(16.dp)
             ) {

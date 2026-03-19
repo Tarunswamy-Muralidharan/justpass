@@ -1,5 +1,6 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,7 +23,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.attendancewidgetlaudea.data.model.SubjectAttendance
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
-import com.example.attendancewidgetlaudea.ui.components.LiquidGlassCard
+
 import com.example.attendancewidgetlaudea.ui.viewmodel.SubjectAttendanceViewModel
 import io.github.fletchmckee.liquid.LiquidState
 
@@ -30,30 +31,34 @@ import io.github.fletchmckee.liquid.LiquidState
 fun SubjectAttendanceScreen(
     cardState: LiquidState,
     viewModel: SubjectAttendanceViewModel = viewModel(),
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onSubjectClick: (courseCode: String, courseTitle: String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-        // Header — real liquid glass
-        LiquidGlassCard(
-            cardState = cardState,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+        // Header
+        GlassListCard(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            shape = com.example.attendancewidgetlaudea.ui.components.GlassCardShape
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back",
+                        tint = MaterialTheme.colorScheme.onSurface)
                 }
                 Text("Subject Attendance", fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f))
                 IconButton(
                     onClick = { viewModel.fetchSubjectAttendance() },
                     enabled = !uiState.isLoading
                 ) {
-                    Icon(Icons.Default.Refresh, "Refresh")
+                    Icon(Icons.Default.Refresh, "Refresh",
+                        tint = MaterialTheme.colorScheme.onSurface)
                 }
             }
         }
@@ -91,7 +96,10 @@ fun SubjectAttendanceScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(uiState.subjects) { subject ->
-                            SubjectCard(subject)
+                            SubjectCard(
+                                subject = subject,
+                                onClick = { onSubjectClick(subject.courseCode, subject.courseTitle) }
+                            )
                         }
                     }
                 }
@@ -101,7 +109,7 @@ fun SubjectAttendanceScreen(
 }
 
 @Composable
-private fun SubjectCard(subject: SubjectAttendance) {
+private fun SubjectCard(subject: SubjectAttendance, onClick: () -> Unit = {}) {
     val isDark = isSystemInDarkTheme()
     val percentage = subject.attendancePercentage
     val barColor = when {
@@ -112,7 +120,7 @@ private fun SubjectCard(subject: SubjectAttendance) {
     val tintColor = barColor.copy(alpha = if (isDark) 0.08f else 0.05f)
 
     GlassListCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable { onClick() },
         tintColor = tintColor
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
@@ -164,28 +172,34 @@ private fun SubjectCard(subject: SubjectAttendance) {
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Present / Absent / Total stats
+            // Present / Absent / Exemption / Total stats
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "Present: ${subject.presentCount}",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Absent: ${subject.absentCount}",
-                    fontSize = 11.sp,
+                Text("P: ${subject.presentCount}", fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("A: ${subject.absentCount}", fontSize = 11.sp,
                     color = if (subject.absentCount > 0) barColor.copy(alpha = 0.8f)
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Total: ~${subject.estimatedTotal}",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
+                            else MaterialTheme.colorScheme.onSurfaceVariant)
+                if (subject.exemptionCount > 0) {
+                    Text("E: ${subject.exemptionCount}", fontSize = 11.sp,
+                        color = Color(0xFF64B5F6).copy(alpha = 0.8f))
+                }
+                Text("Total: ${subject.totalCount}", fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
             }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Tap for details hint
+            Text(
+                text = "Tap for details \u2192",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.End
+            )
         }
     }
 }

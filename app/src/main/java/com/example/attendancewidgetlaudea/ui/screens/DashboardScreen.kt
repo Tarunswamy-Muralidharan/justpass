@@ -48,7 +48,8 @@ fun DashboardScreen(
     displayName: String = "",
     onLogout: () -> Unit,
     onAbsentDaysClick: () -> Unit = {},
-    onSubjectAttendanceClick: () -> Unit = {}
+    onSubjectAttendanceClick: () -> Unit = {},
+    onExemptionsClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
@@ -71,7 +72,7 @@ fun DashboardScreen(
     ) {
         // Header — liquid glass with light sweep on refresh
         Box(modifier = Modifier.fillMaxWidth()) {
-            LiquidGlassCard(cardState = cardState, modifier = Modifier.fillMaxWidth()) {
+            GlassListCard(modifier = Modifier.fillMaxWidth(), shape = GlassCardShape) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -163,15 +164,31 @@ fun DashboardScreen(
                 Text("Attendance (with exemption)", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("${String.format("%.1f", uiState.attendanceData.attendanceWithExemption)}%",
-                    fontSize = 48.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    fontSize = 52.sp, fontWeight = FontWeight.Black, letterSpacing = (-1).sp, color = MaterialTheme.colorScheme.onSurface)
                 if (uiState.attendanceData.attendanceWithExemption != uiState.attendanceData.attendancePercentage) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Without exemption: ${String.format("%.1f", uiState.attendanceData.attendancePercentage)}%",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                 }
+                // Warning: hours needed for 75%
+                if (uiState.attendanceData.attendanceWithExemption < 75.0 && uiState.attendanceData.enteredTillDate > 0) {
+                    val present = uiState.attendanceData.presentWithExemptionCount
+                    val total = uiState.attendanceData.enteredTillDate
+                    // Need: (present + x) / (total + x) >= 0.75 → x >= (0.75*total - present) / 0.25
+                    val hoursNeeded = kotlin.math.ceil((0.75 * total - present) / 0.25).toInt()
+                    if (hoursNeeded > 0) {
+                        // Approx days = hours / avg hours per day (~6 classes/day)
+                        val approxDays = kotlin.math.ceil(hoursNeeded / 6.0).toInt()
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Attend $hoursNeeded more hours (~$approxDays days) to reach 75%",
+                            fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                            color = Color(0xFFFF8A80))
+                    }
+                }
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Tap for subject-wise details",
-                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
+                Text("Tap for subject-wise details →",
+                    fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f))
             }
         }
 
@@ -189,7 +206,25 @@ fun DashboardScreen(
                 }
             }
             if (uiState.attendanceData.exemptionCount > 0) {
-                StatCard("Exemption", uiState.attendanceData.exemptionCount.toString(), Modifier.weight(1f))
+                GlassListCard(
+                    modifier = Modifier.weight(1f).clickable { onExemptionsClick() },
+                    shape = GlassCardShapeSmall
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("Exemption", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            uiState.attendanceData.exemptionCount.toString(),
+                            fontSize = 28.sp, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text("Tap for details", fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                    }
+                }
             }
         }
 
@@ -250,9 +285,9 @@ private fun StatCard(title: String, value: String, modifier: Modifier = Modifier
 private fun getAttendanceTintColor(percentage: Double): Color {
     val isDark = isSystemInDarkTheme()
     return when {
-        percentage >= 75 -> if (isDark) Color(0xFF4CAF50).copy(alpha = 0.12f) else Color(0xFF4CAF50).copy(alpha = 0.08f)
-        percentage >= 65 -> if (isDark) Color(0xFFFFC107).copy(alpha = 0.12f) else Color(0xFFFFC107).copy(alpha = 0.08f)
-        else -> if (isDark) Color(0xFFF44336).copy(alpha = 0.12f) else Color(0xFFF44336).copy(alpha = 0.08f)
+        percentage >= 75 -> if (isDark) Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFF00C853).copy(alpha = 0.12f)
+        percentage >= 65 -> if (isDark) Color(0xFFFFEA00).copy(alpha = 0.15f) else Color(0xFFFFD600).copy(alpha = 0.12f)
+        else -> if (isDark) Color(0xFFFF5252).copy(alpha = 0.18f) else Color(0xFFFF1744).copy(alpha = 0.14f)
     }
 }
 

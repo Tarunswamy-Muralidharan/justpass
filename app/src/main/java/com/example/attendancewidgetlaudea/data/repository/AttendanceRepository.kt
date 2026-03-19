@@ -5,6 +5,7 @@ import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.data.model.AbsentDay
 import com.example.attendancewidgetlaudea.data.model.AttendanceData
 import com.example.attendancewidgetlaudea.data.model.CourseMarks
+import com.example.attendancewidgetlaudea.data.model.Exemption
 import com.example.attendancewidgetlaudea.data.model.TimetableResponse
 import com.example.attendancewidgetlaudea.data.webview.InvalidCredentialsException
 import com.example.attendancewidgetlaudea.data.webview.WebViewAuthenticator
@@ -248,6 +249,108 @@ class AttendanceRepository(private val context: Context) {
         }
 
         return Result.Error("Could not fetch absent details. Try refreshing first.")
+    }
+
+    suspend fun fetchPresentDays(): Result<List<AbsentDay>> {
+        val rollNumber = securePrefs.rollNumber
+        val password = securePrefs.password
+        if (rollNumber.isNullOrEmpty()) {
+            return Result.Error("Not logged in")
+        }
+
+        // Try with cached token first
+        try {
+            val result = webViewAuthenticator.fetchPresentDays(rollNumber)
+            if (result != null && result.isSuccess) {
+                return Result.Success(result.getOrThrow())
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Present days error: ${e.message}")
+        }
+
+        // Token expired — try refresh token first, then password login
+        android.util.Log.d("AttendanceRepo", "Token expired for present days, trying refresh token")
+        try {
+            val refreshed = webViewAuthenticator.refreshAccessToken()
+                || (!password.isNullOrEmpty() && webViewAuthenticator.loginViaKeycloak(rollNumber, password))
+            if (refreshed) {
+                val retryResult = webViewAuthenticator.fetchPresentDays(rollNumber)
+                if (retryResult != null && retryResult.isSuccess) {
+                    return Result.Success(retryResult.getOrThrow())
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Present days token refresh error: ${e.message}")
+        }
+
+        // Last resort: full WebView login
+        if (!password.isNullOrEmpty()) {
+            android.util.Log.d("AttendanceRepo", "Direct login failed, falling back to WebView for present days")
+            val loginResult = login(rollNumber, password)
+            if (loginResult is Result.Success) {
+                try {
+                    val retryResult = webViewAuthenticator.fetchPresentDays(rollNumber)
+                    if (retryResult != null && retryResult.isSuccess) {
+                        return Result.Success(retryResult.getOrThrow())
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("AttendanceRepo", "Present days retry error: ${e.message}")
+                }
+            }
+        }
+
+        return Result.Error("Could not fetch present days. Try refreshing first.")
+    }
+
+    suspend fun fetchExemptions(): Result<List<Exemption>> {
+        val rollNumber = securePrefs.rollNumber
+        val password = securePrefs.password
+        if (rollNumber.isNullOrEmpty()) {
+            return Result.Error("Not logged in")
+        }
+
+        // Try with cached token first
+        try {
+            val result = webViewAuthenticator.fetchExemptionsDirect(rollNumber)
+            if (result != null && result.isSuccess) {
+                return Result.Success(result.getOrThrow())
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Exemptions error: ${e.message}")
+        }
+
+        // Token expired — try refresh token first, then password login
+        android.util.Log.d("AttendanceRepo", "Token expired for exemptions, trying refresh token")
+        try {
+            val refreshed = webViewAuthenticator.refreshAccessToken()
+                || (!password.isNullOrEmpty() && webViewAuthenticator.loginViaKeycloak(rollNumber, password))
+            if (refreshed) {
+                val retryResult = webViewAuthenticator.fetchExemptionsDirect(rollNumber)
+                if (retryResult != null && retryResult.isSuccess) {
+                    return Result.Success(retryResult.getOrThrow())
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Exemptions token refresh error: ${e.message}")
+        }
+
+        // Last resort: full WebView login
+        if (!password.isNullOrEmpty()) {
+            android.util.Log.d("AttendanceRepo", "Direct login failed, falling back to WebView for exemptions")
+            val loginResult = login(rollNumber, password)
+            if (loginResult is Result.Success) {
+                try {
+                    val retryResult = webViewAuthenticator.fetchExemptionsDirect(rollNumber)
+                    if (retryResult != null && retryResult.isSuccess) {
+                        return Result.Success(retryResult.getOrThrow())
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("AttendanceRepo", "Exemptions retry error: ${e.message}")
+                }
+            }
+        }
+
+        return Result.Error("Could not fetch exemptions. Try refreshing first.")
     }
 
     suspend fun fetchTimetable(): Result<TimetableResponse> {
