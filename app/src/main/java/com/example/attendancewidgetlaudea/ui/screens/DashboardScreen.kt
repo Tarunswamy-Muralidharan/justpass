@@ -2,17 +2,28 @@ package com.example.attendancewidgetlaudea.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -20,365 +31,229 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.attendancewidgetlaudea.R
+import com.example.attendancewidgetlaudea.ui.components.GlassCardShape
+import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
+import com.example.attendancewidgetlaudea.ui.components.GlassListCard
+import com.example.attendancewidgetlaudea.ui.components.LiquidGlassCard
 import com.example.attendancewidgetlaudea.ui.viewmodel.DashboardViewModel
+import io.github.fletchmckee.liquid.LiquidState
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
+    cardState: LiquidState,
     viewModel: DashboardViewModel = viewModel(),
+    displayName: String = "",
     onLogout: () -> Unit,
-    onPrivacyPolicyClick: () -> Unit,
-    onCAMarksClick: () -> Unit = {},
-    onAbsentDaysClick: () -> Unit = {}
+    onAbsentDaysClick: () -> Unit = {},
+    onSubjectAttendanceClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var showLogoutDialog by remember { mutableStateOf(false) }
-    var showMenu by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
 
-    // Logout confirmation dialog
-    if (showLogoutDialog) {
-        AlertDialog(
-            onDismissRequest = { showLogoutDialog = false },
-            title = { Text("Logout") },
-            text = { Text("Are you sure you want to logout?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showLogoutDialog = false
-                    onLogout()
-                }) {
-                    Text("Logout")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLogoutDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
+    // Light sweep animation around the header card on refresh
+    var refreshGlowKey by remember { mutableIntStateOf(0) }
+    val glowAnim = remember { Animatable(0f) }
+    LaunchedEffect(refreshGlowKey) {
+        if (refreshGlowKey > 0) {
+            glowAnim.snapTo(0f)
+            glowAnim.animateTo(1f, tween(1000, easing = LinearEasing))
+        }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Attendance") },
-                actions = {
+    Column(
+        modifier = Modifier.fillMaxSize().statusBarsPadding()
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Header — liquid glass with light sweep on refresh
+        Box(modifier = Modifier.fillMaxWidth()) {
+            LiquidGlassCard(cardState = cardState, modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = if (displayName.isNotEmpty()) "Welcome, ${displayName.split(" ").firstOrNull() ?: displayName}" else "Attendance",
+                            fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(uiState.rollNumber, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     IconButton(
-                        onClick = { viewModel.refreshAttendance() },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            refreshGlowKey++
+                            viewModel.refreshAttendance()
+                        },
                         enabled = !uiState.isRefreshing
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                    }
-                    
-                    // Overflow menu
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
-                        }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("CA Marks") },
-                                onClick = {
-                                    showMenu = false
-                                    onCAMarksClick()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Privacy Policy") },
-                                onClick = {
-                                    showMenu = false
-                                    onPrivacyPolicyClick()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Logout") },
-                                onClick = {
-                                    showMenu = false
-                                    showLogoutDialog = true
-                                }
-                            )
-                        }
+                        Icon(Icons.Default.Refresh, "Refresh", tint = MaterialTheme.colorScheme.primary)
                     }
                 }
-            )
+            }
+
+            // Realistic glass light reflection — diagonal beam sweeps top-left to bottom-right
+            val g = glowAnim.value
+            if (g in 0.001f..0.999f) {
+                Canvas(modifier = Modifier.matchParentSize()) {
+                    // The beam travels diagonally across the card
+                    // Map progress to a position along the diagonal (with overshoot for smooth entry/exit)
+                    val diagonal = size.width + size.height
+                    val beamCenter = -size.height * 0.3f + diagonal * 1.3f * g
+                    val beamWidth = size.width * 0.45f
+
+                    // Fade in at start, fade out at end
+                    val edgeFade = when {
+                        g < 0.15f -> g / 0.15f
+                        g > 0.8f -> (1f - g) / 0.2f
+                        else -> 1f
+                    }.coerceIn(0f, 1f)
+
+                    // Main specular highlight — bright diagonal band
+                    drawRect(
+                        brush = Brush.linearGradient(
+                            colorStops = arrayOf(
+                                0f to Color.Transparent,
+                                0.3f to Color.Transparent,
+                                0.42f to Color.White.copy(alpha = 0.06f * edgeFade),
+                                0.48f to Color.White.copy(alpha = 0.25f * edgeFade),
+                                0.50f to Color.White.copy(alpha = 0.45f * edgeFade),
+                                0.52f to Color.White.copy(alpha = 0.25f * edgeFade),
+                                0.58f to Color.White.copy(alpha = 0.06f * edgeFade),
+                                0.7f to Color.Transparent,
+                                1f to Color.Transparent
+                            ),
+                            start = Offset(beamCenter - beamWidth, 0f),
+                            end = Offset(beamCenter + beamWidth, size.height)
+                        )
+                    )
+
+                    // Secondary subtle blue tint behind the main beam
+                    drawRect(
+                        brush = Brush.linearGradient(
+                            colorStops = arrayOf(
+                                0f to Color.Transparent,
+                                0.35f to Color.Transparent,
+                                0.47f to Color(0xFF90CAF9).copy(alpha = 0.10f * edgeFade),
+                                0.53f to Color(0xFF90CAF9).copy(alpha = 0.10f * edgeFade),
+                                0.65f to Color.Transparent,
+                                1f to Color.Transparent
+                            ),
+                            start = Offset(beamCenter - beamWidth * 1.2f, 0f),
+                            end = Offset(beamCenter + beamWidth * 1.2f, size.height)
+                        )
+                    )
+                }
+            }
         }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Roll Number Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Roll Number",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Text(
-                        text = uiState.rollNumber,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
 
-            Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-            // Attendance Percentage Circle - Shows WITH exemption as main
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = getAttendanceColor(uiState.attendanceData.attendanceWithExemption)
-                )
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Attendance (with exemption)",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "${String.format("%.1f", uiState.attendanceData.attendanceWithExemption)}%",
-                        fontSize = 48.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    // Show without exemption for reference
-                    if (uiState.attendanceData.attendanceWithExemption != uiState.attendanceData.attendancePercentage) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Without exemption: ${String.format("%.1f", uiState.attendanceData.attendancePercentage)}%",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Stats Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                StatCard(
-                    title = "Present",
-                    value = uiState.attendanceData.presentWithExemptionCount.toString(),
-                    modifier = Modifier.weight(1f),
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                )
-                Card(
-                    onClick = { onAbsentDaysClick() },
-                    modifier = Modifier.weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "Absent",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = uiState.attendanceData.absentCount.toString(),
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Tap for details",
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                    }
-                }
-                if (uiState.attendanceData.exemptionCount > 0) {
-                    StatCard(
-                        title = "Exemption",
-                        value = uiState.attendanceData.exemptionCount.toString(),
-                        modifier = Modifier.weight(1f),
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Entered & Not Entered Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                StatCard(
-                    title = "Total Classes",
-                    value = uiState.attendanceData.enteredTillDate.toString(),
-                    modifier = Modifier.weight(1f),
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-                StatCard(
-                    title = "Not Entered",
-                    value = uiState.attendanceData.notEnteredTillDate.toString(),
-                    modifier = Modifier.weight(1f),
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // CA Marks Button
-            Button(
-                onClick = onCAMarksClick,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            ) {
-                Text(
-                    text = "View CA Marks",
-                    fontWeight = FontWeight.Medium
-                )
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            // Last Updated
-            if (uiState.attendanceData.lastUpdated > 0) {
-                Text(
-                    text = "Last updated: ${formatTimestamp(uiState.attendanceData.lastUpdated)}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            // Loading indicator
-            if (uiState.isRefreshing) {
+        // Attendance % — real liquid glass with color tint
+        val attendanceTint = getAttendanceTintColor(uiState.attendanceData.attendanceWithExemption)
+        LiquidGlassCard(cardState = cardState,
+            modifier = Modifier.fillMaxWidth().clickable { onSubjectAttendanceClick() },
+            tintColor = attendanceTint) {
+            Column(modifier = Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Attendance (with exemption)", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                 Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text("${String.format("%.1f", uiState.attendanceData.attendanceWithExemption)}%",
+                    fontSize = 48.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                if (uiState.attendanceData.attendanceWithExemption != uiState.attendanceData.attendancePercentage) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Without exemption: ${String.format("%.1f", uiState.attendanceData.attendancePercentage)}%",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Tap for subject-wise details",
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
             }
+        }
 
-            // Error message
-            uiState.errorMessage?.let { error ->
-                Spacer(modifier = Modifier.height(8.dp))
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = error,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(12.dp),
-                        textAlign = TextAlign.Center,
-                        fontSize = 12.sp
-                    )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Stats — lightweight for performance
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            StatCard("Present", uiState.attendanceData.presentWithExemptionCount.toString(), Modifier.weight(1f))
+            GlassListCard(modifier = Modifier.weight(1f).clickable { onAbsentDaysClick() }, shape = GlassCardShapeSmall) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Absent", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(uiState.attendanceData.absentCount.toString(), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Tap for details", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Features/colabs section with Discord button
-            val context = LocalContext.current
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = "for features or colabs: Tarunswamy M",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_discord),
-                    contentDescription = "Discord",
-                    modifier = Modifier
-                        .size(20.dp)
-                        .clickable {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://discordapp.com/users/zeni15u"))
-                            context.startActivity(intent)
-                        },
-                    tint = androidx.compose.ui.graphics.Color(0xFF5865F2)
-                )
+            if (uiState.attendanceData.exemptionCount > 0) {
+                StatCard("Exemption", uiState.attendanceData.exemptionCount.toString(), Modifier.weight(1f))
             }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            StatCard("Total Classes", uiState.attendanceData.enteredTillDate.toString(), Modifier.weight(1f))
+            StatCard("Not Entered", uiState.attendanceData.notEnteredTillDate.toString(), Modifier.weight(1f))
+        }
+
+        if (uiState.isRefreshing) {
+            Spacer(modifier = Modifier.height(8.dp))
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+        }
+
+        uiState.errorMessage?.let { error ->
+            Spacer(modifier = Modifier.height(8.dp))
+            GlassListCard(modifier = Modifier.fillMaxWidth(), tintColor = MaterialTheme.colorScheme.error.copy(alpha = 0.08f)) {
+                Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp), textAlign = TextAlign.Center, fontSize = 12.sp)
+            }
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        // Credit + contact
+        val context = LocalContext.current
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            Text("for features or colabs: Tarunswamy M", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(painter = painterResource(id = R.drawable.ic_discord), contentDescription = "Discord",
+                modifier = Modifier.size(20.dp).clickable {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://discordapp.com/users/zeni15u")))
+                }, tint = Color(0xFF5865F2))
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (uiState.attendanceData.lastUpdated > 0) {
+            Text("Last updated: ${formatTimestamp(uiState.attendanceData.lastUpdated)}",
+                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
         }
     }
 }
 
 @Composable
-private fun StatCard(
-    title: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    containerColor: androidx.compose.ui.graphics.Color
-) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = containerColor)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = title,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+private fun StatCard(title: String, value: String, modifier: Modifier = Modifier) {
+    GlassListCard(modifier = modifier, shape = GlassCardShapeSmall) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(title, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = value,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text(value, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
 
 @Composable
-private fun getAttendanceColor(percentage: Double): androidx.compose.ui.graphics.Color {
+private fun getAttendanceTintColor(percentage: Double): Color {
+    val isDark = isSystemInDarkTheme()
     return when {
-        percentage >= 75 -> MaterialTheme.colorScheme.primaryContainer
-        percentage >= 65 -> MaterialTheme.colorScheme.tertiaryContainer
-        else -> MaterialTheme.colorScheme.errorContainer
+        percentage >= 75 -> if (isDark) Color(0xFF4CAF50).copy(alpha = 0.12f) else Color(0xFF4CAF50).copy(alpha = 0.08f)
+        percentage >= 65 -> if (isDark) Color(0xFFFFC107).copy(alpha = 0.12f) else Color(0xFFFFC107).copy(alpha = 0.08f)
+        else -> if (isDark) Color(0xFFF44336).copy(alpha = 0.12f) else Color(0xFFF44336).copy(alpha = 0.08f)
     }
 }
 
-private fun formatTimestamp(timestamp: Long): String {
-    val sdf = SimpleDateFormat("MMM dd, hh:mm a", Locale.getDefault())
-    return sdf.format(Date(timestamp))
-}
+private fun formatTimestamp(timestamp: Long): String = SimpleDateFormat("MMM dd, hh:mm a", Locale.getDefault()).format(Date(timestamp))

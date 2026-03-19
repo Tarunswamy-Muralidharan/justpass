@@ -15,6 +15,7 @@ import com.example.attendancewidgetlaudea.data.model.AbsentDay
 import com.example.attendancewidgetlaudea.data.model.AttendanceData
 import com.example.attendancewidgetlaudea.data.model.AttendanceResponse
 import com.example.attendancewidgetlaudea.data.model.CourseMarks
+import com.example.attendancewidgetlaudea.data.model.TimetableResponse
 import com.example.attendancewidgetlaudea.data.model.TokenResponse
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -45,6 +46,7 @@ class WebViewAuthenticator(private val context: Context) {
         private const val ATTENDANCE_API_PATTERN = "/sis/attendance/"
         private const val CA_MARKS_API_URL = "https://laudea.psgitech.ac.in/sis/ca/marks/v2/"
         private const val ATTENDANCE_API_BASE = "https://laudea.psgitech.ac.in/sis/attendance/"
+        private const val TIMETABLE_API_BASE = "https://laudea.psgitech.ac.in/sis/time/table/"
         private const val KEYCLOAK_TOKEN_URL = "https://accounts.psgitech.ac.in/realms/itech/protocol/openid-connect/token"
     }
 
@@ -774,6 +776,43 @@ class WebViewAuthenticator(private val context: Context) {
                 }
             } catch (e: Exception) {
                 android.util.Log.e("WebViewAuth", "Absent days error: ${e.message}")
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * Fetch timetable using cached auth token (fast direct HTTP).
+     */
+    suspend fun fetchTimetableDirect(configId: String, rollNumber: String): Result<TimetableResponse>? {
+        val token = cachedAuthToken ?: return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                android.util.Log.d("WebViewAuth", "Fetching timetable for: $rollNumber with config: $configId")
+                val url = java.net.URL("${TIMETABLE_API_BASE}$configId/$rollNumber")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Accept", "application/json, text/plain, */*")
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val responseCode = connection.responseCode
+                android.util.Log.d("WebViewAuth", "Timetable response: $responseCode")
+
+                if (responseCode == 200) {
+                    val jsonData = connection.inputStream.bufferedReader().use { it.readText() }
+                    val timetable = gson.fromJson(jsonData, TimetableResponse::class.java)
+                    Result.success(timetable)
+                } else if (responseCode == 401) {
+                    cachedAuthToken = null
+                    null
+                } else {
+                    Result.failure(Exception("HTTP $responseCode"))
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Timetable fetch error: ${e.message}")
                 Result.failure(e)
             }
         }

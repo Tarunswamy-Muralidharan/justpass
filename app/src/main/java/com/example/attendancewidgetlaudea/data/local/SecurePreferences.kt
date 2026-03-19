@@ -50,6 +50,18 @@ class SecurePreferences(context: Context) {
         get() = securePrefs.getLong(KEY_TOKEN_EXPIRY, 0L)
         set(value) = securePrefs.edit().putLong(KEY_TOKEN_EXPIRY, value).apply()
 
+    var timetableConfigId: String?
+        get() = regularPrefs.getString(KEY_TIMETABLE_CONFIG_ID, null)
+        set(value) = regularPrefs.edit().putString(KEY_TIMETABLE_CONFIG_ID, value).apply()
+
+    var cachedTimetableJson: String?
+        get() = regularPrefs.getString(KEY_CACHED_TIMETABLE, null)
+        set(value) = regularPrefs.edit().putString(KEY_CACHED_TIMETABLE, value).apply()
+
+    var displayName: String?
+        get() = regularPrefs.getString(KEY_DISPLAY_NAME, null)
+        set(value) = regularPrefs.edit().putString(KEY_DISPLAY_NAME, value).apply()
+
     // Regular storage for non-sensitive data (attendance cache)
     var cachedPresentCount: Int
         get() = regularPrefs.getInt(KEY_PRESENT_COUNT, 0)
@@ -160,6 +172,9 @@ class SecurePreferences(context: Context) {
         private const val KEY_ATTENDANCE_WITH_EXEMPTION = "attendance_with_exemption"
         private const val KEY_EXEMPTION_COUNT = "exemption_count"
         private const val KEY_LAST_UPDATED = "last_updated"
+        private const val KEY_TIMETABLE_CONFIG_ID = "timetable_config_id"
+        private const val KEY_CACHED_TIMETABLE = "cached_timetable"
+        private const val KEY_DISPLAY_NAME = "display_name"
 
         @Volatile
         private var instance: SecurePreferences? = null
