@@ -58,7 +58,7 @@ fun AbsentDaysScreen(viewModel: AbsentDaysViewModel = viewModel(), onBack: () ->
                 else -> {
                     val flatItems = remember(uiState.absentDays) { buildFlatList(uiState.absentDays) }
                     LazyColumn(modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 100.dp)) {
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 130.dp)) {
                         items(items = flatItems, key = { it.stableKey }, contentType = { it.type }) { item ->
                             when (item) {
                                 is FlatItem.DateHeader -> DateHeaderRow(item)

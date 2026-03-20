@@ -91,7 +91,7 @@ fun SubjectAttendanceScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
                             start = 16.dp, end = 16.dp,
-                            top = 8.dp, bottom = 100.dp
+                            top = 8.dp, bottom = 130.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {

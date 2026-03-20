@@ -1,8 +1,14 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.MediaPlayer
 import android.net.Uri
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -15,12 +21,25 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import kotlinx.coroutines.delay
 import com.example.attendancewidgetlaudea.R
 import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.data.repository.AttendanceRepository
@@ -28,6 +47,8 @@ import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.components.LiquidGlassCard
 import com.example.attendancewidgetlaudea.ui.components.LiquidGlassSurface
 import io.github.fletchmckee.liquid.LiquidState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ProfileScreen(
@@ -44,19 +65,38 @@ fun ProfileScreen(
         try { context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?" } catch (_: Exception) { "?" }
     }
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var profileBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var showFaah by remember { mutableStateOf(false) }
+
+    // Fetch profile picture
+    LaunchedEffect(rollNumber) {
+        if (rollNumber.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val repo = AttendanceRepository.getInstance(context)
+                    val bytes = repo.fetchProfilePicture()
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        profileBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
 
     if (showLogoutDialog) {
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
             title = { Text("Logout") }, text = { Text("Are you sure you want to logout?") },
             confirmButton = { TextButton(onClick = { showLogoutDialog = false; onLogout() }) { Text("Logout") } },
-            dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text("Cancel") } },
+            containerColor = Color(0xFF1E2A3A)
         )
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier.fillMaxSize().statusBarsPadding()
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 130.dp)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -70,11 +110,20 @@ fun ProfileScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Avatar — real liquid glass circle
+        // Avatar — real liquid glass circle with profile picture
         LiquidGlassSurface(cardState = cardState, modifier = Modifier.size(80.dp), shape = CircleShape,
             tintColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)) {
-            Icon(Icons.Default.Person, null, modifier = Modifier.padding(16.dp).fillMaxSize(),
-                tint = MaterialTheme.colorScheme.primary)
+            if (profileBitmap != null) {
+                Image(
+                    bitmap = profileBitmap!!.asImageBitmap(),
+                    contentDescription = "Profile picture",
+                    modifier = Modifier.fillMaxSize().clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Icon(Icons.Default.Person, null, modifier = Modifier.padding(16.dp).fillMaxSize(),
+                    tint = MaterialTheme.colorScheme.primary)
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -138,7 +187,144 @@ fun ProfileScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Easter egg — chomping animation: jaws bite down on the card
+        val biteTransition = rememberInfiniteTransition(label = "bite")
+        val chomp by biteTransition.animateFloat(
+            initialValue = 0f, targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = keyframes {
+                    durationMillis = 2000
+                    0f at 0          // jaws open
+                    0f at 500        // pause open
+                    1f at 700        // CHOMP! fast close
+                    0.6f at 800      // bounce back
+                    1f at 900        // settle closed
+                    1f at 1100       // hold
+                    0f at 1400       // open
+                    0f at 2000       // pause
+                },
+                repeatMode = RepeatMode.Restart
+            ), label = "chomp"
+        )
+        val chompShake by biteTransition.animateFloat(
+            initialValue = 0f, targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = keyframes {
+                    durationMillis = 2000
+                    0f at 0
+                    0f at 680
+                    3f at 720       // shake on impact
+                    -2f at 760
+                    1f at 800
+                    0f at 900
+                    0f at 2000
+                },
+                repeatMode = RepeatMode.Restart
+            ), label = "chompShake"
+        )
+        Box(
+            modifier = Modifier.fillMaxWidth()
+                .clickable {
+                    com.example.attendancewidgetlaudea.data.analytics.Analytics.logEasterEggTriggered("bite_me")
+                    try {
+                        val mediaPlayer = MediaPlayer.create(context, R.raw.faah)
+                        mediaPlayer?.setOnCompletionListener { it.release() }
+                        mediaPlayer?.start()
+                    } catch (_: Exception) {}
+                    showFaah = true
+                }
+        ) {
+            GlassListCard(
+                modifier = Modifier.fillMaxWidth()
+                    .graphicsLayer {
+                        scaleY = 1f - chomp * 0.2f
+                        scaleX = 1f + chomp * 0.03f
+                        translationX = chompShake * 2f
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text("BITE ME", fontSize = 16.sp, fontWeight = FontWeight.Black,
+                        letterSpacing = 3.sp,
+                        color = Color(0xFFFF1744))
+                }
+            }
+            // Top jaw — triangle teeth dropping down
+            val jawDrop = chomp * 10f
+            Canvas(modifier = Modifier.fillMaxWidth().height(48.dp).align(Alignment.TopCenter)) {
+                val teethCount = 7
+                val teethWidth = size.width / teethCount
+                for (i in 0 until teethCount) {
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(i * teethWidth, 0f)
+                        lineTo(i * teethWidth + teethWidth / 2, jawDrop * 3f)
+                        lineTo((i + 1) * teethWidth, 0f)
+                        close()
+                    }
+                    drawPath(path, Color.White.copy(alpha = chomp * 0.9f))
+                }
+            }
+            // Bottom jaw — triangle teeth rising up
+            Canvas(modifier = Modifier.fillMaxWidth().height(48.dp).align(Alignment.BottomCenter)) {
+                val teethCount = 7
+                val teethWidth = size.width / teethCount
+                for (i in 0 until teethCount) {
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(i * teethWidth, size.height)
+                        lineTo(i * teethWidth + teethWidth / 2, size.height - jawDrop * 3f)
+                        lineTo((i + 1) * teethWidth, size.height)
+                        close()
+                    }
+                    drawPath(path, Color.White.copy(alpha = chomp * 0.9f))
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Side eye dog meme easter egg
+        var showSideEye by remember { mutableStateOf(false) }
+        GlassListCard(
+            modifier = Modifier.fillMaxWidth().clickable {
+                if (!showSideEye) com.example.attendancewidgetlaudea.data.analytics.Analytics.logEasterEggTriggered("side_eye_dog")
+                showSideEye = !showSideEye
+            }
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Tap to view others profile", fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+                if (showSideEye) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val dogBitmap = remember {
+                        try {
+                            val inputStream = context.resources.openRawResource(R.raw.dog_side_eye)
+                            android.graphics.BitmapFactory.decodeStream(inputStream)
+                        } catch (_: Exception) { null }
+                    }
+                    if (dogBitmap != null) {
+                        Image(
+                            bitmap = dogBitmap.asImageBitmap(),
+                            contentDescription = "Side eye dog",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.FillWidth
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // App Info card
         GlassListCard(modifier = Modifier.fillMaxWidth()) {
@@ -166,4 +352,64 @@ fun ProfileScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
     }
+
+    // Faah explosion overlay
+    if (showFaah) {
+        var animProgress by remember { mutableFloatStateOf(0f) }
+
+        LaunchedEffect(Unit) {
+            val startTime = System.currentTimeMillis()
+            while (System.currentTimeMillis() - startTime < 2500) {
+                animProgress = ((System.currentTimeMillis() - startTime) / 2500f).coerceIn(0f, 1f)
+                delay(16)
+            }
+            showFaah = false
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = (0.8f * (1f - animProgress)).coerceIn(0f, 0.8f)))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { showFaah = false }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            // Expanding circle
+            val circleSize = animProgress * 2000f
+            Box(
+                modifier = Modifier
+                    .size(circleSize.dp.coerceAtMost(1000.dp))
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFFFF1744).copy(alpha = (1f - animProgress).coerceIn(0f, 0.6f)),
+                                Color(0xFFFF9100).copy(alpha = (1f - animProgress).coerceIn(0f, 0.4f)),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+
+            // FAAAAAH text
+            val scale = 1f + animProgress * 3f
+            val alpha = (1f - animProgress * 0.8f).coerceIn(0f, 1f)
+            Text(
+                "FAAAAAH",
+                fontSize = 48.sp,
+                fontWeight = FontWeight.Black,
+                color = Color.White.copy(alpha = alpha),
+                modifier = Modifier.graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    rotationZ = animProgress * 15f
+                },
+                letterSpacing = 4.sp
+            )
+        }
+    }
+    } // Box
 }

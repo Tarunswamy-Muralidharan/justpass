@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -97,7 +98,7 @@ fun TimetableScreen(cardState: LiquidState, viewModel: TimetableViewModel = view
 @Composable
 private fun DaySchedule(day: DayTimetable, isToday: Boolean) {
     val currentSessionIndex = if (isToday) getCurrentSessionIndex(day) else -1
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 12.dp, bottom = 100.dp),
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 12.dp, bottom = 130.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(day.sessions) { session -> SessionCard(session, isToday && session.sessionNumber == currentSessionIndex) }
         if (day.sessions.isEmpty()) {
@@ -112,8 +113,32 @@ private fun SessionCard(session: SessionInfo, isCurrentSession: Boolean) {
     val isDark = isSystemInDarkTheme()
     val tintColor = if (isCurrentSession) MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.15f else 0.08f) else Color.Transparent
 
+    val currentProgress = if (isCurrentSession) {
+        val cal = Calendar.getInstance()
+        val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        val startParts = session.startTime.split(":")
+        val endParts = session.endTime.split(":")
+        if (startParts.size == 2 && endParts.size == 2) {
+            val startMin = (startParts[0].toIntOrNull() ?: 0) * 60 + (startParts[1].toIntOrNull() ?: 0)
+            val endMin = (endParts[0].toIntOrNull() ?: 0) * 60 + (endParts[1].toIntOrNull() ?: 0)
+            val duration = (endMin - startMin).coerceAtLeast(1)
+            ((nowMinutes - startMin).toFloat() / duration).coerceIn(0f, 1f)
+        } else 0f
+    } else 0f
+
+    val progressOverlay = if (isDark) Color.White.copy(alpha = 0.05f) else Color.Black.copy(alpha = 0.04f)
+
     GlassListCard(modifier = Modifier.fillMaxWidth(), shape = GlassCardShapeSmall, tintColor = tintColor) {
-        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.fillMaxWidth()
+            .drawBehind {
+                if (currentProgress > 0f) {
+                    drawRect(
+                        color = progressOverlay,
+                        size = size.copy(width = size.width * currentProgress)
+                    )
+                }
+            }
+            .padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.width(64.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(session.startTime, fontWeight = FontWeight.Bold, fontSize = 14.sp,
                     color = if (isCurrentSession) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)

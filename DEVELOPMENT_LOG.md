@@ -319,6 +319,9 @@ Test performance in release builds from day one. Debug builds are for correctnes
 | Battery whitelist dialog | Ensures WorkManager actually runs in background |
 | Background update notification | Users know about new versions without opening app |
 | JWT name extraction for analytics | Track who uses the app via Firebase user properties |
+| Pull-to-refresh with hidden indicator | Comet glow animation serves as refresh indicator — cleaner than default spinner |
+| Result API via browser discovery | No docs existed — inspected Angular service source to find endpoint |
+| clipPath for animation containment | Keeps glow effects inside glass cards — no spill outside |
 
 ---
 
@@ -495,6 +498,13 @@ Background:
   Notification → Alert users of new versions
 ```
 
+### Phase 10: v2.0 — Major UI Revamp + Semester Results (March 20, 2026)
+- Added Semester Result screen with API discovered via Chrome browser automation
+- Pull-to-refresh on dashboard with comet light glass animation
+- Chomping BITE ME easter egg animation with Canvas teeth
+- UI polish: scroll padding (130dp), button tints, absent tile hints
+- New files: ResultScreen.kt, ResultViewModel.kt, ResultData.kt
+
 ---
 
 ## Resources That Helped
@@ -503,37 +513,6 @@ Background:
 - XMLHttpRequest MDN docs — for writing the XHR intercept hooks
 - Jetpack Compose performance guide — understanding debug vs release behavior
 - R8/ProGuard documentation — keeping annotation-based APIs alive
-
----
-
-## Final Reflections
-
-**What went well:**
-- The XHR interception approach is elegant and reliable
-- Cached token refresh gives near-instant data updates
-- Auto re-login means zero friction for users
-- The app provides a much better mobile experience than the website
-- The offline_access breakthrough means the widget works forever without re-login
-- Methodical on-device testing (invalidate token → test refresh → verify API) confirmed the solution
-
-**What could have been better:**
-- Should have used git from the start to avoid losing working code
-- Should have tested release builds earlier for performance
-- Should have copied API field names directly instead of typing them
-- Should have tested offline_access scope earlier — it was the key to instant refresh all along
-
-**Skills gained:**
-- WebView JavaScript interception and bridge communication
-- Keycloak/SSO authentication flows (including direct `grant_type=password` token requests)
-- Keycloak offline_access scope and never-expiring refresh tokens
-- Android ProGuard/R8 configuration
-- Jetpack Compose performance optimization
-- Glance widget development
-- Firebase Analytics integration and custom event tracking
-- Multi-tier authentication strategies with graceful fallbacks
-- Self-chaining WorkManager pattern for frequent background tasks
-- Android notification channels and runtime permission requests (Android 13+)
-- On-device testing via ADB for token flow verification
 
 ---
 
@@ -634,3 +613,102 @@ Background:
 - ui/screens/ExemptionsScreen.kt — Exemption list with glass cards
 - ui/viewmodel/ExemptionsViewModel.kt — Fetches exemptions from API
 - data/model/Exemption.kt — Exemption data class with Gson annotations
+
+---
+
+### Phase 10: v2.0 — Major UI Revamp + Semester Results (2026-03-20)
+
+#### New Features
+
+1. **Semester Result Screen** — Full exam results with semester-wise tabs
+   - API discovery: Used Chrome browser automation to explore the LAUDEA SIS Angular app
+   - Found the API by inspecting Angular's `viewAllResultsServices` service → `getAllResults()` function
+   - Discovered endpoint: `GET /sis/remote/all/results?rollNo={rollNumber}`
+   - Response format: JSON array of `{_id, examId, attempt, semester, courseCode, courseTitle, letterGrade, gradePoint, status, examName}`
+   - Built semester tabs, SGPA calculation, color-coded grade cards (O/S/A+/A/B+/B/C/D/U/F), pass/fail badges
+
+2. **Pull-to-Refresh** — Swipe down on dashboard to refresh attendance
+   - Used Material3 `PullToRefreshBox` with hidden default indicator
+   - Made dashboard Column scrollable (replaced weight spacer)
+   - Triggers comet glow animation + haptic feedback
+
+3. **Comet Light Glass Animation** — Colorful light travels along glass border on refresh
+   - Multiple iterations: started with rotating orb (wrong), then rotating rectangle (ugly), then travelling dots (disconnected)
+   - Final: 20 overlapping radial gradient circles forming a smooth comet trail, clipped inside card shape using `clipPath`
+   - Colors shift: white (head) → purple → pink → blue (tail)
+   - Persists 2.5s after refresh for visibility
+
+4. **Chomping BITE ME Animation** — Easter egg card gets "bitten"
+   - Card squashes (scaleY: 1.0 → 0.8) with horizontal stretch
+   - White triangle teeth close from top and bottom (Canvas drawPath)
+   - Impact shake via translationX animation
+   - Keyframe animation: open → pause → CHOMP → bounce → settle → open
+   - Text: "BITE ME" in bold crimson red (#FF1744), wide letter spacing
+
+5. **UI Polish**
+   - "Tap for details →" on absent tile: 9sp/0.6alpha → 11sp/Medium/0.8alpha primary blue
+   - Back/reload button tints: explicit onSurface color on CA Marks screen
+   - Scroll bottom padding: 100dp → 130dp on ALL 9 scrollable screens to clear glass bottom bar
+
+#### Obstacles Overcome
+
+1. **Result API discovery** — No documentation existed. Tried 9 different endpoint patterns, all returned 404. Used Chrome browser automation to:
+   - Navigate to SIS portal's "View All Results" page
+   - Extracted Angular service function source: `viewAllResultsServices.getAllResults()`
+   - Found URL pattern `remote/all/results` from function source
+   - But direct fetch returned 500 (missing rollNo param)
+   - Finally captured the actual XHR via network monitoring: `GET /sis/remote/all/results?rollNo={roll}` → 200 OK
+
+2. **Comet animation iterations** — Three failed attempts before the working version:
+   - Attempt 1: Rotating orb near refresh button → user said "must be around the glass, not corner"
+   - Attempt 2: Rotating sweep gradient on rounded rect → looked like "a rectangle just rotating"
+   - Attempt 3: Sweep gradient stroke → still rectangle-like
+   - Solution: 20 overlapping radial gradient circles along perimeter path, clipped inside rounded rect path
+
+3. **Pull-to-refresh default indicator** — PullToRefreshBox shows a circular spinner at top center that clashed with the glass header. Fixed with `indicator = {}` to hide it, using the comet animation as the visual indicator instead.
+
+4. **Scroll bottom padding** — Users couldn't see the last item behind the floating glass bottom bar. Increased from 100dp to 130dp across all screens. Investigated if this caused jitter — confirmed it's debug APK overhead from Liquid Glass GPU shaders.
+
+#### New Files
+- ui/screens/ResultScreen.kt — Semester result screen with grade cards
+- ui/viewmodel/ResultViewModel.kt — Result fetching and semester filtering
+- data/model/ResultData.kt — GradeEntry data class for exam results
+
+---
+
+## Final Reflections
+
+**What went well:**
+- The XHR interception approach is elegant and reliable
+- Cached token refresh gives near-instant data updates
+- Auto re-login means zero friction for users
+- The app provides a much better mobile experience than the website
+- The offline_access breakthrough means the widget works forever without re-login
+- Methodical on-device testing (invalidate token → test refresh → verify API) confirmed the solution
+- v2.0 brought a polished, feature-rich experience: semester results, pull-to-refresh, animated glass effects, and playful easter eggs
+- Chrome browser automation proved invaluable for discovering undocumented APIs — a technique that can be reused for any Angular/SPA-based portal
+- The comet animation, despite three failed attempts, resulted in a unique visual effect that no other attendance app has
+
+**What could have been better:**
+- Should have used git from the start to avoid losing working code
+- Should have tested release builds earlier for performance
+- Should have copied API field names directly instead of typing them
+- Should have tested offline_access scope earlier — it was the key to instant refresh all along
+- Should have tried browser automation for API discovery earlier — would have saved hours of guessing endpoints
+- Animation iterations could have been reduced by prototyping the visual concept before coding
+
+**Skills gained:**
+- WebView JavaScript interception and bridge communication
+- Keycloak/SSO authentication flows (including direct `grant_type=password` token requests)
+- Keycloak offline_access scope and never-expiring refresh tokens
+- Android ProGuard/R8 configuration
+- Jetpack Compose performance optimization
+- Glance widget development
+- Firebase Analytics integration and custom event tracking
+- Multi-tier authentication strategies with graceful fallbacks
+- Self-chaining WorkManager pattern for frequent background tasks
+- Android notification channels and runtime permission requests (Android 13+)
+- On-device testing via ADB for token flow verification
+- Chrome browser automation for API discovery
+- Compose Canvas animations (clipPath, radial gradients, comet trails)
+- Material3 PullToRefreshBox

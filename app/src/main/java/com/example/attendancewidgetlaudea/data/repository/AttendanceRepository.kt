@@ -408,6 +408,56 @@ class AttendanceRepository(private val context: Context) {
         return Result.Error("Could not fetch timetable. Try refreshing first.")
     }
 
+    suspend fun fetchResult(): Result<String> {
+        val rollNumber = securePrefs.rollNumber
+        val password = securePrefs.password
+        if (rollNumber.isNullOrEmpty()) {
+            return Result.Error("Not logged in")
+        }
+
+        // Try with cached token first
+        try {
+            val result = webViewAuthenticator.fetchResultDirect(rollNumber)
+            if (result != null && result.isSuccess) {
+                return Result.Success(result.getOrThrow())
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Result fetch error: ${e.message}")
+        }
+
+        // Token expired — try refresh then password login
+        android.util.Log.d("AttendanceRepo", "Token expired for result, trying refresh token")
+        try {
+            val refreshed = webViewAuthenticator.refreshAccessToken()
+                || (!password.isNullOrEmpty() && webViewAuthenticator.loginViaKeycloak(rollNumber, password))
+            if (refreshed) {
+                val retryResult = webViewAuthenticator.fetchResultDirect(rollNumber)
+                if (retryResult != null && retryResult.isSuccess) {
+                    return Result.Success(retryResult.getOrThrow())
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Result token refresh error: ${e.message}")
+        }
+
+        // Last resort: full WebView login
+        if (!password.isNullOrEmpty()) {
+            val loginResult = login(rollNumber, password)
+            if (loginResult is Result.Success) {
+                try {
+                    val retryResult = webViewAuthenticator.fetchResultDirect(rollNumber)
+                    if (retryResult != null && retryResult.isSuccess) {
+                        return Result.Success(retryResult.getOrThrow())
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("AttendanceRepo", "Result retry error: ${e.message}")
+                }
+            }
+        }
+
+        return Result.Error("Could not fetch results. Results may not be published yet.")
+    }
+
     fun isLoggedIn(): Boolean {
         return securePrefs.isLoggedIn()
     }
@@ -418,6 +468,33 @@ class AttendanceRepository(private val context: Context) {
 
     fun getCachedToken(): String? {
         return webViewAuthenticator.cachedAuthToken
+    }
+
+    suspend fun fetchProfilePicture(): ByteArray? {
+        val rollNumber = securePrefs.rollNumber ?: return null
+        val password = securePrefs.password
+
+        // Fast path: try with cached token
+        try {
+            val bytes = webViewAuthenticator.fetchProfilePicture(rollNumber)
+            if (bytes != null && bytes.isNotEmpty()) return bytes
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Profile pic fast fetch error: ${e.message}")
+        }
+
+        // Token expired — refresh then retry
+        try {
+            val refreshed = webViewAuthenticator.refreshAccessToken()
+                || (!password.isNullOrEmpty() && webViewAuthenticator.loginViaKeycloak(rollNumber, password))
+            if (refreshed) {
+                val bytes = webViewAuthenticator.fetchProfilePicture(rollNumber)
+                if (bytes != null && bytes.isNotEmpty()) return bytes
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Profile pic token refresh error: ${e.message}")
+        }
+
+        return null
     }
 
     fun logout() {
