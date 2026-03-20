@@ -356,11 +356,31 @@ class AttendanceRepository(private val context: Context) {
     suspend fun fetchTimetable(): Result<TimetableResponse> {
         val rollNumber = securePrefs.rollNumber
         val password = securePrefs.password
-        // Semester config ID — hardcoded for 2025-2026 even semester
-        val configId = securePrefs.timetableConfigId ?: DEFAULT_TIMETABLE_CONFIG_ID
 
         if (rollNumber.isNullOrEmpty()) {
             return Result.Error("Not logged in")
+        }
+
+        // Get the student's nodeId (timetable config) — fetch from API if not cached
+        var configId = securePrefs.timetableConfigId
+        if (configId.isNullOrEmpty()) {
+            android.util.Log.d("AttendanceRepo", "No cached nodeId, fetching from student profile")
+            configId = webViewAuthenticator.fetchStudentNodeId(rollNumber)
+            if (configId != null) {
+                securePrefs.timetableConfigId = configId
+                android.util.Log.d("AttendanceRepo", "Cached nodeId: $configId")
+            } else {
+                // Token might be expired, try refresh then retry
+                val refreshed = webViewAuthenticator.refreshAccessToken()
+                    || (!password.isNullOrEmpty() && webViewAuthenticator.loginViaKeycloak(rollNumber, password))
+                if (refreshed) {
+                    configId = webViewAuthenticator.fetchStudentNodeId(rollNumber)
+                    if (configId != null) securePrefs.timetableConfigId = configId
+                }
+            }
+            if (configId.isNullOrEmpty()) {
+                return Result.Error("Could not determine your timetable. Try refreshing attendance first.")
+            }
         }
 
         // Fast path: direct HTTP with cached token
@@ -511,9 +531,6 @@ class AttendanceRepository(private val context: Context) {
     }
 
     companion object {
-        // Semester config ID for timetable API (2025-2026 even semester)
-        private const val DEFAULT_TIMETABLE_CONFIG_ID = "65d6ee42722e1e6d3ed430b0"
-
         @Volatile
         private var instance: AttendanceRepository? = null
 

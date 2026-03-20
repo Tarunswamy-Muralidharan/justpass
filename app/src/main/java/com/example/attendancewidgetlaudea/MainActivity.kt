@@ -65,6 +65,11 @@ class MainActivity : ComponentActivity() {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
             }
         }
+        // v2.0: Clear hardcoded timetable config so each user fetches their own nodeId
+        val prefs = SecurePreferences.getInstance(this)
+        if (prefs.timetableConfigId == "65d6ee42722e1e6d3ed430b0") {
+            prefs.timetableConfigId = null
+        }
         AttendanceRefreshWorker.schedulePeriodicRefresh(this)
         setContent {
             AttendanceWidgetLaudeaTheme {

@@ -934,6 +934,43 @@ class WebViewAuthenticator(private val context: Context) {
         }
     }
 
+    /**
+     * Fetch student profile to get nodeId (timetable config) for this student.
+     * API: GET /sis/students/{rollNumber}
+     */
+    suspend fun fetchStudentNodeId(rollNumber: String): String? {
+        val token = cachedAuthToken ?: return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                android.util.Log.d("WebViewAuth", "Fetching student nodeId for: $rollNumber")
+                val url = java.net.URL("https://laudea.psgitech.ac.in/sis/students/$rollNumber")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Accept", "application/json, text/plain, */*")
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val responseCode = connection.responseCode
+                if (responseCode == 200) {
+                    val json = connection.inputStream.bufferedReader().use { it.readText() }
+                    val map = gson.fromJson(json, Map::class.java)
+                    val nodeId = map["nodeId"]?.toString()
+                    android.util.Log.d("WebViewAuth", "Student nodeId: $nodeId")
+                    nodeId
+                } else {
+                    android.util.Log.e("WebViewAuth", "Student profile fetch failed: HTTP $responseCode")
+                    if (responseCode == 401) cachedAuthToken = null
+                    null
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Student profile error: ${e.message}")
+                null
+            }
+        }
+    }
+
     fun clearSession() {
         try {
             // Clear all cookies synchronously
