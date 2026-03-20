@@ -15,6 +15,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,7 @@ import com.example.attendancewidgetlaudea.ui.screens.LoginScreen
 import com.example.attendancewidgetlaudea.ui.screens.ProfileScreen
 import com.example.attendancewidgetlaudea.ui.screens.ExemptionsScreen
 import com.example.attendancewidgetlaudea.ui.screens.SubjectAttendanceScreen
+import com.example.attendancewidgetlaudea.ui.screens.ResultScreen
 import com.example.attendancewidgetlaudea.ui.screens.SubjectDetailScreen
 import com.example.attendancewidgetlaudea.ui.screens.TimetableScreen
 import com.example.attendancewidgetlaudea.ui.theme.AttendanceWidgetLaudeaTheme
@@ -73,7 +75,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Screen {
-    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, PrivacyPolicy, CAMarks, Timetable, Profile
+    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile
 }
 
 private val bottomTabs = listOf(
@@ -99,6 +101,9 @@ fun AttendanceApp() {
 
     LaunchedEffect(Unit) {
         Analytics.logAppOpen()
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        Analytics.logAppVersion(packageInfo.versionName ?: "unknown")
+        Analytics.logInstallSource()
         if (repository.isLoggedIn()) {
             val rollNumber = repository.getRollNumber()
             val token = repository.getCachedToken()
@@ -144,7 +149,8 @@ fun AttendanceApp() {
                     showBatteryDialog = false
                 }) { Text("Allow") }
             },
-            dismissButton = { TextButton(onClick = { showBatteryDialog = false }) { Text("Later") } }
+            dismissButton = { TextButton(onClick = { showBatteryDialog = false }) { Text("Later") } },
+            containerColor = Color(0xFF1E2A3A)
         )
     }
 
@@ -167,7 +173,8 @@ fun AttendanceApp() {
                     updateInfo = null
                 }) { Text("Download") }
             },
-            dismissButton = { TextButton(onClick = { updateInfo = null }) { Text("Later") } }
+            dismissButton = { TextButton(onClick = { updateInfo = null }) { Text("Later") } },
+            containerColor = Color(0xFF1E2A3A)
         )
     }
 
@@ -236,7 +243,7 @@ fun AttendanceApp() {
                 }
             ) { cardState ->
                 Crossfade(
-                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions)) currentScreen.name
+                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result)) currentScreen.name
                                   else "tab_$selectedTabIndex",
                     animationSpec = tween(200),
                     label = "screenFade"
@@ -273,6 +280,13 @@ fun AttendanceApp() {
                                 selectedTabIndex = 0
                             }
                         )
+                        Screen.Result.name -> ResultScreen(
+                            cardState = cardState,
+                            onBack = {
+                                currentScreen = Screen.Dashboard
+                                selectedTabIndex = 0
+                            }
+                        )
                         "tab_0" -> DashboardScreen(
                             cardState = cardState,
                             displayName = displayName,
@@ -288,6 +302,10 @@ fun AttendanceApp() {
                             onExemptionsClick = {
                                 Analytics.logFeatureUsed("exemptions")
                                 currentScreen = Screen.Exemptions
+                            },
+                            onResultClick = {
+                                Analytics.logFeatureUsed("result")
+                                currentScreen = Screen.Result
                             }
                         )
                         "tab_1" -> TimetableScreen(cardState = cardState)

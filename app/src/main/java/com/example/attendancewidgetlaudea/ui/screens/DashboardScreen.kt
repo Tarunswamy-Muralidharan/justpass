@@ -4,6 +4,10 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
@@ -20,7 +24,11 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -38,9 +46,14 @@ import com.example.attendancewidgetlaudea.ui.components.LiquidGlassCard
 import com.example.attendancewidgetlaudea.ui.viewmodel.DashboardViewModel
 import io.github.fletchmckee.liquid.LiquidState
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import java.text.SimpleDateFormat
 import java.util.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     cardState: LiquidState,
@@ -49,25 +62,38 @@ fun DashboardScreen(
     onLogout: () -> Unit,
     onAbsentDaysClick: () -> Unit = {},
     onSubjectAttendanceClick: () -> Unit = {},
-    onExemptionsClick: () -> Unit = {}
+    onExemptionsClick: () -> Unit = {},
+    onResultClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
 
-    // Light sweep animation around the header card on refresh
+    // Glow animation around the header card on refresh — persists 2s after refresh ends
     var refreshGlowKey by remember { mutableIntStateOf(0) }
     val glowAnim = remember { Animatable(0f) }
     LaunchedEffect(refreshGlowKey) {
         if (refreshGlowKey > 0) {
             glowAnim.snapTo(0f)
-            glowAnim.animateTo(1f, tween(1000, easing = LinearEasing))
+            glowAnim.animateTo(1f, tween(2500, easing = LinearEasing))
         }
     }
 
+    PullToRefreshBox(
+        isRefreshing = uiState.isRefreshing,
+        onRefresh = {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            com.example.attendancewidgetlaudea.data.analytics.Analytics.logPullToRefresh()
+            refreshGlowKey++
+            viewModel.refreshAttendance()
+        },
+        modifier = Modifier.fillMaxSize().statusBarsPadding(),
+        indicator = {} // Hidden — the glass comet glow is our refresh indicator
+    ) {
     Column(
-        modifier = Modifier.fillMaxSize().statusBarsPadding()
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp),
+        modifier = Modifier.fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 130.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Header — liquid glass with light sweep on refresh
@@ -98,57 +124,75 @@ fun DashboardScreen(
                 }
             }
 
-            // Realistic glass light reflection — diagonal beam sweeps top-left to bottom-right
+            // Smooth comet light travelling inside the glass border
             val g = glowAnim.value
-            if (g in 0.001f..0.999f) {
+            if (uiState.isRefreshing || g in 0.001f..0.999f) {
+                val orbTransition = rememberInfiniteTransition(label = "orb")
+                val lightPos by orbTransition.animateFloat(
+                    initialValue = 0f, targetValue = 1f,
+                    animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)), label = "lp"
+                )
+                val fadeAlpha = if (uiState.isRefreshing) 1f else ((1f - g) * 2f).coerceIn(0f, 1f)
+
                 Canvas(modifier = Modifier.matchParentSize()) {
-                    // The beam travels diagonally across the card
-                    // Map progress to a position along the diagonal (with overshoot for smooth entry/exit)
-                    val diagonal = size.width + size.height
-                    val beamCenter = -size.height * 0.3f + diagonal * 1.3f * g
-                    val beamWidth = size.width * 0.45f
+                    val w = size.width
+                    val h = size.height
+                    val perimeter = 2f * (w + h)
+                    val r = 28f
 
-                    // Fade in at start, fade out at end
-                    val edgeFade = when {
-                        g < 0.15f -> g / 0.15f
-                        g > 0.8f -> (1f - g) / 0.2f
-                        else -> 1f
-                    }.coerceIn(0f, 1f)
+                    // Clip inside the glass card shape
+                    val clip = Path().apply { addRoundRect(RoundRect(0f, 0f, w, h, r, r)) }
+                    clipPath(clip) {
+                        fun posOnBorder(t: Float): Offset {
+                            val d = ((t % 1f + 1f) % 1f) * perimeter
+                            return when {
+                                d < w -> Offset(d, 0f)
+                                d < w + h -> Offset(w, d - w)
+                                d < 2 * w + h -> Offset(w - (d - w - h), h)
+                                else -> Offset(0f, h - (d - 2 * w - h))
+                            }
+                        }
 
-                    // Main specular highlight — bright diagonal band
-                    drawRect(
-                        brush = Brush.linearGradient(
-                            colorStops = arrayOf(
-                                0f to Color.Transparent,
-                                0.3f to Color.Transparent,
-                                0.42f to Color.White.copy(alpha = 0.06f * edgeFade),
-                                0.48f to Color.White.copy(alpha = 0.25f * edgeFade),
-                                0.50f to Color.White.copy(alpha = 0.45f * edgeFade),
-                                0.52f to Color.White.copy(alpha = 0.25f * edgeFade),
-                                0.58f to Color.White.copy(alpha = 0.06f * edgeFade),
-                                0.7f to Color.Transparent,
-                                1f to Color.Transparent
-                            ),
-                            start = Offset(beamCenter - beamWidth, 0f),
-                            end = Offset(beamCenter + beamWidth, size.height)
+                        // Smooth comet trail — 20 overlapping gradient circles
+                        val trailLen = 20
+                        for (i in 0 until trailLen) {
+                            val t = lightPos - i * 0.012f
+                            val pt = posOnBorder(t)
+                            val progress = i.toFloat() / trailLen
+                            val a = (1f - progress) * fadeAlpha
+
+                            // Color shifts from white→purple→pink→blue along the trail
+                            val coreColor = when {
+                                progress < 0.15f -> Color.White
+                                progress < 0.4f -> Color(0xFFAD5FFF)
+                                progress < 0.7f -> Color(0xFFD60A47)
+                                else -> Color(0xFF471EEC)
+                            }
+
+                            val radius = 90f - progress * 50f
+                            drawCircle(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        coreColor.copy(alpha = a * 0.85f),
+                                        coreColor.copy(alpha = a * 0.3f),
+                                        Color.Transparent
+                                    ),
+                                    center = pt,
+                                    radius = radius
+                                ),
+                                radius = radius,
+                                center = pt
+                            )
+                        }
+
+                        // Bright white core at the head
+                        val head = posOnBorder(lightPos)
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.95f * fadeAlpha),
+                            radius = 6f,
+                            center = head
                         )
-                    )
-
-                    // Secondary subtle blue tint behind the main beam
-                    drawRect(
-                        brush = Brush.linearGradient(
-                            colorStops = arrayOf(
-                                0f to Color.Transparent,
-                                0.35f to Color.Transparent,
-                                0.47f to Color(0xFF90CAF9).copy(alpha = 0.10f * edgeFade),
-                                0.53f to Color(0xFF90CAF9).copy(alpha = 0.10f * edgeFade),
-                                0.65f to Color.Transparent,
-                                1f to Color.Transparent
-                            ),
-                            start = Offset(beamCenter - beamWidth * 1.2f, 0f),
-                            end = Offset(beamCenter + beamWidth * 1.2f, size.height)
-                        )
-                    )
+                    }
                 }
             }
         }
@@ -198,11 +242,12 @@ fun DashboardScreen(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             StatCard("Present", uiState.attendanceData.presentWithExemptionCount.toString(), Modifier.weight(1f))
             GlassListCard(modifier = Modifier.weight(1f).clickable { onAbsentDaysClick() }, shape = GlassCardShapeSmall) {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Absent", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(uiState.attendanceData.absentCount.toString(), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                    Text("Tap for details", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                Column(modifier = Modifier.fillMaxWidth().padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Absent", fontSize = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(uiState.attendanceData.absentCount.toString(), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                    Text("Tap for details \u2192", fontSize = 11.sp, maxLines = 1, fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f))
                 }
             }
             if (uiState.attendanceData.exemptionCount > 0) {
@@ -211,17 +256,17 @@ fun DashboardScreen(
                     shape = GlassCardShapeSmall
                 ) {
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("Exemption", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Exempt", fontSize = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             uiState.attendanceData.exemptionCount.toString(),
-                            fontSize = 28.sp, fontWeight = FontWeight.Bold,
+                            fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Text("Tap for details", fontSize = 10.sp,
+                        Text("Tap for details", fontSize = 9.sp, maxLines = 1,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                     }
                 }
@@ -235,10 +280,27 @@ fun DashboardScreen(
             StatCard("Not Entered", uiState.attendanceData.notEnteredTillDate.toString(), Modifier.weight(1f))
         }
 
-        if (uiState.isRefreshing) {
-            Spacer(modifier = Modifier.height(8.dp))
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Result tile
+        GlassListCard(
+            modifier = Modifier.fillMaxWidth().clickable { onResultClick() },
+            shape = GlassCardShapeSmall
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Semester Result", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface)
+                    Text("View grades & GPA", fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("\u2192", fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
+            }
         }
 
         uiState.errorMessage?.let { error ->
@@ -248,7 +310,7 @@ fun DashboardScreen(
             }
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Credit + contact
         val context = LocalContext.current
@@ -268,15 +330,16 @@ fun DashboardScreen(
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
         }
     }
+    } // PullToRefreshBox
 }
 
 @Composable
 private fun StatCard(title: String, value: String, modifier: Modifier = Modifier) {
     GlassListCard(modifier = modifier, shape = GlassCardShapeSmall) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(title, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(value, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+        Column(modifier = Modifier.fillMaxWidth().padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(title, fontSize = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
         }
     }
 }

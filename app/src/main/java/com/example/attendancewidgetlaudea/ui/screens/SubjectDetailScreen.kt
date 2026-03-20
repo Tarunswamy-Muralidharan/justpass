@@ -94,8 +94,26 @@ fun SubjectDetailScreen(
         val exemptionResult = repository.fetchExemptions()
         val timetableResult = repository.fetchTimetable()
 
-        if (exemptionResult is Result.Success && timetableResult is Result.Success) {
-            val verifiedExemptions = exemptionResult.data.filter { it.status == "V" }
+        // Only include exemptions if overall attendance has exemptions, and filter to current semester
+        val cachedAttendance = repository.getCachedAttendance()
+        val hasExemptions = cachedAttendance.exemptionCount > 0
+
+        if (hasExemptions && exemptionResult is Result.Success && timetableResult is Result.Success) {
+            // Find semester start from present/absent data
+            val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            val allDates = (presentResult.let { if (it is Result.Success) it.data else emptyList() } +
+                absentResult.let { if (it is Result.Success) it.data else emptyList() })
+                .mapNotNull { try { isoFmt.parse(it.date) } catch (_: Exception) { null } }
+            val semesterStart = allDates.minOrNull()
+
+            val verifiedExemptions = exemptionResult.data.filter { ex ->
+                if (ex.status != "V") return@filter false
+                if (semesterStart == null) return@filter true
+                val exEnd = try { SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(ex.toDate) } catch (_: Exception) { null }
+                exEnd != null && !exEnd.before(semesterStart)
+            }
             val dayTimetables = timetableResult.data.toDayTimetables()
             val timetableByDayNum = dayTimetables.associate { it.dayNumber to it.sessions }
             val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -260,7 +278,7 @@ fun SubjectDetailScreen(
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 100.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 130.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 // Group by date

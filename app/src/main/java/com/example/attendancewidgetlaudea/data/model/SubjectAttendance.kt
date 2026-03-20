@@ -3,6 +3,7 @@ package com.example.attendancewidgetlaudea.data.model
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 
 /**
  * Per-subject attendance with present, absent, and exemption counts.
@@ -64,7 +65,23 @@ fun calculateSubjectAttendance(
 
     // Count exemption hours per subject by mapping exemption dates to timetable
     val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-    val verifiedExemptions = exemptions.filter { it.status == "V" }
+    val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }
+
+    // Find the earliest date from present/absent data to determine current semester boundary
+    val allDates = (presentDays + absentDays).mapNotNull {
+        try { isoFormat.parse(it.date) } catch (_: Exception) { null }
+    }
+    val semesterStart = allDates.minOrNull()
+
+    // Only include verified exemptions from the CURRENT semester
+    val verifiedExemptions = exemptions.filter { exemption ->
+        if (exemption.status != "V") return@filter false
+        if (semesterStart == null) return@filter true
+        val exemptionEnd = try { dateFormat.parse(exemption.toDate) } catch (_: Exception) { null }
+        exemptionEnd != null && !exemptionEnd.before(semesterStart)
+    }
 
     for (exemption in verifiedExemptions) {
         val fromDate = try { dateFormat.parse(exemption.fromDate) } catch (_: Exception) { null } ?: continue

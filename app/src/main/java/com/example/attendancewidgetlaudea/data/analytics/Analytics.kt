@@ -10,8 +10,10 @@ import com.google.firebase.analytics.FirebaseAnalytics
 object Analytics {
 
     private var firebaseAnalytics: FirebaseAnalytics? = null
+    private var appContext: Context? = null
 
     fun init(context: Context) {
+        appContext = context.applicationContext
         firebaseAnalytics = FirebaseAnalytics.getInstance(context)
     }
 
@@ -83,5 +85,45 @@ object Analytics {
         firebaseAnalytics?.logEvent("feature_used", Bundle().apply {
             putString("feature", feature)
         })
+    }
+
+    fun logResultViewed(semester: Int) {
+        firebaseAnalytics?.logEvent("result_viewed", Bundle().apply {
+            putInt("semester", semester)
+        })
+    }
+
+    fun logPullToRefresh() {
+        firebaseAnalytics?.logEvent("pull_to_refresh", null)
+    }
+
+    fun logEasterEggTriggered(egg: String) {
+        firebaseAnalytics?.logEvent("easter_egg_triggered", Bundle().apply {
+            putString("egg", egg)
+        })
+    }
+
+    fun logAppVersion(version: String) {
+        firebaseAnalytics?.setUserProperty("app_version", version)
+    }
+
+    fun logSessionDuration(durationMs: Long) {
+        firebaseAnalytics?.logEvent("session_duration", Bundle().apply {
+            putLong("duration_ms", durationMs)
+        })
+    }
+
+    fun logInstallSource() {
+        val source = try {
+            appContext?.let { ctx ->
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    ctx.packageManager.getInstallSourceInfo(ctx.packageName).installingPackageName
+                } else {
+                    @Suppress("DEPRECATION")
+                    ctx.packageManager.getInstallerPackageName(ctx.packageName)
+                }
+            } ?: "unknown"
+        } catch (_: Exception) { "unknown" }
+        firebaseAnalytics?.setUserProperty("install_source", source)
     }
 }

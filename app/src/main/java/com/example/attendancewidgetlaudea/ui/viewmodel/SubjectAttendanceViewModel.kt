@@ -40,8 +40,10 @@ class SubjectAttendanceViewModel(application: Application) : AndroidViewModel(ap
             val timetableResult = repository.fetchTimetable()
 
             if (presentResult is Result.Success && absentResult is Result.Success) {
-                // Exemptions and timetable are optional — if they fail, calculate without them
-                val exemptions: List<Exemption> = if (exemptionResult is Result.Success) exemptionResult.data else emptyList()
+                // Only include exemptions if the attendance API actually counts them
+                val cachedAttendance = repository.getCachedAttendance()
+                val hasExemptions = cachedAttendance.exemptionCount > 0
+                val exemptions: List<Exemption> = if (hasExemptions && exemptionResult is Result.Success) exemptionResult.data else emptyList()
                 val timetable = if (timetableResult is Result.Success) timetableResult.data else null
 
                 val subjects = if (timetable != null && exemptions.isNotEmpty()) {

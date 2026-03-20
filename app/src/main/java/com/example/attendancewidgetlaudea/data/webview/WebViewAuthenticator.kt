@@ -895,6 +895,45 @@ class WebViewAuthenticator(private val context: Context) {
         }
     }
 
+    /**
+     * Fetch exam results/grades using cached auth token.
+     * API: GET /sis/remote/all/results?rollNo={rollNumber}
+     */
+    suspend fun fetchResultDirect(rollNumber: String): kotlin.Result<String>? {
+        val token = cachedAuthToken ?: return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val endpoint = "https://laudea.psgitech.ac.in/sis/remote/all/results?rollNo=${java.net.URLEncoder.encode(rollNumber, "UTF-8")}"
+                android.util.Log.d("WebViewAuth", "Fetching results for: $rollNumber")
+                val url = java.net.URL(endpoint)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Accept", "application/json, text/plain, */*")
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val responseCode = connection.responseCode
+                android.util.Log.d("WebViewAuth", "Results response: $responseCode")
+
+                if (responseCode == 200) {
+                    val data = connection.inputStream.bufferedReader().use { it.readText() }
+                    android.util.Log.d("WebViewAuth", "Results data length: ${data.length}")
+                    kotlin.Result.success(data)
+                } else if (responseCode == 401) {
+                    cachedAuthToken = null
+                    null
+                } else {
+                    kotlin.Result.failure(Exception("HTTP $responseCode"))
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Results fetch error: ${e.message}")
+                kotlin.Result.failure(e)
+            }
+        }
+    }
+
     fun clearSession() {
         try {
             // Clear all cookies synchronously
@@ -1107,5 +1146,76 @@ class WebViewAuthenticator(private val context: Context) {
         """.trimIndent()
 
         webView?.evaluateJavascript(jsFetch, null)
+    }
+
+    /**
+     * Fetch profile picture as raw bytes from the SIS portal.
+     * Tries the remote/downloadUrl endpoint first, then falls back to a direct S3-style path.
+     */
+    suspend fun fetchProfilePicture(rollNumber: String): ByteArray? {
+        val token = cachedAuthToken ?: return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                // The SIS Angular app fetches the display picture via:
+                //   /sis/students/downloadUrl?contentType=image/jpeg&filename={roll}.jpg_{roll}&id=sis-itech/2023/displayPicture/{roll}.jpg_{roll}&originalname={roll}.jpg
+                val filename = "${rollNumber}.jpg_${rollNumber}"
+                val id = "sis-itech/2023/displayPicture/$filename"
+                val encodedFilename = java.net.URLEncoder.encode(filename, "UTF-8")
+                val encodedId = java.net.URLEncoder.encode(id, "UTF-8")
+                val encodedOriginal = java.net.URLEncoder.encode("${rollNumber}.jpg", "UTF-8")
+                val url = java.net.URL(
+                    "${SIS_BASE_URL}students/downloadUrl?contentType=image%2Fjpeg&filename=$encodedFilename&id=$encodedId&originalname=$encodedOriginal&size=79087"
+                )
+                android.util.Log.d("WebViewAuth", "Fetching profile pic URL: $url")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Accept", "*/*")
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+                connection.instanceFollowRedirects = true
+
+                val responseCode = connection.responseCode
+                android.util.Log.d("WebViewAuth", "Profile pic response: $responseCode")
+
+                if (responseCode == 200) {
+                    val contentType = connection.contentType ?: ""
+                    if (contentType.startsWith("image/")) {
+                        // Direct image bytes returned
+                        connection.inputStream.use { it.readBytes() }
+                    } else {
+                        // Likely a JSON with a pre-signed URL, or a redirect URL as text
+                        val body = connection.inputStream.bufferedReader().use { it.readText() }
+                        android.util.Log.d("WebViewAuth", "Profile pic body (first 200): ${body.take(200)}")
+                        // Try to parse as a URL (could be a plain signed URL or JSON with "url" field)
+                        val imageUrl = if (body.startsWith("http")) {
+                            body.trim().trim('"')
+                        } else {
+                            // Try JSON parse for {"url": "..."} or just the raw string
+                            try {
+                                val map = gson.fromJson(body, Map::class.java)
+                                (map["url"] ?: map["downloadUrl"] ?: map["signedUrl"])?.toString()
+                            } catch (_: Exception) { null }
+                        }
+                        if (imageUrl != null) {
+                            // Fetch the actual image from the signed URL (no auth needed)
+                            val imgConn = java.net.URL(imageUrl).openConnection() as java.net.HttpURLConnection
+                            imgConn.connectTimeout = 10000
+                            imgConn.readTimeout = 10000
+                            if (imgConn.responseCode == 200) {
+                                imgConn.inputStream.use { it.readBytes() }
+                            } else null
+                        } else null
+                    }
+                } else if (responseCode == 401) {
+                    cachedAuthToken = null
+                    null
+                } else null
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Profile pic fetch error: ${e.message}")
+                null
+            }
+        }
     }
 }

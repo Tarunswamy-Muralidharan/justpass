@@ -44,10 +44,12 @@ fun CAMarksScreen(cardState: LiquidState, viewModel: CAMarksViewModel = viewMode
         ) {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back",
+                    tint = MaterialTheme.colorScheme.onSurface) }
                 Text("CA Marks", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurface)
-                IconButton(onClick = { viewModel.fetchCAMarks() }, enabled = !uiState.isLoading) { Icon(Icons.Default.Refresh, "Refresh") }
+                IconButton(onClick = { viewModel.fetchCAMarks() }, enabled = !uiState.isLoading) { Icon(Icons.Default.Refresh, "Refresh",
+                    tint = MaterialTheme.colorScheme.onSurface) }
             }
         }
 
@@ -64,7 +66,7 @@ fun CAMarksScreen(cardState: LiquidState, viewModel: CAMarksViewModel = viewMode
                 uiState.courseMarksList.isEmpty() -> Text("No CA marks available", modifier = Modifier.align(Alignment.Center))
                 else -> {
                     LazyColumn(modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 130.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(uiState.courseMarksList) { CourseCard(it) }
                     }
