@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.attendancewidgetlaudea.R
+import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShape
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
@@ -63,11 +64,17 @@ fun DashboardScreen(
     onAbsentDaysClick: () -> Unit = {},
     onSubjectAttendanceClick: () -> Unit = {},
     onExemptionsClick: () -> Unit = {},
-    onResultClick: () -> Unit = {}
+    onResultClick: () -> Unit = {},
+    onCalendarClick: () -> Unit = {},
+    onCircularsClick: () -> Unit = {},
+    onCgpaClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val securePrefs = remember { SecurePreferences.getInstance(context) }
+    val attendanceTarget = remember { securePrefs.attendanceTarget }
 
     // Glow animation around the header card on refresh — persists 2s after refresh ends
     var refreshGlowKey by remember { mutableIntStateOf(0) }
@@ -204,7 +211,7 @@ fun DashboardScreen(
         LiquidGlassCard(cardState = cardState,
             modifier = Modifier.fillMaxWidth().clickable { onSubjectAttendanceClick() },
             tintColor = attendanceTint) {
-            Column(modifier = Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Attendance (with exemption)", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("${String.format("%.1f", uiState.attendanceData.attendanceWithExemption)}%",
@@ -214,77 +221,207 @@ fun DashboardScreen(
                     Text("Without exemption: ${String.format("%.1f", uiState.attendanceData.attendancePercentage)}%",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                 }
-                // Warning: hours needed for 75%
-                if (uiState.attendanceData.attendanceWithExemption < 75.0 && uiState.attendanceData.enteredTillDate > 0) {
+                // Warning: hours needed for target %
+                val targetPct = attendanceTarget / 100.0
+                if (uiState.attendanceData.attendanceWithExemption < attendanceTarget && uiState.attendanceData.enteredTillDate > 0) {
                     val present = uiState.attendanceData.presentWithExemptionCount
                     val total = uiState.attendanceData.enteredTillDate
-                    // Need: (present + x) / (total + x) >= 0.75 → x >= (0.75*total - present) / 0.25
-                    val hoursNeeded = kotlin.math.ceil((0.75 * total - present) / 0.25).toInt()
+                    val hoursNeeded = kotlin.math.ceil((targetPct * total - present) / (1.0 - targetPct)).toInt()
                     if (hoursNeeded > 0) {
-                        // Approx days = hours / avg hours per day (~6 classes/day)
                         val approxDays = kotlin.math.ceil(hoursNeeded / 6.0).toInt()
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text("Attend $hoursNeeded more hours (~$approxDays days) to reach 75%",
+                        Text("Attend $hoursNeeded more hours (~$approxDays days) to reach $attendanceTarget%",
                             fontSize = 12.sp, fontWeight = FontWeight.Medium,
                             color = Color(0xFFFF8A80))
                     }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
+
+                // Stats inside the main card
+                if (uiState.attendanceData.enteredTillDate > 0) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(uiState.attendanceData.presentWithExemptionCount.toString(),
+                                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
+                            Text("Present", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable { onAbsentDaysClick() }
+                        ) {
+                            Text(uiState.attendanceData.absentCount.toString(),
+                                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5252))
+                            Text("Absent", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(uiState.attendanceData.enteredTillDate.toString(),
+                                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Total", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (uiState.attendanceData.exemptionCount > 0) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.clickable { onExemptionsClick() }
+                            ) {
+                                Text(uiState.attendanceData.exemptionCount.toString(),
+                                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
+                                Text("Exempt", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        if (uiState.attendanceData.notEnteredTillDate > 0) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(uiState.attendanceData.notEnteredTillDate.toString(),
+                                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Pending", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
                 Text("Tap for subject-wise details →",
                     fontSize = 12.sp, fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f))
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // Stats — lightweight for performance
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatCard("Present", uiState.attendanceData.presentWithExemptionCount.toString(), Modifier.weight(1f))
-            GlassListCard(modifier = Modifier.weight(1f).clickable { onAbsentDaysClick() }, shape = GlassCardShapeSmall) {
-                Column(modifier = Modifier.fillMaxWidth().padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Absent", fontSize = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(uiState.attendanceData.absentCount.toString(), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
-                    Text("Tap for details \u2192", fontSize = 11.sp, maxLines = 1, fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f))
-                }
-            }
-            if (uiState.attendanceData.exemptionCount > 0) {
-                GlassListCard(
-                    modifier = Modifier.weight(1f).clickable { onExemptionsClick() },
-                    shape = GlassCardShapeSmall
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+        // Leave calculator
+        if (uiState.attendanceData.enteredTillDate > 0) {
+            var leaveDays by remember { mutableFloatStateOf(0f) }
+            val days = leaveDays.toInt()
+            val present = uiState.attendanceData.presentWithExemptionCount
+            val total = uiState.attendanceData.enteredTillDate
+            val currentPct = uiState.attendanceData.attendanceWithExemption
+            val leaveHours = days * 6
+            val newTotal = total + leaveHours
+            val newPercentage = if (days > 0 && newTotal > 0) (present.toDouble() / newTotal) * 100.0 else currentPct
+            val drop = currentPct - newPercentage
+
+            GlassListCard(modifier = Modifier.fillMaxWidth(), shape = GlassCardShapeSmall) {
+                Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Exempt", fontSize = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            uiState.attendanceData.exemptionCount.toString(),
-                            fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-                            color = MaterialTheme.colorScheme.onSurface
+                        Text("What if I take leave?", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface)
+                        if (days > 0) {
+                            Text("$days day${if (days > 1) "s" else ""}",
+                                fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Slider(
+                        value = leaveDays,
+                        onValueChange = { leaveDays = it },
+                        valueRange = 0f..30f,
+                        steps = 29,
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
                         )
-                        Text("Tap for details", fontSize = 9.sp, maxLines = 1,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                    )
+                    if (days == 0) {
+                        Text("Slide to see how your attendance changes",
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth())
+                    }
+                    if (days > 0) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("${String.format("%.1f", newPercentage)}%",
+                                    fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                                    color = if (newPercentage < attendanceTarget) Color(0xFFFF5252) else Color(0xFF00E676))
+                                Text("New attendance", fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("-${String.format("%.1f", drop)}%",
+                                    fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFF8A80))
+                                Text("Drop", fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("${days * 6}",
+                                    fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface)
+                                Text("Hours missed", fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatCard("Total Classes", uiState.attendanceData.enteredTillDate.toString(), Modifier.weight(1f))
-            StatCard("Not Entered", uiState.attendanceData.notEnteredTillDate.toString(), Modifier.weight(1f))
+        // Result + Calendar tiles
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            GlassListCard(
+                modifier = Modifier.weight(1f).clickable { onResultClick() },
+                shape = GlassCardShapeSmall
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Semester Result", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                        Text("Grades & GPA", fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("\u2192", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            GlassListCard(
+                modifier = Modifier.weight(1f).clickable { onCalendarClick() },
+                shape = GlassCardShapeSmall
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Calendar", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                        Text("Holidays & events", fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("\u2192", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+            }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        // Result tile
+        // GPA Calculator tile
         GlassListCard(
-            modifier = Modifier.fillMaxWidth().clickable { onResultClick() },
+            modifier = Modifier.fillMaxWidth().clickable { onCgpaClick() },
             shape = GlassCardShapeSmall
         ) {
             Row(
@@ -292,13 +429,36 @@ fun DashboardScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text("Semester Result", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface)
-                    Text("View grades & GPA", fontSize = 12.sp,
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("GPA Calculator", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                    Text("Calculate SGPA & CGPA", fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text("\u2192", fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                Text("\u2192", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Circulars tile
+        GlassListCard(
+            modifier = Modifier.fillMaxWidth().clickable { onCircularsClick() },
+            shape = GlassCardShapeSmall
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Circulars", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                    Text("Notices & updates from college", fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("\u2192", fontSize = 18.sp, fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary)
             }
         }
@@ -313,7 +473,6 @@ fun DashboardScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // Credit + contact
-        val context = LocalContext.current
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
             Text("for features or colabs: Tarunswamy M", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
             Spacer(modifier = Modifier.width(8.dp))

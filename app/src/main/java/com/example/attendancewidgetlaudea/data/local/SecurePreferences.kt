@@ -50,6 +50,10 @@ class SecurePreferences(context: Context) {
         get() = securePrefs.getLong(KEY_TOKEN_EXPIRY, 0L)
         set(value) = securePrefs.edit().putLong(KEY_TOKEN_EXPIRY, value).apply()
 
+    var meetingsAccessToken: String?
+        get() = securePrefs.getString(KEY_MEETINGS_ACCESS_TOKEN, null)
+        set(value) = securePrefs.edit().putString(KEY_MEETINGS_ACCESS_TOKEN, value).apply()
+
     var timetableConfigId: String?
         get() = regularPrefs.getString(KEY_TIMETABLE_CONFIG_ID, null)
         set(value) = regularPrefs.edit().putString(KEY_TIMETABLE_CONFIG_ID, value).apply()
@@ -61,6 +65,18 @@ class SecurePreferences(context: Context) {
     var displayName: String?
         get() = regularPrefs.getString(KEY_DISPLAY_NAME, null)
         set(value) = regularPrefs.edit().putString(KEY_DISPLAY_NAME, value).apply()
+
+    var attendanceTarget: Int
+        get() = regularPrefs.getInt(KEY_ATTENDANCE_TARGET, 75)
+        set(value) = regularPrefs.edit().putInt(KEY_ATTENDANCE_TARGET, value).apply()
+
+    var programmeName: String?
+        get() = regularPrefs.getString(KEY_PROGRAMME_NAME, null)
+        set(value) = regularPrefs.edit().putString(KEY_PROGRAMME_NAME, value).apply()
+
+    var batchYear: Int
+        get() = regularPrefs.getInt(KEY_BATCH_YEAR, 0)
+        set(value) = regularPrefs.edit().putInt(KEY_BATCH_YEAR, value).apply()
 
     // Regular storage for non-sensitive data (attendance cache)
     var cachedPresentCount: Int
@@ -175,6 +191,10 @@ class SecurePreferences(context: Context) {
         private const val KEY_TIMETABLE_CONFIG_ID = "timetable_config_id"
         private const val KEY_CACHED_TIMETABLE = "cached_timetable"
         private const val KEY_DISPLAY_NAME = "display_name"
+        private const val KEY_MEETINGS_ACCESS_TOKEN = "meetings_access_token"
+        private const val KEY_ATTENDANCE_TARGET = "attendance_target"
+        private const val KEY_PROGRAMME_NAME = "programme_name"
+        private const val KEY_BATCH_YEAR = "batch_year"
 
         @Volatile
         private var instance: SecurePreferences? = null

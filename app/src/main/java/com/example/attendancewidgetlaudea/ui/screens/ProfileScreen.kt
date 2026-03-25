@@ -17,6 +17,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,9 +42,12 @@ import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.example.attendancewidgetlaudea.R
 import com.example.attendancewidgetlaudea.data.local.SecurePreferences
+import com.example.attendancewidgetlaudea.data.model.StudentBiodata
 import com.example.attendancewidgetlaudea.data.repository.AttendanceRepository
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.components.LiquidGlassCard
@@ -49,6 +55,9 @@ import com.example.attendancewidgetlaudea.ui.components.LiquidGlassSurface
 import io.github.fletchmckee.liquid.LiquidState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 
 @Composable
 fun ProfileScreen(
@@ -67,16 +76,34 @@ fun ProfileScreen(
     var showLogoutDialog by remember { mutableStateOf(false) }
     var profileBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var showFaah by remember { mutableStateOf(false) }
+    var biodata by remember { mutableStateOf<StudentBiodata?>(null) }
+    var showBiodata by remember { mutableStateOf(false) }
 
-    // Fetch profile picture
+    // Attendance target setting
+    var attendanceTarget by remember { mutableIntStateOf(securePrefs.attendanceTarget) }
+    var showTargetDialog by remember { mutableStateOf(false) }
+
+    // Update checker state
+    var updateState by remember { mutableStateOf<UpdateCheckState>(UpdateCheckState.Idle) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Fetch profile picture + biodata
     LaunchedEffect(rollNumber) {
         if (rollNumber.isNotEmpty()) {
             withContext(Dispatchers.IO) {
+                val repo = AttendanceRepository.getInstance(context)
                 try {
-                    val repo = AttendanceRepository.getInstance(context)
                     val bytes = repo.fetchProfilePicture()
                     if (bytes != null && bytes.isNotEmpty()) {
                         profileBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    }
+                } catch (_: Exception) {}
+                try {
+                    biodata = repo.fetchStudentBiodata()
+                    biodata?.let { bio ->
+                        bio.programmeName?.let { securePrefs.programmeName = it }
+                        bio.batchYear?.let { securePrefs.batchYear = it }
                     }
                 } catch (_: Exception) {}
             }
@@ -89,6 +116,82 @@ fun ProfileScreen(
             title = { Text("Logout") }, text = { Text("Are you sure you want to logout?") },
             confirmButton = { TextButton(onClick = { showLogoutDialog = false; onLogout() }) { Text("Logout") } },
             dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text("Cancel") } },
+            containerColor = Color(0xFF1E2A3A)
+        )
+    }
+
+    if (showTargetDialog) {
+        var sliderValue by remember { mutableFloatStateOf(attendanceTarget.toFloat()) }
+        AlertDialog(
+            onDismissRequest = { showTargetDialog = false },
+            title = { Text("Attendance Target") },
+            text = {
+                Column {
+                    Text("Set your target attendance percentage. The dashboard will show how many days you need to reach this target.")
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("${sliderValue.toInt()}%", fontSize = 32.sp, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Slider(
+                        value = sliderValue,
+                        onValueChange = { sliderValue = it },
+                        valueRange = 50f..100f,
+                        steps = 49
+                    )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("50%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("100%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    attendanceTarget = sliderValue.toInt()
+                    securePrefs.attendanceTarget = sliderValue.toInt()
+                    showTargetDialog = false
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { showTargetDialog = false }) { Text("Cancel") } },
+            containerColor = Color(0xFF1E2A3A)
+        )
+    }
+
+    if (showUpdateDialog) {
+        val state = updateState
+        AlertDialog(
+            onDismissRequest = { showUpdateDialog = false },
+            title = { Text(when (state) {
+                is UpdateCheckState.Checking -> "Checking..."
+                is UpdateCheckState.UpdateAvailable -> "Update Available"
+                is UpdateCheckState.UpToDate -> "Up to Date"
+                is UpdateCheckState.Error -> "Error"
+                else -> ""
+            }) },
+            text = { Text(when (state) {
+                is UpdateCheckState.Checking -> "Checking for updates..."
+                is UpdateCheckState.UpdateAvailable -> "Version ${state.latestVersion} is available!\nYou're on v$appVersion."
+                is UpdateCheckState.UpToDate -> "You're running the latest version (v$appVersion)."
+                is UpdateCheckState.Error -> "Couldn't check for updates. Please try again later."
+                else -> ""
+            }) },
+            confirmButton = {
+                when (state) {
+                    is UpdateCheckState.UpdateAvailable -> {
+                        TextButton(onClick = {
+                            showUpdateDialog = false
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(state.downloadUrl)))
+                        }) { Text("Download") }
+                    }
+                    else -> {
+                        TextButton(onClick = { showUpdateDialog = false }) { Text("OK") }
+                    }
+                }
+            },
+            dismissButton = if (state is UpdateCheckState.UpdateAvailable) {
+                { TextButton(onClick = { showUpdateDialog = false }) { Text("Later") } }
+            } else null,
             containerColor = Color(0xFF1E2A3A)
         )
     }
@@ -129,6 +232,30 @@ fun ProfileScreen(
         Spacer(modifier = Modifier.height(16.dp))
         if (displayName.isNotEmpty()) Text(displayName, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
         Text(rollNumber, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        // Academic info — year, semester, section, department
+        val bio = biodata
+        if (bio != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            val yearOfStudy = if (bio.batchYear != null && bio.currentSem != null) {
+                val year = (bio.currentSem + 1) / 2
+                "${year}${when(year) { 1 -> "st"; 2 -> "nd"; 3 -> "rd"; else -> "th" }} Year"
+            } else null
+            val semText = bio.currentSem?.let { "Semester $it" }
+            val sectionText = bio.section?.let { "Section $it" }
+            val infoLine = listOfNotNull(yearOfStudy, semText, sectionText).joinToString("  •  ")
+            if (infoLine.isNotEmpty()) {
+                Text(infoLine, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium)
+            }
+            // Show programme name (e.g., "BTECH COMPUTER SCIENCE AND BUSINESS SYSTEMS")
+            // falling back to department if programme not available
+            val displayDept = bio.programmeName ?: bio.department
+            displayDept?.let {
+                Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -175,9 +302,111 @@ fun ProfileScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Biodata card
+        GlassListCard(modifier = Modifier.fillMaxWidth().clickable { showBiodata = !showBiodata }) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Biodata", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (showBiodata) "Hide" else "Tap to view",
+                        fontSize = 11.sp, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+                }
+                if (showBiodata) {
+                    val bioVal = biodata
+                    if (bioVal != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        bioVal.programmeName?.let { BiodataRow("Programme", it) }
+                            ?: bioVal.course?.let { BiodataRow("Course", it) }
+                        bioVal.degreeName?.let { BiodataRow("Degree", it) }
+                        bioVal.department?.let { BiodataRow("Department", it) }
+                        bioVal.currentSem?.let { BiodataRow("Current Semester", it.toString()) }
+                        bioVal.section?.let { BiodataRow("Section", it) }
+                        bioVal.batchYear?.let { BiodataRow("Batch Year", it.toString()) }
+                        bioVal.gender?.let { BiodataRow("Gender", it) }
+                        bioVal.dateOfBirth?.let { BiodataRow("Date of Birth", it) }
+                        bioVal.motherTongue?.let { BiodataRow("Mother Tongue", it) }
+                        bioVal.nationality?.let { BiodataRow("Nationality", it) }
+                        bioVal.bloodGroup?.let { BiodataRow("Blood Group", it) }
+                        bioVal.religion?.let { BiodataRow("Religion", it) }
+                        bioVal.community?.let { BiodataRow("Community", it) }
+                        bioVal.email?.let { BiodataRow("Email", it) }
+                        bioVal.phone?.let { BiodataRow("Phone", it) }
+                        bioVal.fatherName?.let { BiodataRow("Father's Name", it) }
+                        bioVal.motherName?.let { BiodataRow("Mother's Name", it) }
+                        bioVal.quota?.let { BiodataRow("Quota", it) }
+                        bioVal.enrolledOn?.let { BiodataRow("Enrolled On", it) }
+                        bioVal.appFormNo?.let { BiodataRow("App Form No", it) }
+                    } else {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Loading...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // Menu — real liquid glass
         LiquidGlassCard(cardState = cardState, modifier = Modifier.fillMaxWidth()) {
             Column {
+                ListItem(headlineContent = { Text("Share App (APK)") }, leadingContent = { Icon(Icons.Default.Share, null) },
+                    modifier = Modifier.clickable {
+                        try {
+                            val sourceApk = File(context.applicationInfo.sourceDir)
+                            val shareDir = File(context.cacheDir, "apk_share")
+                            shareDir.mkdirs()
+                            val destApk = File(shareDir, "LaudeaAttendance-v$appVersion.apk")
+                            sourceApk.copyTo(destApk, overwrite = true)
+                            val apkUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", destApk)
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/vnd.android.package-archive"
+                                putExtra(Intent.EXTRA_STREAM, apkUri)
+                                putExtra(Intent.EXTRA_TEXT, "Check out Laudea Attendance Widget — track your PSG iTech attendance right from your home screen!")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share APK via"))
+                        } catch (_: Exception) {
+                            // Fallback to link sharing
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, "Check out Laudea Attendance Widget — track your PSG iTech attendance right from your home screen!\n\nhttps://github.com/Tarunswamy-Muralidharan/-AttendanceWidgetLaudea/releases/latest")
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share via"))
+                        }
+                    }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                ListItem(
+                    headlineContent = { Text("Check for Updates") },
+                    leadingContent = { Icon(Icons.Default.SystemUpdate, null) },
+                    supportingContent = if (updateState is UpdateCheckState.Checking) {
+                        { LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) }
+                    } else null,
+                    modifier = Modifier.clickable {
+                        if (updateState !is UpdateCheckState.Checking) {
+                            updateState = UpdateCheckState.Checking
+                            showUpdateDialog = true
+                            coroutineScope.launch {
+                                updateState = checkForUpdate(appVersion)
+                            }
+                        }
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                ListItem(
+                    headlineContent = { Text("Attendance Target") },
+                    leadingContent = { Icon(Icons.Default.Settings, null) },
+                    supportingContent = { Text("${attendanceTarget}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary) },
+                    modifier = Modifier.clickable { showTargetDialog = true },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 ListItem(headlineContent = { Text("Privacy Policy") }, leadingContent = { Icon(Icons.Default.Info, null) },
                     modifier = Modifier.clickable { onPrivacyPolicyClick() }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
@@ -412,4 +641,73 @@ fun ProfileScreen(
         }
     }
     } // Box
+}
+
+private sealed class UpdateCheckState {
+    data object Idle : UpdateCheckState()
+    data object Checking : UpdateCheckState()
+    data class UpdateAvailable(val latestVersion: String, val downloadUrl: String) : UpdateCheckState()
+    data object UpToDate : UpdateCheckState()
+    data object Error : UpdateCheckState()
+}
+
+private suspend fun checkForUpdate(currentVersion: String): UpdateCheckState = withContext(Dispatchers.IO) {
+    try {
+        val url = URL("https://api.github.com/repos/Tarunswamy-Muralidharan/-AttendanceWidgetLaudea/releases/latest")
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "GET"
+        conn.setRequestProperty("Accept", "application/vnd.github+json")
+        conn.connectTimeout = 10000
+        conn.readTimeout = 10000
+
+        if (conn.responseCode != 200) return@withContext UpdateCheckState.Error
+
+        val json = conn.inputStream.bufferedReader().use { it.readText() }
+        val obj = org.json.JSONObject(json)
+        val tagName = obj.optString("tag_name", "").removePrefix("v")
+        val assets = obj.optJSONArray("assets")
+
+        val downloadUrl = if (assets != null && assets.length() > 0) {
+            assets.getJSONObject(0).optString("browser_download_url", "")
+        } else {
+            obj.optString("html_url", "")
+        }
+
+        if (tagName.isEmpty()) return@withContext UpdateCheckState.Error
+
+        if (isNewerVersion(tagName, currentVersion)) {
+            UpdateCheckState.UpdateAvailable(tagName, downloadUrl)
+        } else {
+            UpdateCheckState.UpToDate
+        }
+    } catch (_: Exception) {
+        UpdateCheckState.Error
+    }
+}
+
+private fun isNewerVersion(remote: String, local: String): Boolean {
+    val remoteParts = remote.split(".").mapNotNull { it.toIntOrNull() }
+    val localParts = local.split(".").mapNotNull { it.toIntOrNull() }
+    for (i in 0 until maxOf(remoteParts.size, localParts.size)) {
+        val r = remoteParts.getOrElse(i) { 0 }
+        val l = localParts.getOrElse(i) { 0 }
+        if (r > l) return true
+        if (r < l) return false
+    }
+    return false
+}
+
+@Composable
+private fun BiodataRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(0.4f))
+        Text(value, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(0.6f),
+            textAlign = androidx.compose.ui.text.style.TextAlign.End)
+    }
 }

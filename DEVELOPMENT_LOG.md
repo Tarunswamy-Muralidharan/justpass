@@ -712,3 +712,75 @@ Background:
 - Chrome browser automation for API discovery
 - Compose Canvas animations (clipPath, radial gradients, comet trails)
 - Material3 PullToRefreshBox
+- PDF syllabus data extraction and structured curriculum modeling
+- Multi-regulation CGPA calculator with department auto-detection
+
+---
+
+## v2.1 Development Session — March 25, 2026
+
+### New Features Built
+
+#### 1. Profile Academic Info Display
+**What:** Added current year, semester, section, and programme name below the user's name on the Profile screen.
+
+**Challenge:** The SIS API returns `department` as "COMPUTER SCIENCE AND ENGINEERING" even for CSBS students, because CSBS falls under the CSE department. The actual programme is in the `programmeName` field ("BTECH COMPUTER SCIENCE AND BUSINESS SYSTEMS").
+
+**Solution:** Added 7 new fields to `StudentBiodata` model (`currentSem`, `section`, `department`, `batchYear`, `programDuration`, `degreeName`, `programmeName`), parsed from the API JSON. Profile now shows `programmeName` instead of `department` for accurate display. Also fixed the family member parsing to use the `members` array format (FATHER/MOTHER types) since the API doesn't use flat `fatherName`/`motherName` fields.
+
+**How we discovered the API structure:** Used Chrome browser automation (Claude-in-Chrome) to log into LAUDEA SIS, then used Angular's `$http` service to make authenticated API calls and logged the full JSON response to console — revealing all available fields.
+
+---
+
+#### 2. Dashboard Consolidation
+**What:** Moved Present, Absent, Total, Exempt, and Pending (Not Entered) counts from separate stat cards into the main attendance percentage card.
+
+**Result:** Cleaner dashboard with fewer cards, more breathing room. Stats appear as a compact colored row with a divider below the percentage. Absent and Exempt counts are still tappable for navigation.
+
+---
+
+#### 3. Leave Calculator Redesign
+**What:** Replaced the text input field with a slider (0-30 days) and added a hint message "Slide to see how your attendance changes" when at zero.
+
+**Before:** Plain `OutlinedTextField` that looked out of place and required keyboard interaction.
+**After:** Interactive `Slider` that instantly shows New Attendance %, Drop %, and Hours Missed in a 3-column layout when dragged.
+
+---
+
+#### 4. GPA Calculator (Major Feature)
+**What:** Full SGPA/CGPA calculator with curriculum data for 7 departments across 2 regulations.
+
+**Data Source Challenge:** Needed complete subject/credit data for all 8 semesters across 7 departments and 2 regulations. Downloaded 17 official syllabus PDFs:
+- 7 PDFs from Anna University (R2021 regulation) — CSE, EEE, ECE, MECH, CIVIL, AI&DS, CSBS
+- 10 PDFs from PSGiTech website (R2025 autonomous regulation) — CSE, EEE, ECE, MECH, CIVIL, AI&DS, ICE, VLSI, + 2 PG programmes
+
+**Extraction Strategy:** Launched 7 parallel AI agents to read PDFs simultaneously — each agent handled 1-2 departments, extracting subject codes, names, credits, and semester mapping. All agents completed within ~3 minutes, returning structured data ready for Kotlin.
+
+**Architecture:**
+- `CgpaData.kt` — ~800 lines of curriculum data + grade system + calculation functions
+- `CgpaViewModel.kt` — State management for department/semester selection and grade entry
+- `CgpaCalculatorScreen.kt` — Full UI with semester tabs, expandable grade pickers, live SGPA/CGPA
+
+**Auto-detection Challenge:** The app initially defaulted to CSE for all users. Fixed by:
+1. Storing `programmeName` and `batchYear` in SecurePreferences when biodata is fetched
+2. Matching programme name against department patterns (e.g., "BUSINESS SYSTEMS" → CSBS, "ARTIFICIAL INTELLIGENCE" → AI&DS)
+3. Using batch year to select regulation (≤2024 → R2021, ≥2025 → R2025)
+
+**Key design decisions:**
+- Grade picker expands inline on tap (no dialog) for fast entry
+- Color-coded grades: O=green, A+=light green, A=blue, B+=yellow, B=orange, C=red
+- SGPA shown in each semester tab for quick overview
+- Grade scale reference card at the bottom
+- Elective subjects shown with "Elective" tag instead of course code
+
+---
+
+### Struggles & How We Overcame Them
+
+1. **Phone going offline during testing:** The Moto G54 kept going offline via ADB mid-session, requiring USB replug. Worked around it by using Chrome browser automation for API discovery and preparing all code changes before installing.
+
+2. **LAUDEA API token extraction:** Couldn't grab the Keycloak token from localStorage/sessionStorage (it's not stored there). Discovered that Angular's `$http` service has interceptors that auto-attach the Bearer token, so we used `angular.element(document.body).injector().get('$http')` to make authenticated requests directly.
+
+3. **Department vs Programme mismatch:** The SIS API's `department` field is the administrative department (CSE), not the specific programme (CSBS). Had to use `programmeName` field for accurate detection, with careful matching order (check CSBS before CSE to avoid false positives).
+
+4. **ADB touch coordinates:** Tapping UI elements via ADB was unreliable — wrong coordinates would navigate to wrong screens. Solution was to rebuild/relaunch the app and let the user interact directly for testing.

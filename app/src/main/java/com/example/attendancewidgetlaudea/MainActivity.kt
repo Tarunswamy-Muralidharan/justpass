@@ -49,6 +49,9 @@ import com.example.attendancewidgetlaudea.ui.screens.SubjectAttendanceScreen
 import com.example.attendancewidgetlaudea.ui.screens.ResultScreen
 import com.example.attendancewidgetlaudea.ui.screens.SubjectDetailScreen
 import com.example.attendancewidgetlaudea.ui.screens.TimetableScreen
+import com.example.attendancewidgetlaudea.ui.screens.AcademicCalendarScreen
+import com.example.attendancewidgetlaudea.ui.screens.CgpaCalculatorScreen
+import com.example.attendancewidgetlaudea.ui.screens.CircularsScreen
 import com.example.attendancewidgetlaudea.ui.theme.AttendanceWidgetLaudeaTheme
 import com.example.attendancewidgetlaudea.worker.AttendanceRefreshWorker
 import kotlinx.coroutines.delay
@@ -80,7 +83,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Screen {
-    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile
+    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator
 }
 
 private val bottomTabs = listOf(
@@ -248,7 +251,7 @@ fun AttendanceApp() {
                 }
             ) { cardState ->
                 Crossfade(
-                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result)) currentScreen.name
+                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator)) currentScreen.name
                                   else "tab_$selectedTabIndex",
                     animationSpec = tween(200),
                     label = "screenFade"
@@ -292,6 +295,47 @@ fun AttendanceApp() {
                                 selectedTabIndex = 0
                             }
                         )
+                        Screen.AcademicCalendar.name -> AcademicCalendarScreen(
+                            cardState = cardState,
+                            onBack = {
+                                currentScreen = Screen.Dashboard
+                                selectedTabIndex = 0
+                            }
+                        )
+                        Screen.Circulars.name -> CircularsScreen(
+                            cardState = cardState,
+                            onBack = {
+                                currentScreen = Screen.Dashboard
+                                selectedTabIndex = 0
+                            }
+                        )
+                        Screen.CgpaCalculator.name -> {
+                            val progName = securePrefs.programmeName ?: ""
+                            val batch = securePrefs.batchYear.takeIf { it > 0 }
+                                ?: securePrefs.rollNumber?.drop(4)?.take(2)?.toIntOrNull()?.let { 2000 + it }
+                            val detectedDept = com.example.attendancewidgetlaudea.data.model.Department.entries.find { dept ->
+                                when (dept) {
+                                    com.example.attendancewidgetlaudea.data.model.Department.CSBS ->
+                                        progName.contains("BUSINESS SYSTEMS", ignoreCase = true)
+                                    com.example.attendancewidgetlaudea.data.model.Department.AIDS ->
+                                        progName.contains("ARTIFICIAL INTELLIGENCE", ignoreCase = true) ||
+                                        progName.contains("DATA SCIENCE", ignoreCase = true)
+                                    com.example.attendancewidgetlaudea.data.model.Department.CSE ->
+                                        progName.contains("COMPUTER SCIENCE", ignoreCase = true) &&
+                                        !progName.contains("BUSINESS", ignoreCase = true)
+                                    else -> progName.contains(dept.displayName, ignoreCase = true) ||
+                                            progName.contains(dept.shortName, ignoreCase = true)
+                                }
+                            }
+                            CgpaCalculatorScreen(
+                                onBack = {
+                                    currentScreen = Screen.Dashboard
+                                    selectedTabIndex = 0
+                                },
+                                userDepartment = detectedDept,
+                                userBatchYear = batch
+                            )
+                        }
                         "tab_0" -> DashboardScreen(
                             cardState = cardState,
                             displayName = displayName,
@@ -311,6 +355,18 @@ fun AttendanceApp() {
                             onResultClick = {
                                 Analytics.logFeatureUsed("result")
                                 currentScreen = Screen.Result
+                            },
+                            onCalendarClick = {
+                                Analytics.logFeatureUsed("academic_calendar")
+                                currentScreen = Screen.AcademicCalendar
+                            },
+                            onCircularsClick = {
+                                Analytics.logFeatureUsed("circulars")
+                                currentScreen = Screen.Circulars
+                            },
+                            onCgpaClick = {
+                                Analytics.logFeatureUsed("cgpa_calculator")
+                                currentScreen = Screen.CgpaCalculator
                             }
                         )
                         "tab_1" -> TimetableScreen(cardState = cardState)
