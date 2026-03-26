@@ -10,10 +10,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
@@ -46,6 +48,7 @@ import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.components.LiquidGlassCard
 import com.example.attendancewidgetlaudea.ui.viewmodel.DashboardViewModel
 import io.github.fletchmckee.liquid.LiquidState
+import com.example.attendancewidgetlaudea.data.analytics.Analytics
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -209,7 +212,7 @@ fun DashboardScreen(
         // Attendance % — real liquid glass with color tint
         val attendanceTint = getAttendanceTintColor(uiState.attendanceData.attendanceWithExemption)
         LiquidGlassCard(cardState = cardState,
-            modifier = Modifier.fillMaxWidth().clickable { onSubjectAttendanceClick() },
+            modifier = Modifier.fillMaxWidth().clickable { Analytics.logTileClicked("attendance"); onSubjectAttendanceClick() },
             tintColor = attendanceTint) {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Attendance (with exemption)", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
@@ -252,7 +255,11 @@ fun DashboardScreen(
                         }
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.clickable { onAbsentDaysClick() }
+                            modifier = Modifier
+                                .background(Color(0xFFFF5252).copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                .border(1.dp, Color(0xFFFF5252).copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                                .clickable { onAbsentDaysClick() }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(uiState.attendanceData.absentCount.toString(),
                                 fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5252))
@@ -266,7 +273,11 @@ fun DashboardScreen(
                         if (uiState.attendanceData.exemptionCount > 0) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.clickable { onExemptionsClick() }
+                                modifier = Modifier
+                                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                                    .clickable { onExemptionsClick() }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
                             ) {
                                 Text(uiState.attendanceData.exemptionCount.toString(),
                                     fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
@@ -295,6 +306,7 @@ fun DashboardScreen(
         // Leave calculator
         if (uiState.attendanceData.enteredTillDate > 0) {
             var leaveDays by remember { mutableFloatStateOf(0f) }
+            var showLeavePopup by remember { mutableStateOf(false) }
             val days = leaveDays.toInt()
             val present = uiState.attendanceData.presentWithExemptionCount
             val total = uiState.attendanceData.enteredTillDate
@@ -304,7 +316,11 @@ fun DashboardScreen(
             val newPercentage = if (days > 0 && newTotal > 0) (present.toDouble() / newTotal) * 100.0 else currentPct
             val drop = currentPct - newPercentage
 
-            GlassListCard(modifier = Modifier.fillMaxWidth(), shape = GlassCardShapeSmall) {
+            // Inline card — tap to expand
+            GlassListCard(
+                modifier = Modifier.fillMaxWidth().clickable { showLeavePopup = true },
+                shape = GlassCardShapeSmall
+            ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -313,60 +329,109 @@ fun DashboardScreen(
                     ) {
                         Text("What if I take leave?", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface)
-                        if (days > 0) {
-                            Text("$days day${if (days > 1) "s" else ""}",
-                                fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Slider(
-                        value = leaveDays,
-                        onValueChange = { leaveDays = it },
-                        valueRange = 0f..30f,
-                        steps = 29,
-                        colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary,
-                            inactiveTrackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                        )
-                    )
-                    if (days == 0) {
-                        Text("Slide to see how your attendance changes",
-                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth())
+                        Text("Tap to expand", fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
                     }
                     if (days > 0) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            "$days day${if (days > 1) "s" else ""} → ${String.format("%.1f", newPercentage)}%",
+                            fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                            color = if (newPercentage < attendanceTarget) Color(0xFFFF5252) else MaterialTheme.colorScheme.primary
+                        )
+                    } else {
                         Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("${String.format("%.1f", newPercentage)}%",
-                                    fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                                    color = if (newPercentage < attendanceTarget) Color(0xFFFF5252) else Color(0xFF00E676))
-                                Text("New attendance", fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("-${String.format("%.1f", drop)}%",
-                                    fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFF8A80))
-                                Text("Drop", fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("${days * 6}",
-                                    fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface)
-                                Text("Hours missed", fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
+                        Text("Tap to calculate", fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                     }
                 }
+            }
+
+            // Fullscreen leave calculator popup
+            if (showLeavePopup) {
+                AlertDialog(
+                    onDismissRequest = { showLeavePopup = false },
+                    title = {
+                        Text("What if I take leave?", fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface)
+                    },
+                    text = {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            // Big day count
+                            Text(
+                                "${days} day${if (days > 1) "s" else ""}",
+                                fontSize = 48.sp, fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.primary,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Bigger slider
+                            Slider(
+                                value = leaveDays,
+                                onValueChange = { leaveDays = it; if (it.toInt() > 0) Analytics.logSliderUsed("leave_calculator", it.toInt()) },
+                                valueRange = 0f..30f,
+                                steps = 29,
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = MaterialTheme.colorScheme.primary,
+                                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                                    inactiveTrackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                )
+                            )
+
+                            if (days == 0) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Slide to see how your attendance changes",
+                                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth())
+                            }
+
+                            if (days > 0) {
+                                Spacer(modifier = Modifier.height(20.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceEvenly
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("${String.format("%.1f", newPercentage)}%",
+                                            fontSize = 28.sp, fontWeight = FontWeight.Bold,
+                                            color = if (newPercentage < attendanceTarget) Color(0xFFFF5252) else Color(0xFF00E676))
+                                        Text("New attendance", fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("-${String.format("%.1f", drop)}%",
+                                            fontSize = 28.sp, fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFF8A80))
+                                        Text("Drop", fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("$leaveHours",
+                                        fontSize = 28.sp, fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface)
+                                    Text("Hours missed", fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showLeavePopup = false }) {
+                            Text("Done")
+                        }
+                    },
+                    containerColor = Color(0xFF1E2A3A)
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -378,7 +443,7 @@ fun DashboardScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             GlassListCard(
-                modifier = Modifier.weight(1f).clickable { onResultClick() },
+                modifier = Modifier.weight(1f).clickable { Analytics.logTileClicked("result"); onResultClick() },
                 shape = GlassCardShapeSmall
             ) {
                 Row(
@@ -397,7 +462,7 @@ fun DashboardScreen(
                 }
             }
             GlassListCard(
-                modifier = Modifier.weight(1f).clickable { onCalendarClick() },
+                modifier = Modifier.weight(1f).clickable { Analytics.logTileClicked("calendar"); onCalendarClick() },
                 shape = GlassCardShapeSmall
             ) {
                 Row(
@@ -421,7 +486,7 @@ fun DashboardScreen(
 
         // GPA Calculator tile
         GlassListCard(
-            modifier = Modifier.fillMaxWidth().clickable { onCgpaClick() },
+            modifier = Modifier.fillMaxWidth().clickable { Analytics.logTileClicked("gpa_calculator"); onCgpaClick() },
             shape = GlassCardShapeSmall
         ) {
             Row(
@@ -444,7 +509,7 @@ fun DashboardScreen(
 
         // Circulars tile
         GlassListCard(
-            modifier = Modifier.fillMaxWidth().clickable { onCircularsClick() },
+            modifier = Modifier.fillMaxWidth().clickable { Analytics.logTileClicked("circulars"); onCircularsClick() },
             shape = GlassCardShapeSmall
         ) {
             Row(

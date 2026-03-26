@@ -784,3 +784,65 @@ Background:
 3. **Department vs Programme mismatch:** The SIS API's `department` field is the administrative department (CSE), not the specific programme (CSBS). Had to use `programmeName` field for accurate detection, with careful matching order (check CSBS before CSE to avoid false positives).
 
 4. **ADB touch coordinates:** Tapping UI elements via ADB was unreliable — wrong coordinates would navigate to wrong screens. Solution was to rebuild/relaunch the app and let the user interact directly for testing.
+
+---
+
+## v2.1 Development (2026-03-26)
+
+### Feature: Honours Course Detection in Timetable
+
+**Goal:** Automatically label honours periods in the timetable so students know which classes are part of their honours/minor degree.
+
+**Challenge: No API-level distinction.** The LAUDEA SIS timetable API returns all courses identically — there's no field or flag to distinguish honours courses from regular ones. Honours courses in Anna University R2021 regulations are simply additional professional elective courses (18 extra credits from semesters 5-8) taken from the same verticals.
+
+**How we solved it:**
+1. Read all 7 department R2021 regulation PDFs from Anna University to understand the curriculum structure
+2. Discovered that PCC (Programme Core) courses have fixed course codes per semester, while PEC (Professional Elective) courses are chosen from vertical pools
+3. The standard curriculum defines exactly how many PEC/OEC slots exist per semester (e.g., CSE Sem V = 4 PCC + 2 PEC)
+4. Built `detectHonoursCourses()` in CgpaData.kt that compares timetable courses against the standard curriculum:
+   - Identifies fixed PCC codes (definitely standard)
+   - Counts expected elective slots
+   - If there are more non-PCC courses than expected → the surplus are honours
+5. The TimetableViewModel reads the student's department (from `programmeName`), semester, and batch year from SecurePreferences, then marks matching sessions with `isHonours = true`
+6. TimetableScreen shows an amber "HONOURS" pill badge next to the course code
+
+**Key error faced:** Could not read PDFs directly in the tool (pdftoppm not available on Windows). Solved by using Python's PyPDF2 library to extract text, with UTF-8 encoding workaround for special characters (√ symbol caused charmap codec error on cp1252).
+
+**Design decision:** Honours detection only activates from semester 5 onwards (per R2021 regulations). For semesters 1-4, all courses are standard curriculum — no honours possible.
+
+---
+
+### Feature: Absent Days Descending Order
+
+Simple but important UX fix — absent days list now sorts by date descending (most recent first) so students see their latest absences at the top instead of scrolling to the bottom.
+
+---
+
+### Feature: Holiday Notification Worker
+
+**Goal:** Notify students the evening before a holiday so they know they don't have classes tomorrow.
+
+**Implementation:**
+- New `HolidayNotificationWorker` (CoroutineWorker) runs every 6 hours via WorkManager
+- Fetches upcoming events from the Google Calendar API (same calendar ID as AcademicCalendarScreen)
+- Filters for events with `CalendarEventType.HOLIDAY` that fall on tomorrow's date
+- Shows notification with holiday name(s); strips "Holiday - " prefix for cleaner display
+- Tracks `last_holiday_notified_date` in SharedPreferences to avoid duplicate notifications
+- Tapping the notification navigates to the Academic Calendar screen
+
+**Challenge: Notification deep linking.** The CircularNotificationWorker already used `putExtra("navigate_to", "circulars")` in the intent, but MainActivity never actually read this extra. Fixed by adding intent handling in `AttendanceApp()` — reads `navigate_to` from the activity intent and sets the initial screen accordingly (`"calendar"` → AcademicCalendar, `"circulars"` → Circulars).
+
+---
+
+### Feature: Dashboard & Profile Improvements (Batch 1)
+
+Additional v2.1 features implemented in the same session:
+
+1. **Clickable Absent/Exempt Mini-Tiles** — Floating glass pills with red background for absent, tertiary for exempt
+2. **Leave Slider Tap-to-Expand** — Compact card expands to fullscreen dialog with 48sp day counter
+3. **GPA Calculator Upgrades** — Elective custom names, auto-fill from semester results, grade persistence
+4. **Profile Instant Cache** — Profile picture + academic info cached locally for instant display
+5. **Login Typing Animation** — Typewriter effect cycling sample roll numbers with blinking cursor
+6. **Circulars Push Notifications** — Background check every 3 hours, notification on new circulars
+7. **Enhanced Analytics** — 7 new event types (tile clicks, screen duration, slider, GPA, circular, calendar, profile actions)
+8. **Fullscreen Side Eye Dog Meme** — Easter egg meme now opens as fullscreen black overlay

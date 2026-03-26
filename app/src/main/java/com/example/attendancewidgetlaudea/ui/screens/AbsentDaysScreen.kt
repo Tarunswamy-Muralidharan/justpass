@@ -84,8 +84,9 @@ private val outputFormat = SimpleDateFormat("EEE, MMM d", Locale.US)
 private fun formatDate(isoDate: String): String = try { outputFormat.format(inputFormat.parse(isoDate)!!) } catch (_: Exception) { isoDate }
 
 private fun buildFlatList(absentDays: List<AbsentDay>): List<FlatItem> {
-    val list = ArrayList<FlatItem>(absentDays.size * 4)
-    for (day in absentDays) {
+    val sorted = absentDays.sortedByDescending { it.date }
+    val list = ArrayList<FlatItem>(sorted.size * 4)
+    for (day in sorted) {
         list.add(FlatItem.DateHeader(formatDate(day.date), day.sessions.size, "d_${day.date}"))
         day.sessions.forEachIndexed { index, session ->
             list.add(FlatItem.SessionRow("${session.startTime}\n${session.endTime}", session.courseTitle, session.courseCode,

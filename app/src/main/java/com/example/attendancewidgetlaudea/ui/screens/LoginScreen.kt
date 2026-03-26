@@ -1,10 +1,16 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -29,6 +35,41 @@ fun LoginScreen(viewModel: LoginViewModel = viewModel(), onLoginSuccess: () -> U
     val focusManager = LocalFocusManager.current
     var passwordVisible by remember { mutableStateOf(false) }
 
+    // Typing animation for roll number placeholder
+    val typingTexts = listOf("71762133XX", "71762104XX", "71551XXXXX")
+    var currentTextIndex by remember { mutableIntStateOf(0) }
+    var displayedChars by remember { mutableIntStateOf(0) }
+    var isDeleting by remember { mutableStateOf(false) }
+    val currentFullText = typingTexts[currentTextIndex]
+
+    LaunchedEffect(currentTextIndex) {
+        // Type forward
+        displayedChars = 0
+        isDeleting = false
+        for (i in 1..currentFullText.length) {
+            displayedChars = i
+            delay(80L + (0..40L).random()) // Variable typing speed
+        }
+        delay(1500) // Pause when fully typed
+        // Delete backward
+        isDeleting = true
+        for (i in currentFullText.length downTo 0) {
+            displayedChars = i
+            delay(40L)
+        }
+        delay(300)
+        // Move to next text
+        currentTextIndex = (currentTextIndex + 1) % typingTexts.size
+    }
+
+    val animatedPlaceholder = currentFullText.take(displayedChars)
+
+    // Blinking cursor
+    val cursorVisible by rememberInfiniteTransition(label = "cursor").animateFloat(
+        initialValue = 1f, targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse), label = "blink"
+    )
+
     LaunchedEffect(uiState.isLoggedIn) { if (uiState.isLoggedIn) onLoginSuccess() }
 
     LiquidGlassScaffold(variant = BackgroundVariant.Login) { _ ->
@@ -44,7 +85,21 @@ fun LoginScreen(viewModel: LoginViewModel = viewModel(), onLoginSuccess: () -> U
             GlassListCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
                     OutlinedTextField(value = uiState.rollNumber, onValueChange = { viewModel.updateRollNumber(it) },
-                        label = { Text("Roll Number") }, placeholder = { Text("Enter your roll number") },
+                        label = { Text("Roll Number") },
+                        placeholder = {
+                            Row {
+                                Text(
+                                    animatedPlaceholder,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                                if (uiState.rollNumber.isEmpty()) {
+                                    Text(
+                                        "▌",
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = cursorVisible * 0.7f)
+                                    )
+                                }
+                            }
+                        },
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
                         keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),

@@ -5,6 +5,9 @@ import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.data.model.AbsentDay
 import com.example.attendancewidgetlaudea.data.model.AttendanceData
 import com.example.attendancewidgetlaudea.data.model.CourseMarks
+import com.example.attendancewidgetlaudea.data.model.CircularAttachment
+import com.example.attendancewidgetlaudea.data.model.CircularDetail
+import com.example.attendancewidgetlaudea.data.model.CircularListResponse
 import com.example.attendancewidgetlaudea.data.model.Exemption
 import com.example.attendancewidgetlaudea.data.model.TimetableResponse
 import com.example.attendancewidgetlaudea.data.webview.InvalidCredentialsException
@@ -517,9 +520,140 @@ class AttendanceRepository(private val context: Context) {
         return null
     }
 
+    suspend fun fetchStudentBiodata(): com.example.attendancewidgetlaudea.data.model.StudentBiodata? {
+        val rollNumber = securePrefs.rollNumber ?: return null
+        val password = securePrefs.password
+
+        try {
+            val bio = webViewAuthenticator.fetchStudentProfile(rollNumber)
+            if (bio != null) return bio
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Biodata fast fetch error: ${e.message}")
+        }
+
+        // Token expired — refresh then retry
+        try {
+            val refreshed = webViewAuthenticator.refreshAccessToken()
+                || (!password.isNullOrEmpty() && webViewAuthenticator.loginViaKeycloak(rollNumber, password))
+            if (refreshed) {
+                return webViewAuthenticator.fetchStudentProfile(rollNumber)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Biodata token refresh error: ${e.message}")
+        }
+
+        return null
+    }
+
+    suspend fun fetchCirculars(): Result<CircularListResponse> {
+        // Ensure we have a meetings token
+        if (!webViewAuthenticator.ensureMeetingsToken()) {
+            return Result.Error("Could not authenticate with meetings module")
+        }
+
+        // Try with cached meetings token
+        try {
+            val result = webViewAuthenticator.fetchCircularsDirect()
+            if (result != null && result.isSuccess) {
+                return Result.Success(result.getOrThrow())
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Circulars fetch error: ${e.message}")
+        }
+
+        // Token expired — re-authenticate meetings
+        val rollNumber = securePrefs.rollNumber
+        val password = securePrefs.password
+        if (!rollNumber.isNullOrEmpty() && !password.isNullOrEmpty()) {
+            try {
+                if (webViewAuthenticator.loginViaMeetingsKeycloak(rollNumber, password)) {
+                    val retryResult = webViewAuthenticator.fetchCircularsDirect()
+                    if (retryResult != null && retryResult.isSuccess) {
+                        return Result.Success(retryResult.getOrThrow())
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("AttendanceRepo", "Circulars retry error: ${e.message}")
+            }
+        }
+
+        return Result.Error("Could not fetch circulars")
+    }
+
+    suspend fun fetchCircularDetail(circularId: String): Result<CircularDetail> {
+        if (!webViewAuthenticator.ensureMeetingsToken()) {
+            return Result.Error("Could not authenticate with meetings module")
+        }
+
+        try {
+            val result = webViewAuthenticator.fetchCircularDetailDirect(circularId)
+            if (result != null && result.isSuccess) {
+                return Result.Success(result.getOrThrow())
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "Circular detail error: ${e.message}")
+        }
+
+        // Token expired — re-authenticate
+        val rollNumber = securePrefs.rollNumber
+        val password = securePrefs.password
+        if (!rollNumber.isNullOrEmpty() && !password.isNullOrEmpty()) {
+            try {
+                if (webViewAuthenticator.loginViaMeetingsKeycloak(rollNumber, password)) {
+                    val retryResult = webViewAuthenticator.fetchCircularDetailDirect(circularId)
+                    if (retryResult != null && retryResult.isSuccess) {
+                        return Result.Success(retryResult.getOrThrow())
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("AttendanceRepo", "Circular detail retry error: ${e.message}")
+            }
+        }
+
+        return Result.Error("Could not fetch circular details")
+    }
+
+    suspend fun fetchCircularPdfUrl(attachment: CircularAttachment): Result<String> {
+        if (!webViewAuthenticator.ensureMeetingsToken()) {
+            return Result.Error("Could not authenticate with meetings module")
+        }
+
+        try {
+            val result = webViewAuthenticator.fetchCircularPdfUrl(attachment)
+            if (result != null && result.isSuccess) {
+                return Result.Success(result.getOrThrow())
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "PDF URL error: ${e.message}")
+        }
+
+        // Token expired — re-authenticate
+        val rollNumber = securePrefs.rollNumber
+        val password = securePrefs.password
+        if (!rollNumber.isNullOrEmpty() && !password.isNullOrEmpty()) {
+            try {
+                if (webViewAuthenticator.loginViaMeetingsKeycloak(rollNumber, password)) {
+                    val retryResult = webViewAuthenticator.fetchCircularPdfUrl(attachment)
+                    if (retryResult != null && retryResult.isSuccess) {
+                        return Result.Success(retryResult.getOrThrow())
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("AttendanceRepo", "PDF URL retry error: ${e.message}")
+            }
+        }
+
+        return Result.Error("Could not get PDF download URL")
+    }
+
+    suspend fun downloadPdfBytes(signedUrl: String): ByteArray? {
+        return webViewAuthenticator.downloadPdfBytes(signedUrl)
+    }
+
     fun logout() {
         securePrefs.setLoggedIn(false)
         webViewAuthenticator.cachedAuthToken = null
+        webViewAuthenticator.cachedMeetingsToken = null
         webViewAuthenticator.clearSession()
         securePrefs.clearAll()
         // Update widget to show logged out state

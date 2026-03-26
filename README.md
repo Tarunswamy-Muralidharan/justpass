@@ -7,7 +7,7 @@ An Android app and home screen widget for PSG iTech LAUDEA Student Information S
 - **Attendance Dashboard** -- Overall attendance percentage (with/without exemption), present/absent counts, total classes, and a 75% target warning with hours/days estimate
 - **Subject-wise Attendance** -- Per-subject attendance breakdown with color-coded progress bars. Tap any subject to see a day-by-day session timeline (Present, Absent, Exemption)
 - **Semester Results** -- View exam grades per semester with letter grade, grade point, pass/fail status, and SGPA calculation via semester tabs
-- **Timetable** -- Daily class schedule with day tabs, "NOW" badge for the current session, and period progress overlay
+- **Timetable** -- Daily class schedule with day tabs, "NOW" badge for the current session, period progress overlay, and automatic "HONOURS" badge for honours courses (detected by comparing against R2021/R2025 curriculum)
 - **CA Marks** -- Continuous assessment marks with color-coded component-level expandable breakdown ("Tap to expand" / "Awaiting marks")
 - **Exemptions** -- View all exemption applications with type, category, date range, reason, and status
 - **Profile** -- SIS profile picture with attendance overview
@@ -16,6 +16,8 @@ An Android app and home screen widget for PSG iTech LAUDEA Student Information S
 - **Auto Refresh** -- 4-tier token refresh strategy (cached token, offline refresh, password grant, WebView fallback) ensures instant data at any time
 - **Session Management** -- Automatic re-login when session expires; no manual re-authentication needed
 - **Update Notifications** -- Background check for new releases via GitHub, notifies you when an update is available
+- **Holiday Notifications** -- Get notified the day before a holiday with the holiday name; tap to open the academic calendar
+- **Circular Notifications** -- Push notifications for new college circulars
 - **Easter Eggs** -- Hidden surprises for the curious
 
 ## Glass UI

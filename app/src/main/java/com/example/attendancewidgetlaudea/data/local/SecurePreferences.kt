@@ -78,6 +78,22 @@ class SecurePreferences(context: Context) {
         get() = regularPrefs.getInt(KEY_BATCH_YEAR, 0)
         set(value) = regularPrefs.edit().putInt(KEY_BATCH_YEAR, value).apply()
 
+    var cachedProfilePicPath: String?
+        get() = regularPrefs.getString(KEY_CACHED_PROFILE_PIC, null)
+        set(value) = regularPrefs.edit().putString(KEY_CACHED_PROFILE_PIC, value).apply()
+
+    var cachedCurrentSem: Int
+        get() = regularPrefs.getInt(KEY_CACHED_CURRENT_SEM, 0)
+        set(value) = regularPrefs.edit().putInt(KEY_CACHED_CURRENT_SEM, value).apply()
+
+    var cachedSection: String?
+        get() = regularPrefs.getString(KEY_CACHED_SECTION, null)
+        set(value) = regularPrefs.edit().putString(KEY_CACHED_SECTION, value).apply()
+
+    var cachedDepartment: String?
+        get() = regularPrefs.getString(KEY_CACHED_DEPARTMENT, null)
+        set(value) = regularPrefs.edit().putString(KEY_CACHED_DEPARTMENT, value).apply()
+
     // Regular storage for non-sensitive data (attendance cache)
     var cachedPresentCount: Int
         get() = regularPrefs.getInt(KEY_PRESENT_COUNT, 0)
@@ -195,6 +211,10 @@ class SecurePreferences(context: Context) {
         private const val KEY_ATTENDANCE_TARGET = "attendance_target"
         private const val KEY_PROGRAMME_NAME = "programme_name"
         private const val KEY_BATCH_YEAR = "batch_year"
+        private const val KEY_CACHED_PROFILE_PIC = "cached_profile_pic"
+        private const val KEY_CACHED_CURRENT_SEM = "cached_current_sem"
+        private const val KEY_CACHED_SECTION = "cached_section"
+        private const val KEY_CACHED_DEPARTMENT = "cached_department"
 
         @Volatile
         private var instance: SecurePreferences? = null

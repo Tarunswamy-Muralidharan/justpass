@@ -45,6 +45,7 @@ import androidx.compose.foundation.Canvas
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.example.attendancewidgetlaudea.data.analytics.Analytics
 import com.example.attendancewidgetlaudea.R
 import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.data.model.StudentBiodata
@@ -74,9 +75,38 @@ fun ProfileScreen(
         try { context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?" } catch (_: Exception) { "?" }
     }
     var showLogoutDialog by remember { mutableStateOf(false) }
-    var profileBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var showSideEye by remember { mutableStateOf(false) }
+    // Load cached profile picture immediately
+    var profileBitmap by remember {
+        mutableStateOf<Bitmap?>(
+            securePrefs.cachedProfilePicPath?.let { path ->
+                try {
+                    val file = File(path)
+                    if (file.exists()) BitmapFactory.decodeFile(path) else null
+                } catch (_: Exception) { null }
+            }
+        )
+    }
     var showFaah by remember { mutableStateOf(false) }
-    var biodata by remember { mutableStateOf<StudentBiodata?>(null) }
+    // Show cached academic info immediately while loading
+    var biodata by remember {
+        val cachedSem = securePrefs.cachedCurrentSem
+        val cachedSection = securePrefs.cachedSection
+        val cachedDept = securePrefs.cachedDepartment ?: securePrefs.programmeName
+        val cachedBatch = securePrefs.batchYear.takeIf { it > 0 }
+
+        if (cachedSem > 0 || cachedSection != null || cachedDept != null) {
+            mutableStateOf<StudentBiodata?>(StudentBiodata(
+                currentSem = cachedSem.takeIf { it > 0 },
+                section = cachedSection,
+                department = cachedDept,
+                programmeName = securePrefs.programmeName,
+                batchYear = cachedBatch
+            ))
+        } else {
+            mutableStateOf<StudentBiodata?>(null)
+        }
+    }
     var showBiodata by remember { mutableStateOf(false) }
 
     // Attendance target setting
@@ -97,6 +127,14 @@ fun ProfileScreen(
                     val bytes = repo.fetchProfilePicture()
                     if (bytes != null && bytes.isNotEmpty()) {
                         profileBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        // Save to cache file for instant display next time
+                        try {
+                            val cacheFile = File(context.cacheDir, "profile_pic.jpg")
+                            cacheFile.outputStream().use { out ->
+                                profileBitmap!!.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                            }
+                            securePrefs.cachedProfilePicPath = cacheFile.absolutePath
+                        } catch (_: Exception) {}
                     }
                 } catch (_: Exception) {}
                 try {
@@ -104,6 +142,10 @@ fun ProfileScreen(
                     biodata?.let { bio ->
                         bio.programmeName?.let { securePrefs.programmeName = it }
                         bio.batchYear?.let { securePrefs.batchYear = it }
+                        // Cache academic info for instant display next time
+                        bio.currentSem?.let { securePrefs.cachedCurrentSem = it }
+                        bio.section?.let { securePrefs.cachedSection = it }
+                        (bio.programmeName ?: bio.department)?.let { securePrefs.cachedDepartment = it }
                     }
                 } catch (_: Exception) {}
             }
@@ -303,7 +345,7 @@ fun ProfileScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // Biodata card
-        GlassListCard(modifier = Modifier.fillMaxWidth().clickable { showBiodata = !showBiodata }) {
+        GlassListCard(modifier = Modifier.fillMaxWidth().clickable { if (!showBiodata) Analytics.logProfileAction("biodata_view"); showBiodata = !showBiodata }) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -357,6 +399,7 @@ fun ProfileScreen(
             Column {
                 ListItem(headlineContent = { Text("Share App (APK)") }, leadingContent = { Icon(Icons.Default.Share, null) },
                     modifier = Modifier.clickable {
+                        Analytics.logProfileAction("share_app")
                         try {
                             val sourceApk = File(context.applicationInfo.sourceDir)
                             val shareDir = File(context.cacheDir, "apk_share")
@@ -389,6 +432,7 @@ fun ProfileScreen(
                     } else null,
                     modifier = Modifier.clickable {
                         if (updateState !is UpdateCheckState.Checking) {
+                            Analytics.logProfileAction("check_updates")
                             updateState = UpdateCheckState.Checking
                             showUpdateDialog = true
                             coroutineScope.launch {
@@ -403,7 +447,7 @@ fun ProfileScreen(
                     headlineContent = { Text("Attendance Target") },
                     leadingContent = { Icon(Icons.Default.Settings, null) },
                     supportingContent = { Text("${attendanceTarget}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary) },
-                    modifier = Modifier.clickable { showTargetDialog = true },
+                    modifier = Modifier.clickable { Analytics.logProfileAction("attendance_target"); showTargetDialog = true },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
@@ -412,7 +456,7 @@ fun ProfileScreen(
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 ListItem(headlineContent = { Text("Logout", color = MaterialTheme.colorScheme.error) },
                     leadingContent = { Icon(Icons.AutoMirrored.Filled.ExitToApp, null, tint = MaterialTheme.colorScheme.error) },
-                    modifier = Modifier.clickable { showLogoutDialog = true }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+                    modifier = Modifier.clickable { Analytics.logProfileAction("logout"); showLogoutDialog = true }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
             }
         }
 
@@ -517,11 +561,10 @@ fun ProfileScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         // Side eye dog meme easter egg
-        var showSideEye by remember { mutableStateOf(false) }
         GlassListCard(
             modifier = Modifier.fillMaxWidth().clickable {
-                if (!showSideEye) com.example.attendancewidgetlaudea.data.analytics.Analytics.logEasterEggTriggered("side_eye_dog")
-                showSideEye = !showSideEye
+                com.example.attendancewidgetlaudea.data.analytics.Analytics.logEasterEggTriggered("side_eye_dog")
+                showSideEye = true
             }
         ) {
             Column(
@@ -531,25 +574,6 @@ fun ProfileScreen(
                 Text("Tap to view others profile", fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
-                if (showSideEye) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    val dogBitmap = remember {
-                        try {
-                            val inputStream = context.resources.openRawResource(R.raw.dog_side_eye)
-                            android.graphics.BitmapFactory.decodeStream(inputStream)
-                        } catch (_: Exception) { null }
-                    }
-                    if (dogBitmap != null) {
-                        Image(
-                            bitmap = dogBitmap.asImageBitmap(),
-                            contentDescription = "Side eye dog",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)),
-                            contentScale = ContentScale.FillWidth
-                        )
-                    }
-                }
             }
         }
 
@@ -580,6 +604,36 @@ fun ProfileScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+
+    // Fullscreen side eye dog meme overlay
+    if (showSideEye) {
+        val dogBitmap = remember {
+            try {
+                val inputStream = context.resources.openRawResource(R.raw.dog_side_eye)
+                android.graphics.BitmapFactory.decodeStream(inputStream)
+            } catch (_: Exception) { null }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { showSideEye = false }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (dogBitmap != null) {
+                Image(
+                    bitmap = dogBitmap.asImageBitmap(),
+                    contentDescription = "Side eye dog",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit
+                )
+            }
+        }
     }
 
     // Faah explosion overlay
