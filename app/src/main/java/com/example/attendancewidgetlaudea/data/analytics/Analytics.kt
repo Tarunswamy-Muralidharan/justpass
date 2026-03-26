@@ -113,6 +113,60 @@ object Analytics {
         })
     }
 
+    /** Track which dashboard tile was tapped */
+    fun logTileClicked(tileName: String) {
+        firebaseAnalytics?.logEvent("tile_clicked", Bundle().apply {
+            putString("tile_name", tileName)
+        })
+    }
+
+    /** Track how long user spends on a screen */
+    fun logScreenDuration(screenName: String, durationMs: Long) {
+        firebaseAnalytics?.logEvent("screen_duration", Bundle().apply {
+            putString("screen_name", screenName)
+            putLong("duration_ms", durationMs)
+        })
+    }
+
+    /** Track slider interactions */
+    fun logSliderUsed(sliderName: String, value: Int) {
+        firebaseAnalytics?.logEvent("slider_used", Bundle().apply {
+            putString("slider_name", sliderName)
+            putInt("value", value)
+        })
+    }
+
+    /** Track GPA calculator usage */
+    fun logGpaCalculated(semester: Int, sgpa: Double) {
+        firebaseAnalytics?.logEvent("gpa_calculated", Bundle().apply {
+            putInt("semester", semester)
+            putDouble("sgpa", sgpa)
+        })
+    }
+
+    /** Track circular viewed */
+    fun logCircularViewed(circularId: String, tag: String?) {
+        firebaseAnalytics?.logEvent("circular_viewed", Bundle().apply {
+            putString("circular_id", circularId)
+            tag?.let { putString("tag", it) }
+        })
+    }
+
+    /** Track calendar month navigation */
+    fun logCalendarMonthViewed(month: Int, year: Int) {
+        firebaseAnalytics?.logEvent("calendar_month_viewed", Bundle().apply {
+            putInt("month", month)
+            putInt("year", year)
+        })
+    }
+
+    /** Track profile actions */
+    fun logProfileAction(action: String) {
+        firebaseAnalytics?.logEvent("profile_action", Bundle().apply {
+            putString("action", action)
+        })
+    }
+
     fun logInstallSource() {
         val source = try {
             appContext?.let { ctx ->

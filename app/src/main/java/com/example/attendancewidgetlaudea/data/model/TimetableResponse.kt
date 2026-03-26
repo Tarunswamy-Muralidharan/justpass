@@ -72,7 +72,8 @@ data class SessionInfo(
     val endTime: String,      // "09:20"
     val courseCode: String,
     val courseTitle: String,
-    val facultyNames: List<String>
+    val facultyNames: List<String>,
+    val isHonours: Boolean = false
 )
 
 /**

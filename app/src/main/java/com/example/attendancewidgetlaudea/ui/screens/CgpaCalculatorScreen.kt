@@ -24,6 +24,7 @@ import com.example.attendancewidgetlaudea.ui.components.GlassCardShape
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.viewmodel.CgpaViewModel
+import com.example.attendancewidgetlaudea.ui.viewmodel.ResultViewModel
 
 @Composable
 fun CgpaCalculatorScreen(
@@ -33,10 +34,18 @@ fun CgpaCalculatorScreen(
     viewModel: CgpaViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val resultViewModel: ResultViewModel = viewModel()
+    val resultState by resultViewModel.uiState.collectAsState()
 
     LaunchedEffect(Unit) {
         if (uiState.semesterGrades.isEmpty()) {
             viewModel.initialize(userDepartment, userBatchYear)
+        }
+    }
+
+    LaunchedEffect(resultState.grades) {
+        if (resultState.grades.isNotEmpty()) {
+            viewModel.applyResults(resultState.grades)
         }
     }
 
@@ -213,7 +222,8 @@ fun CgpaCalculatorScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                sg.subject.name,
+                                if (sg.subject.isElective && !sg.customName.isNullOrBlank())
+                                    sg.customName else sg.subject.name,
                                 fontSize = 13.sp, fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = if (expanded) 3 else 1,
@@ -223,7 +233,8 @@ fun CgpaCalculatorScreen(
                                 Text(
                                     if (sg.subject.isElective) "Elective" else sg.subject.code,
                                     fontSize = 10.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (sg.subject.isElective) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(" | ", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
                                 Text(
@@ -252,8 +263,29 @@ fun CgpaCalculatorScreen(
                         }
                     }
 
-                    // Grade picker (expanded)
+                    // Elective name field + Grade picker (expanded)
                     if (expanded) {
+                        if (sg.subject.isElective) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = sg.customName ?: "",
+                                onValueChange = { name ->
+                                    viewModel.setElectiveName(uiState.selectedSemester, index, name)
+                                },
+                                placeholder = {
+                                    Text("Enter elective name", fontSize = 12.sp)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                    cursorColor = MaterialTheme.colorScheme.primary
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),

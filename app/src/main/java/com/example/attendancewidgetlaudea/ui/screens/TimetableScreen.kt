@@ -157,6 +157,13 @@ private fun SessionCard(session: SessionInfo, isCurrentSession: Boolean) {
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                         }
                     }
+                    if (session.isHonours) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        GlassListSurface(shape = RoundedCornerShape(4.dp), tintColor = Color(0xFFFF9800).copy(alpha = 0.25f)) {
+                            Text("HONOURS", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF9800),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                        }
+                    }
                 }
                 Text(session.courseTitle, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (session.facultyNames.isNotEmpty()) {

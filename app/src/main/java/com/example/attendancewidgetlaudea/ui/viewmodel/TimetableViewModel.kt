@@ -5,7 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.data.model.DayTimetable
+import com.example.attendancewidgetlaudea.data.model.Department
 import com.example.attendancewidgetlaudea.data.model.TimetableResponse
+import com.example.attendancewidgetlaudea.data.model.detectHonoursCourses
 import com.example.attendancewidgetlaudea.data.model.toDayTimetables
 import com.example.attendancewidgetlaudea.data.repository.AttendanceRepository
 import com.example.attendancewidgetlaudea.data.repository.Result
@@ -61,7 +63,7 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
         val cached = securePrefs.cachedTimetableJson ?: return
         try {
             val response = gson.fromJson(cached, TimetableResponse::class.java)
-            val days = response.toDayTimetables()
+            val days = markHonoursCourses(response.toDayTimetables())
             _uiState.value = _uiState.value.copy(days = days)
         } catch (e: Exception) {
             android.util.Log.e("TimetableVM", "Failed to load cached timetable: ${e.message}")
@@ -74,7 +76,7 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
 
             when (val result = repository.fetchTimetable()) {
                 is Result.Success -> {
-                    val days = result.data.toDayTimetables()
+                    val days = markHonoursCourses(result.data.toDayTimetables())
                     // Cache the response
                     try {
                         securePrefs.cachedTimetableJson = gson.toJson(result.data)
@@ -99,5 +101,42 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun selectDay(index: Int) {
         _uiState.value = _uiState.value.copy(selectedDayIndex = index)
+    }
+
+    /**
+     * Mark honours courses in the timetable by comparing against standard curriculum.
+     */
+    private fun markHonoursCourses(days: List<DayTimetable>): List<DayTimetable> {
+        val programmeName = securePrefs.programmeName ?: return days
+        val semester = securePrefs.cachedCurrentSem.takeIf { it > 0 } ?: return days
+        val batchYear = securePrefs.batchYear.takeIf { it > 0 }
+            ?: securePrefs.rollNumber?.drop(4)?.take(2)?.toIntOrNull()?.let { 2000 + it }
+            ?: return days
+
+        // Detect department from programmeName (same logic as MainActivity)
+        val dept = Department.entries.find { d ->
+            when (d) {
+                Department.CSBS -> programmeName.contains("BUSINESS SYSTEMS", ignoreCase = true)
+                Department.AIDS -> programmeName.contains("ARTIFICIAL INTELLIGENCE", ignoreCase = true) ||
+                        programmeName.contains("DATA SCIENCE", ignoreCase = true)
+                Department.CSE -> programmeName.contains("COMPUTER SCIENCE", ignoreCase = true) &&
+                        !programmeName.contains("BUSINESS", ignoreCase = true)
+                else -> programmeName.contains(d.displayName, ignoreCase = true) ||
+                        programmeName.contains(d.shortName, ignoreCase = true)
+            }
+        } ?: return days
+
+        // Collect all unique course codes across all days
+        val allCourseCodes = days.flatMap { day -> day.sessions.map { it.courseCode } }.toSet()
+
+        val honoursCodes = detectHonoursCourses(allCourseCodes, dept, semester, batchYear)
+        if (honoursCodes.isEmpty()) return days
+
+        // Mark sessions with honours flag
+        return days.map { day ->
+            day.copy(sessions = day.sessions.map { session ->
+                if (session.courseCode in honoursCodes) session.copy(isHonours = true) else session
+            })
+        }
     }
 }

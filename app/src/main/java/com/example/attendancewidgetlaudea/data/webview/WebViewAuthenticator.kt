@@ -15,6 +15,9 @@ import com.example.attendancewidgetlaudea.data.model.AbsentDay
 import com.example.attendancewidgetlaudea.data.model.AttendanceData
 import com.example.attendancewidgetlaudea.data.model.AttendanceResponse
 import com.example.attendancewidgetlaudea.data.model.CourseMarks
+import com.example.attendancewidgetlaudea.data.model.CircularDetail
+import com.example.attendancewidgetlaudea.data.model.CircularListResponse
+import com.example.attendancewidgetlaudea.data.model.SignedUrlResponse
 import com.example.attendancewidgetlaudea.data.model.TimetableResponse
 import com.example.attendancewidgetlaudea.data.model.TokenResponse
 import com.google.gson.Gson
@@ -40,6 +43,14 @@ class WebViewAuthenticator(private val context: Context) {
         }
     private var _cachedAuthToken: String? = null
 
+    var cachedMeetingsToken: String?
+        get() = _cachedMeetingsToken ?: com.example.attendancewidgetlaudea.data.local.SecurePreferences.getInstance(context).meetingsAccessToken.also { _cachedMeetingsToken = it }
+        set(value) {
+            _cachedMeetingsToken = value
+            com.example.attendancewidgetlaudea.data.local.SecurePreferences.getInstance(context).meetingsAccessToken = value
+        }
+    private var _cachedMeetingsToken: String? = null
+
     companion object {
         private const val SIS_BASE_URL = "https://laudea.psgitech.ac.in/sis/"
         private const val LOGIN_URL_PATTERN = "accounts.psgitech.ac.in"
@@ -48,6 +59,7 @@ class WebViewAuthenticator(private val context: Context) {
         private const val ATTENDANCE_API_BASE = "https://laudea.psgitech.ac.in/sis/attendance/"
         private const val TIMETABLE_API_BASE = "https://laudea.psgitech.ac.in/sis/time/table/"
         private const val KEYCLOAK_TOKEN_URL = "https://accounts.psgitech.ac.in/realms/itech/protocol/openid-connect/token"
+        private const val MEETINGS_BASE_URL = "https://laudea.psgitech.ac.in/meetings/"
     }
 
     /**
@@ -971,6 +983,38 @@ class WebViewAuthenticator(private val context: Context) {
         }
     }
 
+    /**
+     * Fetch full student profile data for biodata display.
+     * API: GET /sis/students/{rollNumber}
+     */
+    suspend fun fetchStudentProfile(rollNumber: String): com.example.attendancewidgetlaudea.data.model.StudentBiodata? {
+        val token = cachedAuthToken ?: return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = java.net.URL("https://laudea.psgitech.ac.in/sis/students/$rollNumber")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Accept", "application/json, text/plain, */*")
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                if (connection.responseCode == 200) {
+                    val json = connection.inputStream.bufferedReader().use { it.readText() }
+                    android.util.Log.d("WebViewAuth", "Student profile JSON keys: ${org.json.JSONObject(json).keys().asSequence().toList()}")
+                    com.example.attendancewidgetlaudea.data.model.StudentBiodata.fromJson(org.json.JSONObject(json))
+                } else {
+                    if (connection.responseCode == 401) cachedAuthToken = null
+                    null
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Student profile fetch error: ${e.message}")
+                null
+            }
+        }
+    }
+
     fun clearSession() {
         try {
             // Clear all cookies synchronously
@@ -1251,6 +1295,210 @@ class WebViewAuthenticator(private val context: Context) {
                 } else null
             } catch (e: Exception) {
                 android.util.Log.e("WebViewAuth", "Profile pic fetch error: ${e.message}")
+                null
+            }
+        }
+    }
+
+    /**
+     * Get a meetings module access token via Keycloak password grant.
+     * Uses client_id=ies_meetings (separate from SIS's ies_sis).
+     */
+    suspend fun loginViaMeetingsKeycloak(username: String, password: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                android.util.Log.d("WebViewAuth", "Meetings Keycloak login for: $username")
+                val url = java.net.URL(KEYCLOAK_TOKEN_URL)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                connection.doOutput = true
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val params = "grant_type=password&client_id=ies_meetings" +
+                    "&scope=openid" +
+                    "&username=" + java.net.URLEncoder.encode(username, "UTF-8") +
+                    "&password=" + java.net.URLEncoder.encode(password, "UTF-8")
+                connection.outputStream.use { it.write(params.toByteArray()) }
+
+                if (connection.responseCode == 200) {
+                    val json = connection.inputStream.bufferedReader().use { it.readText() }
+                    val tokenResponse = gson.fromJson(json, TokenResponse::class.java)
+                    cachedMeetingsToken = tokenResponse.accessToken
+                    android.util.Log.d("WebViewAuth", "Meetings Keycloak login successful")
+                    true
+                } else {
+                    android.util.Log.e("WebViewAuth", "Meetings Keycloak login failed: HTTP ${connection.responseCode}")
+                    false
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Meetings Keycloak login error: ${e.message}")
+                false
+            }
+        }
+    }
+
+    /**
+     * Ensure we have a valid meetings token. Gets one if missing.
+     */
+    suspend fun ensureMeetingsToken(): Boolean {
+        if (cachedMeetingsToken != null) return true
+        val prefs = com.example.attendancewidgetlaudea.data.local.SecurePreferences.getInstance(context)
+        val username = prefs.rollNumber ?: return false
+        val password = prefs.password ?: return false
+        return loginViaMeetingsKeycloak(username, password)
+    }
+
+    /**
+     * Fetch circulars list via POST /meetings/circulars/user/pagination
+     */
+    suspend fun fetchCircularsDirect(skip: Int = 0, limit: Int = 30): kotlin.Result<CircularListResponse>? {
+        val token = cachedMeetingsToken ?: return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val endpoint = "${MEETINGS_BASE_URL}circulars/user/pagination"
+                android.util.Log.d("WebViewAuth", "Fetching circulars (skip=$skip, limit=$limit)")
+                val url = java.net.URL(endpoint)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Accept", "application/json, text/plain, */*")
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.doOutput = true
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val body = """{"filter":{},"skip":$skip,"limit":$limit,"search":"","sort":""}"""
+                connection.outputStream.use { it.write(body.toByteArray()) }
+
+                val responseCode = connection.responseCode
+                android.util.Log.d("WebViewAuth", "Circulars response: $responseCode")
+
+                if (responseCode == 200) {
+                    val data = connection.inputStream.bufferedReader().use { it.readText() }
+                    val response = gson.fromJson(data, CircularListResponse::class.java)
+                    kotlin.Result.success(response)
+                } else if (responseCode == 401) {
+                    cachedMeetingsToken = null
+                    null
+                } else {
+                    kotlin.Result.failure(Exception("HTTP $responseCode"))
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Circulars fetch error: ${e.message}")
+                kotlin.Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * Fetch circular detail by ID via GET /meetings/circulars/{id}
+     */
+    suspend fun fetchCircularDetailDirect(circularId: String): kotlin.Result<CircularDetail>? {
+        val token = cachedMeetingsToken ?: return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val endpoint = "${MEETINGS_BASE_URL}circulars/$circularId"
+                android.util.Log.d("WebViewAuth", "Fetching circular detail: $circularId")
+                val url = java.net.URL(endpoint)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Accept", "application/json, text/plain, */*")
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val responseCode = connection.responseCode
+                android.util.Log.d("WebViewAuth", "Circular detail response: $responseCode")
+
+                if (responseCode == 200) {
+                    val data = connection.inputStream.bufferedReader().use { it.readText() }
+                    val detail = gson.fromJson(data, CircularDetail::class.java)
+                    kotlin.Result.success(detail)
+                } else if (responseCode == 401) {
+                    cachedMeetingsToken = null
+                    null
+                } else {
+                    kotlin.Result.failure(Exception("HTTP $responseCode"))
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Circular detail fetch error: ${e.message}")
+                kotlin.Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * Get a pre-signed S3 URL for a circular attachment.
+     * GET /meetings/s3/download/url?contentType=...&originalname=...&url=...
+     */
+    suspend fun fetchCircularPdfUrl(attachment: com.example.attendancewidgetlaudea.data.model.CircularAttachment): kotlin.Result<String>? {
+        val token = cachedMeetingsToken ?: return null
+        val fileUrl = attachment.url ?: return kotlin.Result.failure(Exception("No attachment URL"))
+        val originalName = attachment.originalName ?: "circular.pdf"
+        val contentType = attachment.contentType ?: "application/pdf"
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val endpoint = "${MEETINGS_BASE_URL}s3/download/url" +
+                    "?contentType=${java.net.URLEncoder.encode(contentType, "UTF-8")}" +
+                    "&originalname=${java.net.URLEncoder.encode(originalName, "UTF-8")}" +
+                    "&url=${java.net.URLEncoder.encode(fileUrl, "UTF-8")}"
+                android.util.Log.d("WebViewAuth", "Fetching PDF signed URL")
+                val url = java.net.URL(endpoint)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Accept", "application/json, text/plain, */*")
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val responseCode = connection.responseCode
+                android.util.Log.d("WebViewAuth", "PDF URL response: $responseCode")
+
+                if (responseCode == 200) {
+                    val data = connection.inputStream.bufferedReader().use { it.readText() }
+                    val response = gson.fromJson(data, SignedUrlResponse::class.java)
+                    val signedUrl = response.signedUrl
+                    if (signedUrl != null) {
+                        kotlin.Result.success(signedUrl)
+                    } else {
+                        kotlin.Result.failure(Exception("No signed URL in response"))
+                    }
+                } else if (responseCode == 401) {
+                    cachedMeetingsToken = null
+                    null
+                } else {
+                    kotlin.Result.failure(Exception("HTTP $responseCode"))
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "PDF URL fetch error: ${e.message}")
+                kotlin.Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * Download PDF bytes from a pre-signed S3 URL (no auth needed).
+     */
+    suspend fun downloadPdfBytes(signedUrl: String): ByteArray? {
+        return withContext(Dispatchers.IO) {
+            try {
+                android.util.Log.d("WebViewAuth", "Downloading PDF from S3")
+                val connection = java.net.URL(signedUrl).openConnection() as java.net.HttpURLConnection
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
+                if (connection.responseCode == 200) {
+                    connection.inputStream.use { it.readBytes() }
+                } else {
+                    android.util.Log.e("WebViewAuth", "PDF download failed: HTTP ${connection.responseCode}")
+                    null
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "PDF download error: ${e.message}")
                 null
             }
         }

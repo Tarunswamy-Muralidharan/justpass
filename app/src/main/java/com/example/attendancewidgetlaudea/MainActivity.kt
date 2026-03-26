@@ -54,6 +54,8 @@ import com.example.attendancewidgetlaudea.ui.screens.CgpaCalculatorScreen
 import com.example.attendancewidgetlaudea.ui.screens.CircularsScreen
 import com.example.attendancewidgetlaudea.ui.theme.AttendanceWidgetLaudeaTheme
 import com.example.attendancewidgetlaudea.worker.AttendanceRefreshWorker
+import com.example.attendancewidgetlaudea.worker.CircularNotificationWorker
+import com.example.attendancewidgetlaudea.worker.HolidayNotificationWorker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -74,6 +76,8 @@ class MainActivity : ComponentActivity() {
             prefs.timetableConfigId = null
         }
         AttendanceRefreshWorker.schedulePeriodicRefresh(this)
+        CircularNotificationWorker.schedule(this)
+        HolidayNotificationWorker.schedule(this)
         setContent {
             AttendanceWidgetLaudeaTheme {
                 AttendanceApp()
@@ -101,7 +105,16 @@ fun AttendanceApp() {
     val scope = rememberCoroutineScope()
 
     val isLoggedIn = repository.isLoggedIn()
-    var currentScreen by remember { mutableStateOf(if (isLoggedIn) Screen.Dashboard else Screen.Login) }
+    // Handle navigate_to from notification intents
+    val activity = context as? ComponentActivity
+    val navigateTo = remember { activity?.intent?.getStringExtra("navigate_to") }
+    val initialScreen = if (!isLoggedIn) Screen.Login
+        else when (navigateTo) {
+            "calendar" -> Screen.AcademicCalendar
+            "circulars" -> Screen.Circulars
+            else -> Screen.Dashboard
+        }
+    var currentScreen by remember { mutableStateOf(initialScreen) }
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var selectedCourseCode by remember { mutableStateOf("") }
     var selectedCourseTitle by remember { mutableStateOf("") }

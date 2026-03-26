@@ -30,7 +30,8 @@ enum class LetterGrade(val gradePoint: Int, val label: String) {
 
 data class SubjectGrade(
     val subject: CurriculumSubject,
-    val grade: LetterGrade? = null
+    val grade: LetterGrade? = null,
+    val customName: String? = null
 )
 
 enum class Department(val displayName: String, val shortName: String) {
@@ -66,6 +67,45 @@ fun calculateCGPA(allSemesterGrades: List<List<SubjectGrade>>): Double {
     val totalWeighted = allGraded.sumOf { it.subject.credits * (it.grade?.gradePoint ?: 0) }
     val totalCredits = allGraded.sumOf { it.subject.credits }
     return if (totalCredits > 0) totalWeighted / totalCredits else 0.0
+}
+
+/**
+ * Returns the set of course codes that are "extra" (honours) for a student,
+ * by comparing timetable courses against the standard curriculum.
+ *
+ * Logic: The standard curriculum has fixed PCC codes + a known number of elective slots.
+ * If the timetable has more unique courses than the standard count, the extras are honours.
+ * PCC courses (with known fixed codes) are always standard. Among remaining courses,
+ * if there are more than the expected elective count, the surplus are honours.
+ */
+fun detectHonoursCourses(
+    timetableCourseCodes: Set<String>,
+    dept: Department,
+    semester: Int,
+    batchYear: Int
+): Set<String> {
+    val reg = getRegulationForBatch(batchYear)
+    val curriculum = getCurriculum(dept, reg)
+    val semSubjects = curriculum[semester] ?: return emptySet()
+
+    // Honours only applies from semester 5 onwards
+    if (semester < 5) return emptySet()
+
+    // Fixed PCC/known course codes (non-elective subjects)
+    val fixedCodes = semSubjects.filter { !it.isElective && it.code != "--" }.map { it.code }.toSet()
+    // Number of elective slots in the standard curriculum
+    val expectedElectiveCount = semSubjects.count { it.isElective }
+
+    // Courses in the timetable that are NOT fixed PCC codes
+    val nonFixedCodes = timetableCourseCodes.filter { it !in fixedCodes && it.isNotBlank() }
+
+    // If there are more non-fixed courses than expected elective slots, the extras are honours
+    val excessCount = nonFixedCodes.size - expectedElectiveCount
+    if (excessCount <= 0) return emptySet()
+
+    // The last N (excess) non-fixed courses alphabetically are marked as honours
+    // This is a heuristic — honours courses are the "extra" ones beyond the standard load
+    return nonFixedCodes.sorted().takeLast(excessCount).toSet()
 }
 
 // ===================== R2021 CURRICULUM DATA =====================
