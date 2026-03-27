@@ -22,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.data.model.Department
 import com.example.attendancewidgetlaudea.data.model.GradeEntry
+import com.example.attendancewidgetlaudea.data.model.detectDepartment
 import com.example.attendancewidgetlaudea.data.model.getCurriculum
 import com.example.attendancewidgetlaudea.data.model.getRegulationForBatch
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShape
@@ -148,20 +149,9 @@ fun ResultScreen(
                         } else {
                             // Look up credits from curriculum data
                             val prefs = SecurePreferences.getInstance(context)
-                            val progName = prefs.programmeName ?: ""
                             val batchYear = prefs.batchYear.takeIf { it > 0 }
                                 ?: prefs.rollNumber?.drop(4)?.take(2)?.toIntOrNull()?.let { 2000 + it } ?: 2023
-                            val dept = Department.entries.find { d ->
-                                when (d) {
-                                    Department.CSBS -> progName.contains("BUSINESS SYSTEMS", ignoreCase = true)
-                                    Department.AIDS -> progName.contains("ARTIFICIAL INTELLIGENCE", ignoreCase = true) ||
-                                            progName.contains("DATA SCIENCE", ignoreCase = true)
-                                    Department.CSE -> progName.contains("COMPUTER SCIENCE", ignoreCase = true) &&
-                                            !progName.contains("BUSINESS", ignoreCase = true)
-                                    else -> progName.contains(d.displayName, ignoreCase = true) ||
-                                            progName.contains(d.shortName, ignoreCase = true)
-                                }
-                            } ?: Department.CSE
+                            val dept = detectDepartment(prefs.programmeName) ?: Department.CSE
                             val reg = getRegulationForBatch(batchYear)
                             val curriculum = getCurriculum(dept, reg)
                             // Build course code -> credits map from all semesters
@@ -203,7 +193,7 @@ fun ResultScreen(
                                     ) {
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                             Text(
-                                                if (sgpa > 0) String.format("%.2f", sgpa) else "--",
+                                                if (sgpa > 0) String.format("%.3f", sgpa) else "--",
                                                 fontSize = 28.sp, fontWeight = FontWeight.Bold,
                                                 color = getGpaColor(sgpa))
                                             Text("SGPA", fontSize = 12.sp,

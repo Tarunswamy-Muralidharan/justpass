@@ -115,7 +115,7 @@ fun CgpaCalculatorScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text("CGPA", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(String.format("%.2f", cgpa), fontSize = 36.sp, fontWeight = FontWeight.Black,
+                    Text(String.format("%.3f", cgpa), fontSize = 36.sp, fontWeight = FontWeight.Black,
                         color = getGpaColor(cgpa))
                     Text("across $filledCount semester${if (filledCount > 1) "s" else ""}",
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

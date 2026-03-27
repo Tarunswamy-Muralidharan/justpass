@@ -72,7 +72,8 @@ fun DashboardScreen(
     onResultClick: () -> Unit = {},
     onCalendarClick: () -> Unit = {},
     onCircularsClick: () -> Unit = {},
-    onCgpaClick: () -> Unit = {}
+    onCgpaClick: () -> Unit = {},
+    onExamSeatClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
@@ -587,6 +588,29 @@ fun DashboardScreen(
                     Text("Circulars", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
                     Text("Notices & updates from college", fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("\u2192", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Exam Seat tile
+        GlassListCard(
+            modifier = Modifier.fillMaxWidth().clickable { Analytics.logTileClicked("exam_seat"); onExamSeatClick() },
+            shape = GlassCardShapeSmall
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Exam Seat Finder", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                    Text("Find your CA hall & seat from Gmail", fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text("\u2192", fontSize = 18.sp, fontWeight = FontWeight.Bold,

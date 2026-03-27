@@ -53,6 +53,23 @@ fun getRegulationForBatch(batchYear: Int): Regulation {
     return if (batchYear >= 2025) Regulation.R2025 else Regulation.R2021
 }
 
+fun detectDepartment(programmeName: String?): Department? {
+    val name = programmeName?.uppercase() ?: return null
+    return when {
+        name.contains("BUSINESS SYSTEMS") || name.contains("CSBS") -> Department.CSBS
+        name.contains("ARTIFICIAL INTELLIGENCE") || name.contains("DATA SCIENCE") ||
+                name.contains("AI&DS") || name.contains("AIDS") -> Department.AIDS
+        (name.contains("COMPUTER SCIENCE") || name.contains("CSE")) &&
+                !name.contains("BUSINESS") -> Department.CSE
+        name.contains("ELECTRICAL") || name.contains("EEE") -> Department.EEE
+        name.contains("ELECTRONICS") || name.contains("COMMUNICATION") ||
+                name.contains("ECE") -> Department.ECE
+        name.contains("MECHANICAL") || name.contains("MECH") -> Department.MECH
+        name.contains("CIVIL") -> Department.CIVIL
+        else -> null
+    }
+}
+
 fun calculateSGPA(grades: List<SubjectGrade>): Double {
     val graded = grades.filter { it.grade != null && it.subject.credits > 0 }
     if (graded.isEmpty()) return 0.0

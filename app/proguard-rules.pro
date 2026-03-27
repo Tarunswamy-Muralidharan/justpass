@@ -40,3 +40,19 @@
 
 # Liquid Glass library (AGSL shaders)
 -keep class io.github.fletchmckee.liquid.** { *; }
+
+# Apache POI (Excel parsing for Exam Seat Finder)
+-dontwarn org.apache.poi.**
+-dontwarn org.apache.xmlbeans.**
+-dontwarn org.apache.commons.**
+-dontwarn org.openxmlformats.**
+-dontwarn org.etsi.**
+-dontwarn org.w3.**
+-dontwarn com.microsoft.**
+-dontwarn javax.xml.stream.**
+-keep class org.apache.poi.** { *; }
+-keep class org.apache.xmlbeans.** { *; }
+-keep class org.openxmlformats.** { *; }
+
+# Google Play Services Auth (Exam Seat Finder)
+-dontwarn com.google.android.gms.**
