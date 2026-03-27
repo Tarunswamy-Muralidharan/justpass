@@ -19,7 +19,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.attendancewidgetlaudea.data.local.SecurePreferences
+import com.example.attendancewidgetlaudea.data.model.Department
 import com.example.attendancewidgetlaudea.data.model.GradeEntry
+import com.example.attendancewidgetlaudea.data.model.getCurriculum
+import com.example.attendancewidgetlaudea.data.model.getRegulationForBatch
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShape
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
@@ -133,10 +137,49 @@ fun ResultScreen(
                         else uiState.grades.filter { it.semester == uiState.selectedSemester }
                     }
 
-                    // Calculate GPA for selected semester
-                    val credits = filteredGrades.sumOf { it.getCreditsValue() }
-                    val weightedPoints = filteredGrades.sumOf { it.gradePoint * it.getCreditsValue() }
-                    val sgpa = if (credits > 0) weightedPoints.toDouble() / credits else 0.0
+                    // Calculate SGPA — use API credits if available, else look up from curriculum
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val sgpa = remember(filteredGrades) {
+                        // First try API credits
+                        val apiCredits = filteredGrades.sumOf { it.getCreditsValue() }
+                        if (apiCredits > 0) {
+                            val weighted = filteredGrades.sumOf { it.gradePoint * it.getCreditsValue() }
+                            weighted.toDouble() / apiCredits
+                        } else {
+                            // Look up credits from curriculum data
+                            val prefs = SecurePreferences.getInstance(context)
+                            val progName = prefs.programmeName ?: ""
+                            val batchYear = prefs.batchYear.takeIf { it > 0 }
+                                ?: prefs.rollNumber?.drop(4)?.take(2)?.toIntOrNull()?.let { 2000 + it } ?: 2023
+                            val dept = Department.entries.find { d ->
+                                when (d) {
+                                    Department.CSBS -> progName.contains("BUSINESS SYSTEMS", ignoreCase = true)
+                                    Department.AIDS -> progName.contains("ARTIFICIAL INTELLIGENCE", ignoreCase = true) ||
+                                            progName.contains("DATA SCIENCE", ignoreCase = true)
+                                    Department.CSE -> progName.contains("COMPUTER SCIENCE", ignoreCase = true) &&
+                                            !progName.contains("BUSINESS", ignoreCase = true)
+                                    else -> progName.contains(d.displayName, ignoreCase = true) ||
+                                            progName.contains(d.shortName, ignoreCase = true)
+                                }
+                            } ?: Department.CSE
+                            val reg = getRegulationForBatch(batchYear)
+                            val curriculum = getCurriculum(dept, reg)
+                            // Build course code -> credits map from all semesters
+                            val creditMap = curriculum.values.flatten()
+                                .filter { it.code != "--" }
+                                .associate { it.code to it.credits }
+
+                            var totalCredits = 0.0
+                            var totalWeighted = 0.0
+                            for (g in filteredGrades) {
+                                // Look up credits; skip courses not in curriculum (mandatory/non-credit)
+                                val c = creditMap[g.courseCode] ?: continue
+                                totalCredits += c
+                                totalWeighted += g.gradePoint * c
+                            }
+                            if (totalCredits > 0) totalWeighted / totalCredits else 0.0
+                        }
+                    }
                     val passCount = filteredGrades.count { it.isPassed() }
                     val examName = filteredGrades.firstOrNull()?.examName ?: ""
 

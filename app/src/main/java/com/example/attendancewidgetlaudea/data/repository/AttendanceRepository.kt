@@ -431,6 +431,15 @@ class AttendanceRepository(private val context: Context) {
         return Result.Error("Could not fetch timetable. Try refreshing first.")
     }
 
+    suspend fun fetchRegistrations(): Result<String> {
+        val rollNumber = securePrefs.rollNumber ?: return Result.Error("Not logged in")
+        try {
+            val result = webViewAuthenticator.fetchRegistrationsDirect(rollNumber)
+            if (result != null && result.isSuccess) return Result.Success(result.getOrThrow())
+        } catch (_: Exception) {}
+        return Result.Error("Could not fetch registrations")
+    }
+
     suspend fun fetchResult(): Result<String> {
         val rollNumber = securePrefs.rollNumber
         val password = securePrefs.password

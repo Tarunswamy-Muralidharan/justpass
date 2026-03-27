@@ -77,6 +77,73 @@ data class SessionInfo(
 )
 
 /**
+ * Registration API response models — used to detect honours courses.
+ * Honours = courses in timetable but NOT in the registration list.
+ */
+data class RegistrationResponse(
+    @SerializedName("registrationGroups")
+    val registrationGroups: List<RegistrationGroup> = emptyList(),
+
+    @SerializedName("additionalGroups")
+    val additionalGroups: List<RegistrationGroup> = emptyList()
+)
+
+data class RegistrationGroup(
+    @SerializedName("courses")
+    val courses: List<RegistrationCourse> = emptyList()
+)
+
+data class RegistrationCourse(
+    @SerializedName("code")
+    val code: String = "",
+
+    @SerializedName("registration")
+    val registration: Boolean = false,
+
+    @SerializedName("placeholder")
+    val placeholder: Boolean = false,
+
+    @SerializedName("course")
+    val course: RegistrationNestedCourse? = null,
+
+    @SerializedName("ltpc")
+    val ltpc: RegistrationLtpc? = null
+)
+
+data class RegistrationNestedCourse(
+    @SerializedName("code")
+    val code: String = "",
+
+    @SerializedName("ltpc")
+    val ltpc: RegistrationLtpc? = null
+)
+
+data class RegistrationLtpc(
+    @SerializedName("credits")
+    val credits: Int = 0
+)
+
+/**
+ * Extract the set of registered course codes from a RegistrationResponse.
+ * For placeholder courses (electives), the actual code is in the nested course object.
+ */
+fun RegistrationResponse.extractRegisteredCourseCodes(): Set<String> {
+    val codes = mutableSetOf<String>()
+    val allGroups = registrationGroups + additionalGroups
+    for (group in allGroups) {
+        for (course in group.courses) {
+            if (!course.registration) continue
+            if (course.placeholder && course.course != null) {
+                codes.add(course.course.code)
+            } else {
+                codes.add(course.code)
+            }
+        }
+    }
+    return codes
+}
+
+/**
  * Convert raw API response into organized day-wise timetable.
  */
 fun TimetableResponse.toDayTimetables(): List<DayTimetable> {
