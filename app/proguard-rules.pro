@@ -54,5 +54,9 @@
 -keep class org.apache.xmlbeans.** { *; }
 -keep class org.openxmlformats.** { *; }
 
-# Google Play Services Auth (Exam Seat Finder)
--dontwarn com.google.android.gms.**
+# OSGI framework (referenced by Log4j but not used on Android)
+-dontwarn org.osgi.framework.**
+-dontwarn org.apache.logging.log4j.**
+
+# AWT classes (referenced by Apache POI/graphbuilder but not available on Android)
+-dontwarn java.awt.**
