@@ -947,6 +947,42 @@ class WebViewAuthenticator(private val context: Context) {
     }
 
     /**
+     * Fetch course registration data to identify registered vs honours courses.
+     * API: GET /sis/remote/get/registrations/{rollNumber}
+     */
+    suspend fun fetchRegistrationsDirect(rollNumber: String): kotlin.Result<String>? {
+        val token = cachedAuthToken ?: return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val endpoint = "https://laudea.psgitech.ac.in/sis/remote/get/registrations/$rollNumber"
+                val url = java.net.URL(endpoint)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Accept", "application/json, text/plain, */*")
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val responseCode = connection.responseCode
+                if (responseCode == 200) {
+                    val data = connection.inputStream.bufferedReader().use { it.readText() }
+                    android.util.Log.d("WebViewAuth", "Registration data: ${data.take(3000)}")
+                    kotlin.Result.success(data)
+                } else if (responseCode == 401) {
+                    cachedAuthToken = null
+                    null
+                } else {
+                    kotlin.Result.failure(Exception("HTTP $responseCode"))
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WebViewAuth", "Registration fetch error: ${e.message}")
+                kotlin.Result.failure(e)
+            }
+        }
+    }
+
+    /**
      * Fetch student profile to get nodeId (timetable config) for this student.
      * API: GET /sis/students/{rollNumber}
      */

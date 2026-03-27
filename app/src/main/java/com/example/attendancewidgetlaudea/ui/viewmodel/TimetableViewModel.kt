@@ -5,13 +5,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.data.model.DayTimetable
-import com.example.attendancewidgetlaudea.data.model.Department
+import com.example.attendancewidgetlaudea.data.model.RegistrationResponse
 import com.example.attendancewidgetlaudea.data.model.TimetableResponse
-import com.example.attendancewidgetlaudea.data.model.detectHonoursCourses
+import com.example.attendancewidgetlaudea.data.model.extractRegisteredCourseCodes
 import com.example.attendancewidgetlaudea.data.model.toDayTimetables
 import com.example.attendancewidgetlaudea.data.repository.AttendanceRepository
 import com.example.attendancewidgetlaudea.data.repository.Result
 import com.google.gson.Gson
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +35,9 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _uiState = MutableStateFlow(TimetableUiState())
     val uiState: StateFlow<TimetableUiState> = _uiState.asStateFlow()
+
+    // Cached registered course codes for honours detection
+    private var registeredCourseCodes: Set<String> = emptySet()
 
     init {
         val todayIndex = getTodayDayIndex()
@@ -63,7 +67,8 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
         val cached = securePrefs.cachedTimetableJson ?: return
         try {
             val response = gson.fromJson(cached, TimetableResponse::class.java)
-            val days = markHonoursCourses(response.toDayTimetables())
+            val days = response.toDayTimetables()
+            // Honours marking will be applied once registrations are fetched
             _uiState.value = _uiState.value.copy(days = days)
         } catch (e: Exception) {
             android.util.Log.e("TimetableVM", "Failed to load cached timetable: ${e.message}")
@@ -74,24 +79,43 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
 
-            when (val result = repository.fetchTimetable()) {
+            // Fetch timetable and registrations in parallel
+            val timetableDeferred = async { repository.fetchTimetable() }
+            val registrationDeferred = async { repository.fetchRegistrations() }
+
+            val timetableResult = timetableDeferred.await()
+            val registrationResult = registrationDeferred.await()
+
+            // Parse registered course codes
+            if (registrationResult is Result.Success) {
+                try {
+                    val regResponse = gson.fromJson(registrationResult.data, RegistrationResponse::class.java)
+                    registeredCourseCodes = regResponse.extractRegisteredCourseCodes()
+                    android.util.Log.d("TimetableVM", "Registered courses: $registeredCourseCodes")
+                } catch (e: Exception) {
+                    android.util.Log.e("TimetableVM", "Failed to parse registrations: ${e.message}")
+                }
+            }
+
+            when (timetableResult) {
                 is Result.Success -> {
-                    val days = markHonoursCourses(result.data.toDayTimetables())
+                    val days = timetableResult.data.toDayTimetables()
+                    val markedDays = markHonoursCourses(days)
                     // Cache the response
                     try {
-                        securePrefs.cachedTimetableJson = gson.toJson(result.data)
+                        securePrefs.cachedTimetableJson = gson.toJson(timetableResult.data)
                     } catch (e: Exception) {
                         android.util.Log.e("TimetableVM", "Failed to cache timetable: ${e.message}")
                     }
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        days = days
+                        days = markedDays
                     )
                 }
                 is Result.Error -> {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = result.message
+                        errorMessage = timetableResult.message
                     )
                 }
                 is Result.Loading -> {}
@@ -99,44 +123,37 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun selectDay(index: Int) {
-        _uiState.value = _uiState.value.copy(selectedDayIndex = index)
-    }
-
     /**
-     * Mark honours courses in the timetable by comparing against standard curriculum.
+     * Mark timetable sessions as honours if their course code is NOT in the registered set.
+     * If we have no registration data, nothing is marked.
      */
     private fun markHonoursCourses(days: List<DayTimetable>): List<DayTimetable> {
-        val programmeName = securePrefs.programmeName ?: return days
-        val semester = securePrefs.cachedCurrentSem.takeIf { it > 0 } ?: return days
-        val batchYear = securePrefs.batchYear.takeIf { it > 0 }
-            ?: securePrefs.rollNumber?.drop(4)?.take(2)?.toIntOrNull()?.let { 2000 + it }
-            ?: return days
+        if (registeredCourseCodes.isEmpty()) return days
 
-        // Detect department from programmeName (same logic as MainActivity)
-        val dept = Department.entries.find { d ->
-            when (d) {
-                Department.CSBS -> programmeName.contains("BUSINESS SYSTEMS", ignoreCase = true)
-                Department.AIDS -> programmeName.contains("ARTIFICIAL INTELLIGENCE", ignoreCase = true) ||
-                        programmeName.contains("DATA SCIENCE", ignoreCase = true)
-                Department.CSE -> programmeName.contains("COMPUTER SCIENCE", ignoreCase = true) &&
-                        !programmeName.contains("BUSINESS", ignoreCase = true)
-                else -> programmeName.contains(d.displayName, ignoreCase = true) ||
-                        programmeName.contains(d.shortName, ignoreCase = true)
-            }
-        } ?: return days
+        // Collect all unique course codes from the timetable
+        val timetableCodes = days.flatMap { it.sessions }.map { it.courseCode }.filter { it.isNotBlank() }.toSet()
 
-        // Collect all unique course codes across all days
-        val allCourseCodes = days.flatMap { day -> day.sessions.map { it.courseCode } }.toSet()
+        // Non-academic slots to exclude from honours marking
+        val excludedCodes = setOf("LIB", "MM")
 
-        val honoursCodes = detectHonoursCourses(allCourseCodes, dept, semester, batchYear)
+        // Honours = in timetable but NOT in registration, excluding non-academic slots
+        val honoursCodes = (timetableCodes - registeredCourseCodes) - excludedCodes
         if (honoursCodes.isEmpty()) return days
 
-        // Mark sessions with honours flag
+        android.util.Log.d("TimetableVM", "Honours courses detected: $honoursCodes")
+
         return days.map { day ->
             day.copy(sessions = day.sessions.map { session ->
-                if (session.courseCode in honoursCodes) session.copy(isHonours = true) else session
+                if (session.courseCode in honoursCodes) {
+                    session.copy(isHonours = true)
+                } else {
+                    session
+                }
             })
         }
+    }
+
+    fun selectDay(index: Int) {
+        _uiState.value = _uiState.value.copy(selectedDayIndex = index)
     }
 }

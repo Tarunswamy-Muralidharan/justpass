@@ -13,6 +13,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,6 +46,7 @@ import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShape
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
+import com.example.attendancewidgetlaudea.ui.components.GlassListSurface
 import com.example.attendancewidgetlaudea.ui.components.LiquidGlassCard
 import com.example.attendancewidgetlaudea.ui.viewmodel.DashboardViewModel
 import io.github.fletchmckee.liquid.LiquidState
@@ -246,46 +248,54 @@ fun DashboardScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
                             Text(uiState.attendanceData.presentWithExemptionCount.toString(),
                                 fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
                             Text("Present", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .background(Color(0xFFFF5252).copy(alpha = 0.08f), RoundedCornerShape(12.dp))
-                                .border(1.dp, Color(0xFFFF5252).copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-                                .clickable { onAbsentDaysClick() }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        GlassListSurface(
+                            shape = RoundedCornerShape(12.dp),
+                            tintColor = Color(0xFFFF5252).copy(alpha = 0.12f),
+                            modifier = Modifier.clickable { onAbsentDaysClick() }
                         ) {
-                            Text(uiState.attendanceData.absentCount.toString(),
-                                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5252))
-                            Text("Absent", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(uiState.attendanceData.absentCount.toString(),
+                                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5252))
+                                Text("Absent", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Color(0xFFFF5252).copy(alpha = 0.85f))
+                            }
                         }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
                             Text(uiState.attendanceData.enteredTillDate.toString(),
                                 fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                             Text("Total", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (uiState.attendanceData.exemptionCount > 0) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
-                                    .border(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-                                    .clickable { onExemptionsClick() }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            GlassListSurface(
+                                shape = RoundedCornerShape(12.dp),
+                                tintColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.10f),
+                                modifier = Modifier.clickable { onExemptionsClick() }
                             ) {
-                                Text(uiState.attendanceData.exemptionCount.toString(),
-                                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
-                                Text("Exempt", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(uiState.attendanceData.exemptionCount.toString(),
+                                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
+                                    Text("Exempt", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f))
+                                }
                             }
                         }
                         if (uiState.attendanceData.notEnteredTillDate > 0) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
                                 Text(uiState.attendanceData.notEnteredTillDate.toString(),
                                     fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text("Pending", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -307,14 +317,17 @@ fun DashboardScreen(
         if (uiState.attendanceData.enteredTillDate > 0) {
             var leaveDays by remember { mutableFloatStateOf(0f) }
             var showLeavePopup by remember { mutableStateOf(false) }
+            var leaveStartDate by remember { mutableStateOf(java.time.LocalDate.now().plusDays(1)) }
+            var showDatePicker by remember { mutableStateOf(false) }
             val days = leaveDays.toInt()
             val present = uiState.attendanceData.presentWithExemptionCount
             val total = uiState.attendanceData.enteredTillDate
             val currentPct = uiState.attendanceData.attendanceWithExemption
-            val leaveHours = days * 6
+            val leaveHours = if (days > 0) viewModel.calculateLeaveHours(leaveStartDate, days) else 0
             val newTotal = total + leaveHours
             val newPercentage = if (days > 0 && newTotal > 0) (present.toDouble() / newTotal) * 100.0 else currentPct
             val drop = currentPct - newPercentage
+            val dateFormatter = remember { java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy") }
 
             // Inline card — tap to expand
             GlassListCard(
@@ -357,6 +370,29 @@ fun DashboardScreen(
                     },
                     text = {
                         Column(modifier = Modifier.fillMaxWidth()) {
+                            // Date picker row
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                    .clickable { showDatePicker = true }
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text("Starting from", fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(leaveStartDate.format(dateFormatter),
+                                        fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                                Text("Change", fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
                             // Big day count
                             Text(
                                 "${days} day${if (days > 1) "s" else ""}",
@@ -422,6 +458,13 @@ fun DashboardScreen(
                                     Text("Hours missed", fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
+                                if (uiState.holidayDates.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Holidays & Sundays are excluded",
+                                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth())
+                                }
                             }
                         }
                     },
@@ -432,6 +475,29 @@ fun DashboardScreen(
                     },
                     containerColor = Color(0xFF1E2A3A)
                 )
+            }
+
+            // Date picker dialog
+            if (showDatePicker) {
+                val datePickerState = rememberDatePickerState(
+                    initialSelectedDateMillis = leaveStartDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                )
+                DatePickerDialog(
+                    onDismissRequest = { showDatePicker = false },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            datePickerState.selectedDateMillis?.let { millis ->
+                                leaveStartDate = java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                            }
+                            showDatePicker = false
+                        }) { Text("OK") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+                    }
+                ) {
+                    DatePicker(state = datePickerState)
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
