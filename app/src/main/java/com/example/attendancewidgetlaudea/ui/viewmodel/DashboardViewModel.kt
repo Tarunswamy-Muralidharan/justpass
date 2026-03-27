@@ -132,22 +132,42 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 val days = response.toDayTimetables()
 
                 // Fetch registered courses to identify honours
+                var registeredCodes = emptySet<String>()
                 var honoursCodes = emptySet<String>()
                 val regResult = repository.fetchRegistrations()
                 if (regResult is Result.Success) {
                     try {
                         val regResponse = gson.fromJson(regResult.data, RegistrationResponse::class.java)
-                        val registeredCodes = regResponse.extractRegisteredCourseCodes()
-                        val excludedCodes = setOf("LIB", "MM")
-                        val allTimetableCodes = days.flatMap { it.sessions }.map { it.courseCode }.filter { it.isNotBlank() }.toSet()
-                        honoursCodes = (allTimetableCodes - registeredCodes) - excludedCodes
+                        registeredCodes = regResponse.extractRegisteredCourseCodes()
                     } catch (_: Exception) {}
                 }
+                // Also use attendance data to catch elective courses
+                try {
+                    val presentResult = repository.fetchPresentDays()
+                    val absentResult = repository.fetchAbsentDays()
+                    val attendanceCodes = mutableSetOf<String>()
+                    if (presentResult is Result.Success) {
+                        presentResult.data.flatMap { it.sessions }.forEach { s ->
+                            if (s.courseCode.isNotBlank()) attendanceCodes.add(s.courseCode.trim().uppercase())
+                        }
+                    }
+                    if (absentResult is Result.Success) {
+                        absentResult.data.flatMap { it.sessions }.forEach { s ->
+                            if (s.courseCode.isNotBlank()) attendanceCodes.add(s.courseCode.trim().uppercase())
+                        }
+                    }
+                    registeredCodes = registeredCodes + attendanceCodes
+                } catch (_: Exception) {}
+                val excludedCodes = setOf("LIB", "MM")
+                val allTimetableCodes = days.flatMap { it.sessions }
+                    .map { it.courseCode.trim().uppercase() }
+                    .filter { it.isNotBlank() }.toSet()
+                honoursCodes = (allTimetableCodes - registeredCodes) - excludedCodes
 
                 // Count non-honours sessions per day
                 val counts = (0..5).map { dayIndex ->
                     val day = days.getOrNull(dayIndex)
-                    day?.sessions?.count { it.courseCode.isNotBlank() && it.courseCode !in honoursCodes } ?: 6
+                    day?.sessions?.count { it.courseCode.isNotBlank() && it.courseCode.trim().uppercase() !in honoursCodes } ?: 6
                 }
                 _uiState.value = _uiState.value.copy(sessionsPerDay = counts)
             } catch (_: Exception) {}

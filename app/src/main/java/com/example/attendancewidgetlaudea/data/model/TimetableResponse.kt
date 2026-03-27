@@ -120,7 +120,7 @@ data class RegistrationNestedCourse(
 
 data class RegistrationLtpc(
     @SerializedName("credits")
-    val credits: Int = 0
+    val credits: Double = 0.0
 )
 
 /**
@@ -133,10 +133,15 @@ fun RegistrationResponse.extractRegisteredCourseCodes(): Set<String> {
     for (group in allGroups) {
         for (course in group.courses) {
             if (!course.registration) continue
-            if (course.placeholder && course.course != null) {
-                codes.add(course.course.code)
+            // For placeholders, prefer the nested actual course code
+            val code = if (course.placeholder && course.course != null && course.course.code.isNotBlank()) {
+                course.course.code
             } else {
-                codes.add(course.code)
+                course.code
+            }
+            // Skip placeholder codes with underscores (e.g. PE64__, OE61__) — they don't map to real codes
+            if (code.isNotBlank() && !code.contains("_")) {
+                codes.add(code.trim().uppercase())
             }
         }
     }

@@ -86,15 +86,39 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
             val timetableResult = timetableDeferred.await()
             val registrationResult = registrationDeferred.await()
 
-            // Parse registered course codes
+            // Build enrolled course set from registration + attendance data
             if (registrationResult is Result.Success) {
                 try {
                     val regResponse = gson.fromJson(registrationResult.data, RegistrationResponse::class.java)
                     registeredCourseCodes = regResponse.extractRegisteredCourseCodes()
-                    android.util.Log.d("TimetableVM", "Registered courses: $registeredCourseCodes")
+                    android.util.Log.d("TimetableVM", "Registered courses (from API): $registeredCourseCodes")
                 } catch (e: Exception) {
                     android.util.Log.e("TimetableVM", "Failed to parse registrations: ${e.message}")
                 }
+            }
+
+            // Also extract course codes from attendance data (present + absent days)
+            // This catches elective courses that registration API only shows as placeholders
+            try {
+                val presentResult = repository.fetchPresentDays()
+                val absentResult = repository.fetchAbsentDays()
+                val attendanceCodes = mutableSetOf<String>()
+                if (presentResult is Result.Success) {
+                    presentResult.data.flatMap { it.sessions }.forEach { s ->
+                        if (s.courseCode.isNotBlank()) attendanceCodes.add(s.courseCode.trim().uppercase())
+                    }
+                }
+                if (absentResult is Result.Success) {
+                    absentResult.data.flatMap { it.sessions }.forEach { s ->
+                        if (s.courseCode.isNotBlank()) attendanceCodes.add(s.courseCode.trim().uppercase())
+                    }
+                }
+                if (attendanceCodes.isNotEmpty()) {
+                    android.util.Log.d("TimetableVM", "Enrolled courses (from attendance): $attendanceCodes")
+                    registeredCourseCodes = registeredCourseCodes + attendanceCodes
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("TimetableVM", "Failed to fetch attendance for honours: ${e.message}")
             }
 
             when (timetableResult) {
@@ -130,21 +154,29 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
     private fun markHonoursCourses(days: List<DayTimetable>): List<DayTimetable> {
         if (registeredCourseCodes.isEmpty()) return days
 
+        // Normalize all codes to uppercase trimmed for comparison
+        val normalizedRegistered = registeredCourseCodes.map { it.trim().uppercase() }.toSet()
+
         // Collect all unique course codes from the timetable
-        val timetableCodes = days.flatMap { it.sessions }.map { it.courseCode }.filter { it.isNotBlank() }.toSet()
+        val timetableCodes = days.flatMap { it.sessions }
+            .map { it.courseCode.trim().uppercase() }
+            .filter { it.isNotBlank() }
+            .toSet()
 
         // Non-academic slots to exclude from honours marking
         val excludedCodes = setOf("LIB", "MM")
 
         // Honours = in timetable but NOT in registration, excluding non-academic slots
-        val honoursCodes = (timetableCodes - registeredCourseCodes) - excludedCodes
+        val honoursCodes = (timetableCodes - normalizedRegistered) - excludedCodes
         if (honoursCodes.isEmpty()) return days
 
+        android.util.Log.d("TimetableVM", "Timetable codes: $timetableCodes")
+        android.util.Log.d("TimetableVM", "Registered codes: $normalizedRegistered")
         android.util.Log.d("TimetableVM", "Honours courses detected: $honoursCodes")
 
         return days.map { day ->
             day.copy(sessions = day.sessions.map { session ->
-                if (session.courseCode in honoursCodes) {
+                if (session.courseCode.trim().uppercase() in honoursCodes) {
                     session.copy(isHonours = true)
                 } else {
                     session
