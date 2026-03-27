@@ -106,10 +106,20 @@ fun AttendanceApp() {
     val scope = rememberCoroutineScope()
 
     val isLoggedIn = repository.isLoggedIn()
-    // Handle navigate_to from notification intents
+    // Handle navigate_to from notification intents and shared file intents
     val activity = context as? ComponentActivity
     val navigateTo = remember { activity?.intent?.getStringExtra("navigate_to") }
+    val sharedExcelUri = remember {
+        activity?.intent?.let { intent ->
+            when (intent.action) {
+                Intent.ACTION_SEND -> intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                Intent.ACTION_VIEW -> intent.data
+                else -> null
+            }
+        }
+    }
     val initialScreen = if (!isLoggedIn) Screen.Login
+        else if (sharedExcelUri != null) Screen.ExamSeat
         else when (navigateTo) {
             "calendar" -> Screen.AcademicCalendar
             "circulars" -> Screen.Circulars
@@ -326,7 +336,9 @@ fun AttendanceApp() {
                         Screen.CgpaCalculator.name -> {
                             val batch = securePrefs.batchYear.takeIf { it > 0 }
                                 ?: securePrefs.rollNumber?.drop(4)?.take(2)?.toIntOrNull()?.let { 2000 + it }
-                            val detectedDept = com.example.attendancewidgetlaudea.data.model.detectDepartment(securePrefs.programmeName)
+                            val detectedDept = com.example.attendancewidgetlaudea.data.model.detectDepartment(
+                                securePrefs.programmeName ?: securePrefs.cachedDepartment
+                            )
                             CgpaCalculatorScreen(
                                 onBack = {
                                     currentScreen = Screen.Dashboard
@@ -341,7 +353,8 @@ fun AttendanceApp() {
                             onBack = {
                                 currentScreen = Screen.Dashboard
                                 selectedTabIndex = 0
-                            }
+                            },
+                            sharedFileUri = sharedExcelUri
                         )
                         "tab_0" -> DashboardScreen(
                             cardState = cardState,

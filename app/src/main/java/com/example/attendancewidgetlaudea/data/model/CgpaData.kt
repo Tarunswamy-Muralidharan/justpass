@@ -53,12 +53,19 @@ fun getRegulationForBatch(batchYear: Int): Regulation {
     return if (batchYear >= 2025) Regulation.R2025 else Regulation.R2021
 }
 
-fun detectDepartment(programmeName: String?): Department? {
-    val name = programmeName?.uppercase() ?: return null
+fun detectDepartment(input: String?): Department? {
+    val name = input?.uppercase()?.trim() ?: return null
+    // Exact short-name match first (handles department field like "CSE", "ECE")
+    Department.entries.forEach { dept ->
+        if (name == dept.shortName || name == "B.TECH ${dept.shortName}" || name == "BTECH ${dept.shortName}") {
+            return dept
+        }
+    }
+    // Substring matching for programme names
     return when {
         name.contains("BUSINESS SYSTEM") || name.contains("CSBS") -> Department.CSBS
         name.contains("ARTIFICIAL INTELLIGENCE") || name.contains("DATA SCIENCE") ||
-                name.contains("AI&DS") || name.contains("AIDS") -> Department.AIDS
+                name.contains("AI&DS") || name.contains("AIDS") || name.contains("AI DS") -> Department.AIDS
         (name.contains("COMPUTER SCIENCE") || name.contains("CSE")) &&
                 !name.contains("BUSINESS") -> Department.CSE
         name.contains("ELECTRICAL") || name.contains("EEE") -> Department.EEE
@@ -66,6 +73,7 @@ fun detectDepartment(programmeName: String?): Department? {
                 name.contains("ECE") -> Department.ECE
         name.contains("MECHANICAL") || name.contains("MECH") -> Department.MECH
         name.contains("CIVIL") -> Department.CIVIL
+        name.contains("INFORMATION TECHNOLOGY") || name.contains(" IT") -> Department.CSE // IT falls back to CSE curriculum
         else -> null
     }
 }
