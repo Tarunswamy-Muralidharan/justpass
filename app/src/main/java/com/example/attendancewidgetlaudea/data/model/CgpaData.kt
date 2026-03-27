@@ -56,7 +56,7 @@ fun getRegulationForBatch(batchYear: Int): Regulation {
 fun detectDepartment(programmeName: String?): Department? {
     val name = programmeName?.uppercase() ?: return null
     return when {
-        name.contains("BUSINESS SYSTEMS") || name.contains("CSBS") -> Department.CSBS
+        name.contains("BUSINESS SYSTEM") || name.contains("CSBS") -> Department.CSBS
         name.contains("ARTIFICIAL INTELLIGENCE") || name.contains("DATA SCIENCE") ||
                 name.contains("AI&DS") || name.contains("AIDS") -> Department.AIDS
         (name.contains("COMPUTER SCIENCE") || name.contains("CSE")) &&
