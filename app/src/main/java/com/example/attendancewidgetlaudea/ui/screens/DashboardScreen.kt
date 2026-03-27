@@ -627,15 +627,8 @@ fun DashboardScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Credit + contact
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-            Text("for features or colabs: Tarunswamy M", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(painter = painterResource(id = R.drawable.ic_discord), contentDescription = "Discord",
-                modifier = Modifier.size(20.dp).clickable {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://discordapp.com/users/zeni15u")))
-                }, tint = Color(0xFF5865F2))
-        }
+        // Credit
+        Text("for features or colabs", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
 
         Spacer(modifier = Modifier.height(8.dp))
 

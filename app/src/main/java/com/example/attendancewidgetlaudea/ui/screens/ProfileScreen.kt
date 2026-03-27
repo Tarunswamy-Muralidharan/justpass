@@ -591,15 +591,8 @@ fun ProfileScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
                 Spacer(modifier = Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("for features or colabs: Tarunswamy M", fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.weight(1f))
-                    Icon(painter = painterResource(id = R.drawable.ic_discord), contentDescription = "Discord",
-                        modifier = Modifier.size(22.dp).clickable {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://discordapp.com/users/zeni15u")))
-                        }, tint = Color(0xFF5865F2))
-                }
+                Text("for features or colabs", fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
             }
         }
 
