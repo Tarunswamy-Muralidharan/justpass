@@ -846,3 +846,106 @@ Additional v2.1 features implemented in the same session:
 6. **Circulars Push Notifications** — Background check every 3 hours, notification on new circulars
 7. **Enhanced Analytics** — 7 new event types (tile clicks, screen duration, slider, GPA, circular, calendar, profile actions)
 8. **Fullscreen Side Eye Dog Meme** — Easter egg meme now opens as fullscreen black overlay
+
+---
+
+### Challenge 12: Google OAuth 100-User Cap on Exam Seat Finder
+
+**Problem:**
+The Exam Seat Finder feature used Google Sign-In with `gmail.readonly` scope to search the student's Gmail for seating arrangement emails. After publishing the OAuth consent screen, we discovered Google imposes a **100-user lifetime cap** on unverified apps using restricted scopes. With 1600+ active users, this was a dealbreaker.
+
+**Root Cause:**
+All Gmail API scopes (`gmail.readonly`, `gmail.modify`, `gmail.metadata`, `mail.google.com`) are classified as **restricted** by Google. Removing the cap requires CASA (Cloud Application Security Assessment) verification, which costs **$500–$75,000/year** — absurd for a free college app.
+
+**Research:**
+Explored every alternative: Google Apps Script as middleman, Gmail add-ons, multiple GCP projects (violates ToS), IMAP with OAuth2 (same restricted scope), Microsoft Graph API (students use Gmail not Outlook), Google Drive API with `drive.file` (sensitive, not restricted — but requires students to save attachments to Drive first).
+
+**Solution:**
+Completely replaced Gmail OAuth with Android's **Share Intent + File Picker** approach:
+1. Added intent-filter in AndroidManifest for Excel MIME types (`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, `application/vnd.ms-excel`)
+2. Users can share Excel attachments directly from Gmail → "Open with" → AttendanceWidget
+3. Or tap "Import Excel File" button → system file picker → select the seating arrangement
+4. Apache POI Excel parsing logic (same as before) extracts hall/seat from the file
+5. Removed `play-services-auth` dependency entirely — zero Google OAuth, zero user cap
+
+**Also fixed:** R8/ProGuard release build failures — OSGI framework classes (referenced by Log4j), `java.awt.Shape` (referenced by Apache POI's graphbuilder) were missing. Added `-dontwarn` rules for `org.osgi.framework.**`, `org.apache.logging.log4j.**`, and `java.awt.**`.
+
+**Lesson Learned:**
+Google's restricted scope verification is designed for enterprise apps, not student projects. For features that only need to read one file from email, a share intent is simpler, faster, has no user cap, and gives users more privacy (the app never accesses their inbox).
+
+---
+
+### Challenge 13: GPA Calculator Wrong Department Detection
+
+**Problem:**
+The GPA calculator was showing CSE curriculum for students from other departments (EEE, ECE, etc.). Users reported getting the wrong subject list.
+
+**Root Cause:**
+`detectDepartment()` was called with only `securePrefs.programmeName`, which could be **null** if the student hadn't visited the Profile screen yet (that's where `programmeName` gets fetched and cached from the SIS API). When null, it defaulted to CSE.
+
+Additionally, the `department` field from the SIS API uses short names like `"CSE"`, `"ECE"` directly, while `detectDepartment()` only did substring matching on long programme names like `"BTECH COMPUTER SCIENCE AND ENGINEERING"`.
+
+**Solution:**
+1. Changed the detection input to `securePrefs.programmeName ?: securePrefs.cachedDepartment` — falls back to the `department` field (which is stored as `programmeName ?? department` from biodata)
+2. Added **exact short-name matching** as the first check — handles `"CSE"`, `"ECE"`, `"EEE"`, `"MECH"`, `"CIVIL"`, `"AI&DS"`, `"CSBS"` directly
+3. Added `"AI DS"` (space variant) and `"INFORMATION TECHNOLOGY"` → CSE fallback
+
+**Lesson Learned:**
+Never assume a cached value will be populated. Always have a fallback chain, and match against all possible formats the API might return.
+
+---
+
+### Challenge 14: Honours Timetable Detection — Three Stacked Bugs
+
+**Problem:**
+Honours courses were not being detected at all, or when they were, regular elective courses were falsely marked as "HONOURS".
+
+**Root Cause — Bug 1: Gson NumberFormatException**
+The registration API returns `credits: 1.5` (a decimal) for some courses, but `RegistrationLtpc.credits` was declared as `Int`. Gson threw a `NumberFormatException` and the **entire registration response failed to parse** silently. Result: `registeredCourseCodes` was always empty, `markHonoursCourses()` returned early without marking anything. Fixed by changing `credits: Int` to `credits: Double`.
+
+**Root Cause — Bug 2: Placeholder elective codes**
+After fixing Bug 1, the registration API returned placeholder codes like `PE64__`, `OE61__` for elective slots instead of the actual elected course codes (like `OCS352`, `CEI331`). These placeholder codes never matched real timetable course codes, so all elective courses were falsely flagged as honours. Fixed by skipping codes containing underscores in `extractRegisteredCourseCodes()`.
+
+**Root Cause — Bug 3: Registration API can't identify elected courses**
+Even after removing placeholders, the registration API alone couldn't tell us which elective the student actually chose. The registered set was `[EE3601, EE3602, EE3611, MX3089]` (4 regular courses), but the timetable had 11 courses — the remaining 7 were all marked as honours.
+
+**Solution:**
+Combined **two data sources** for enrolled course detection:
+- **Registration API** → regular courses with real codes (`EE3601, EE3602, ...`)
+- **Attendance API** (present + absent days) → all courses the student has actually attended, including electives with their real codes (`CEI331, OCS353, EE3012, ...`)
+
+Merging both sets gives a complete picture. Honours = timetable codes NOT in either set, minus non-academic slots (LIB, MM).
+
+Also normalized all course code comparisons to uppercase + trimmed to prevent case/whitespace mismatches.
+
+**Lesson Learned:**
+When one API gives incomplete data, cross-reference with another. The attendance API is ground truth — if a student has attended a class, that course code is definitely enrolled. Also: always check Gson model types against actual API responses, especially for numeric fields that might be decimals.
+
+---
+
+### Challenge 15: Duplicate Elective Slots in Timetable
+
+**Problem:**
+Monday's timetable showed an extra period at 15:55–16:45 — both `OCS352` (IoT Concepts) and `OCS353` (Data Science Fundamentals) were displayed, even though the student only attends one.
+
+**Root Cause:**
+The timetable API returns **all elective options** for a time slot, not just the one the student chose. The raw API response contains:
+```json
+{ "dayKey": "day1", "sessionKey": "session8", "courseCode": "OCS352", "courseTitle": "IOT CONCEPTS AND APPLICATIONS" }
+{ "dayKey": "day1", "sessionKey": "session8", "courseCode": "OCS353", "courseTitle": "DATA SCIENCE FUNDAMENTALS" }
+```
+Both entries have the same day + session, but the API doesn't indicate which one the student is enrolled in.
+
+**Solution:**
+New `filterDuplicateSlots()` function runs before honours marking:
+1. Groups all sessions in a day by their time slot (`startTime-endTime`)
+2. If a time slot has only 1 session → keep as-is
+3. If multiple sessions share a time slot → keep only the one(s) whose course code appears in the attendance/registered set
+4. Fallback: if none match (e.g. new semester, no attendance data yet), keep all so nothing disappears
+
+This correctly filtered out `OCS352` (not in attendance data) and kept `OCS353` (student has attended it).
+
+**Pipeline order:** Raw timetable → filter duplicate slots → mark honours → display.
+
+**Lesson Learned:**
+University timetable APIs often return all possible course options, not personalized schedules. Cross-referencing with attendance data personalizes the timetable to what the student actually attends.
