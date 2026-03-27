@@ -112,9 +112,6 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
 
-    // Google Sign-In
-    implementation(libs.play.services.auth)
-
     // Apache POI (Excel parsing)
     implementation(libs.poi)
     implementation(libs.poi.ooxml)
