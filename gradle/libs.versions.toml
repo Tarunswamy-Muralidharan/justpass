@@ -20,6 +20,8 @@ lifecycleViewModel = "2.8.7"
 firebaseBom = "33.7.0"
 googleServices = "4.4.2"
 liquid = "1.1.1"
+playServicesAuth = "21.3.0"
+poi = "5.2.5"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -68,6 +70,13 @@ androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "l
 # Firebase
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics-ktx" }
+
+# Google Sign-In
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
+
+# Apache POI (Excel parsing)
+poi = { group = "org.apache.poi", name = "poi", version.ref = "poi" }
+poi-ooxml = { group = "org.apache.poi", name = "poi-ooxml", version.ref = "poi" }
 
 # Liquid Glass
 liquid = { group = "io.github.fletchmckee.liquid", name = "liquid", version.ref = "liquid" }

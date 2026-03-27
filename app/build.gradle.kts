@@ -16,8 +16,8 @@ android {
         applicationId = "com.example.attendancewidgetlaudea"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "2.0.1"
+        versionCode = 6
+        versionName = "2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -111,6 +111,13 @@ dependencies {
     // Firebase
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
+
+    // Google Sign-In
+    implementation(libs.play.services.auth)
+
+    // Apache POI (Excel parsing)
+    implementation(libs.poi)
+    implementation(libs.poi.ooxml)
 
     // Liquid Glass Effects
     implementation(libs.liquid)
