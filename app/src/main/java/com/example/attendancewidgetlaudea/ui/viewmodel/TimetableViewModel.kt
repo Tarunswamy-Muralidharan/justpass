@@ -124,7 +124,8 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
             when (timetableResult) {
                 is Result.Success -> {
                     val days = timetableResult.data.toDayTimetables()
-                    val markedDays = markHonoursCourses(days)
+                    val filteredDays = filterDuplicateSlots(days)
+                    val markedDays = markHonoursCourses(filteredDays)
                     // Cache the response
                     try {
                         securePrefs.cachedTimetableJson = gson.toJson(timetableResult.data)
@@ -182,6 +183,26 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
                     session
                 }
             })
+        }
+    }
+
+    /**
+     * When multiple courses share the same time slot (elective options),
+     * keep only the one the student actually attends (found in attendance data).
+     */
+    private fun filterDuplicateSlots(days: List<DayTimetable>): List<DayTimetable> {
+        if (registeredCourseCodes.isEmpty()) return days
+        return days.map { day ->
+            val grouped = day.sessions.groupBy { "${it.startTime}-${it.endTime}" }
+            val filtered = grouped.flatMap { (_, sessions) ->
+                if (sessions.size <= 1) sessions
+                else {
+                    // Keep only sessions whose course code is in the enrolled set
+                    val enrolled = sessions.filter { it.courseCode.trim().uppercase() in registeredCourseCodes }
+                    enrolled.ifEmpty { sessions } // fallback: keep all if none match
+                }
+            }.sortedBy { it.startTime }
+            day.copy(sessions = filtered)
         }
     }
 
