@@ -131,7 +131,7 @@ fun LoginScreen(viewModel: LoginViewModel = viewModel(), onLoginSuccess: () -> U
             Spacer(modifier = Modifier.height(32.dp))
             Text("Use your PSG iTech credentials to login", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
             Spacer(modifier = Modifier.weight(1f))
-            Text("built by Tarunswamy M", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            Text("built with love for PSG iTech", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 16.dp))
         }
     }

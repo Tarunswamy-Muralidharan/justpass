@@ -949,3 +949,15 @@ This correctly filtered out `OCS352` (not in attendance data) and kept `OCS353` 
 
 **Lesson Learned:**
 University timetable APIs often return all possible course options, not personalized schedules. Cross-referencing with attendance data personalizes the timetable to what the student actually attends.
+
+---
+
+### UI Change: Remove Developer Name & Discord from App
+
+**Change:**
+Removed developer's name ("Tarunswamy M") and Discord icon from all visible screens:
+- **LoginScreen:** "built by Tarunswamy M" → "built with love for PSG iTech"
+- **DashboardScreen:** Removed "for features or colabs: Tarunswamy M" + Discord icon → just "for features or colabs"
+- **ProfileScreen:** Same removal of name + Discord icon
+
+**Reason:** Privacy preference — with 1600+ users, developer preferred not to have personal info visible in the app UI.
