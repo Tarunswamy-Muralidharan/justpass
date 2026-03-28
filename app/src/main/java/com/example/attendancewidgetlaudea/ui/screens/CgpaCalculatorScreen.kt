@@ -26,6 +26,7 @@ import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.viewmodel.CgpaViewModel
 import com.example.attendancewidgetlaudea.ui.viewmodel.ResultViewModel
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CgpaCalculatorScreen(
     onBack: () -> Unit,
@@ -47,6 +48,22 @@ fun CgpaCalculatorScreen(
         if (resultState.grades.isNotEmpty()) {
             viewModel.applyResults(resultState.grades)
         }
+    }
+
+    // Build elective suggestions from result data
+    val electiveSuggestions = remember(resultState.grades, uiState.department, uiState.regulation) {
+        val curriculum = getCurriculum(uiState.department, uiState.regulation)
+        val curriculumCodes = curriculum.values.flatten()
+            .filter { !it.isElective }
+            .map { it.code.trim().uppercase() }
+            .toSet()
+        resultState.grades
+            .filter { entry ->
+                val code = entry.courseCode?.trim()?.uppercase() ?: ""
+                code.isNotEmpty() && code !in curriculumCodes
+            }
+            .mapNotNull { it.courseTitle?.trim() }
+            .distinct()
     }
 
     var showDeptPicker by remember { mutableStateOf(false) }
@@ -267,24 +284,55 @@ fun CgpaCalculatorScreen(
                     if (expanded) {
                         if (sg.subject.isElective) {
                             Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = sg.customName ?: "",
-                                onValueChange = { name ->
-                                    viewModel.setElectiveName(uiState.selectedSemester, index, name)
-                                },
-                                placeholder = {
-                                    Text("Enter elective name", fontSize = 12.sp)
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                    cursorColor = MaterialTheme.colorScheme.primary
-                                ),
-                                shape = RoundedCornerShape(8.dp)
-                            )
+                            var dropdownExpanded by remember { mutableStateOf(false) }
+                            val query = sg.customName ?: ""
+                            val filtered = remember(query, electiveSuggestions) {
+                                if (query.isBlank()) electiveSuggestions
+                                else electiveSuggestions.filter { it.contains(query, ignoreCase = true) }
+                            }
+                            ExposedDropdownMenuBox(
+                                expanded = dropdownExpanded && filtered.isNotEmpty(),
+                                onExpandedChange = { dropdownExpanded = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = query,
+                                    onValueChange = { name ->
+                                        viewModel.setElectiveName(uiState.selectedSemester, index, name)
+                                        dropdownExpanded = true
+                                    },
+                                    placeholder = {
+                                        Text(
+                                            if (electiveSuggestions.isNotEmpty()) "Search or type elective name"
+                                            else "Enter elective name",
+                                            fontSize = 12.sp
+                                        )
+                                    },
+                                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                        cursorColor = MaterialTheme.colorScheme.primary
+                                    ),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = dropdownExpanded && filtered.isNotEmpty(),
+                                    onDismissRequest = { dropdownExpanded = false },
+                                    containerColor = Color(0xFF1E2A3A)
+                                ) {
+                                    filtered.forEach { suggestion ->
+                                        DropdownMenuItem(
+                                            text = { Text(suggestion, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                            onClick = {
+                                                viewModel.setElectiveName(uiState.selectedSemester, index, suggestion)
+                                                dropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(

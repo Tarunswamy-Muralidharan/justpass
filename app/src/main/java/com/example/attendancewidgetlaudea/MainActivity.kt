@@ -145,6 +145,12 @@ fun AttendanceApp() {
                 displayName = name
                 securePrefs.displayName = name
             }
+            // Fix cachedDepartment from programmeName (more specific than API department field)
+            // No network calls here — just re-detect from already-stored data
+            securePrefs.programmeName?.let { prog ->
+                val detected = com.example.attendancewidgetlaudea.data.model.detectDepartment(prog)
+                if (detected != null) securePrefs.cachedDepartment = detected.shortName
+            }
         }
     }
 

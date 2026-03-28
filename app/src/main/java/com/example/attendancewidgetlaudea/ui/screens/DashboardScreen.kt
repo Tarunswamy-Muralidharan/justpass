@@ -18,7 +18,13 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.EventSeat
+import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.School
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -483,6 +489,18 @@ fun DashboardScreen(
                 val datePickerState = rememberDatePickerState(
                     initialSelectedDateMillis = leaveStartDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
                 )
+                val datePickerColors = DatePickerDefaults.colors(
+                    containerColor = Color(0xFF1A2535),
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    headlineContentColor = MaterialTheme.colorScheme.onSurface,
+                    weekdayContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    navigationContentColor = MaterialTheme.colorScheme.onSurface,
+                    yearContentColor = MaterialTheme.colorScheme.onSurface,
+                    dayContentColor = MaterialTheme.colorScheme.onSurface,
+                    selectedDayContainerColor = MaterialTheme.colorScheme.primary,
+                    todayDateBorderColor = Color(0xFF00E676),
+                    todayContentColor = Color(0xFF00E676)
+                )
                 DatePickerDialog(
                     onDismissRequest = { showDatePicker = false },
                     confirmButton = {
@@ -495,9 +513,10 @@ fun DashboardScreen(
                     },
                     dismissButton = {
                         TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
-                    }
+                    },
+                    colors = DatePickerDefaults.colors(containerColor = Color(0xFF1A2535))
                 ) {
-                    DatePicker(state = datePickerState)
+                    DatePicker(state = datePickerState, colors = datePickerColors)
                 }
             }
 
@@ -509,114 +528,26 @@ fun DashboardScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            GlassListCard(
-                modifier = Modifier.weight(1f).clickable { Analytics.logTileClicked("result"); onResultClick() },
-                shape = GlassCardShapeSmall
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Semester Result", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
-                        Text("Grades & GPA", fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Text("\u2192", fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary)
-                }
-            }
-            GlassListCard(
-                modifier = Modifier.weight(1f).clickable { Analytics.logTileClicked("calendar"); onCalendarClick() },
-                shape = GlassCardShapeSmall
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Calendar", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
-                        Text("Holidays & events", fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Text("\u2192", fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary)
-                }
-            }
+            DashboardTile("Semester Result", "Grades & GPA", Icons.Default.School, Color(0xFF42A5F5),
+                Modifier.weight(1f)) { Analytics.logTileClicked("result"); onResultClick() }
+            DashboardTile("Calendar", "Holidays & events", Icons.Default.DateRange, Color(0xFF8E24AA),
+                Modifier.weight(1f)) { Analytics.logTileClicked("calendar"); onCalendarClick() }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // GPA Calculator tile
-        GlassListCard(
-            modifier = Modifier.fillMaxWidth().clickable { Analytics.logTileClicked("gpa_calculator"); onCgpaClick() },
-            shape = GlassCardShapeSmall
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("GPA Calculator", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
-                    Text("Calculate SGPA & CGPA", fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Text("\u2192", fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary)
-            }
-        }
+        DashboardTile("GPA Calculator", "Calculate SGPA & CGPA", Icons.Default.Calculate, Color(0xFF00E676),
+            Modifier.fillMaxWidth()) { Analytics.logTileClicked("gpa_calculator"); onCgpaClick() }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Circulars tile
-        GlassListCard(
-            modifier = Modifier.fillMaxWidth().clickable { Analytics.logTileClicked("circulars"); onCircularsClick() },
-            shape = GlassCardShapeSmall
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Circulars", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
-                    Text("Notices & updates from college", fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Text("\u2192", fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary)
-            }
-        }
+        DashboardTile("Circulars", "Notices & updates from college", Icons.Default.Mail, Color(0xFFFFC107),
+            Modifier.fillMaxWidth()) { Analytics.logTileClicked("circulars"); onCircularsClick() }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Exam Seat tile
-        GlassListCard(
-            modifier = Modifier.fillMaxWidth().clickable { Analytics.logTileClicked("exam_seat"); onExamSeatClick() },
-            shape = GlassCardShapeSmall
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Exam Seat Finder", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
-                    Text("Find your CA hall & seat from Gmail", fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Text("\u2192", fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary)
-            }
-        }
+        DashboardTile("Exam Seat Finder", "Find your hall & seat", Icons.Default.EventSeat, Color(0xFFFF8A65),
+            Modifier.fillMaxWidth()) { Analytics.logTileClicked("exam_seat"); onExamSeatClick() }
 
         uiState.errorMessage?.let { error ->
             Spacer(modifier = Modifier.height(8.dp))
@@ -662,3 +593,24 @@ private fun getAttendanceTintColor(percentage: Double): Color {
 }
 
 private fun formatTimestamp(timestamp: Long): String = SimpleDateFormat("MMM dd, hh:mm a", Locale.getDefault()).format(Date(timestamp))
+
+@Composable
+private fun DashboardTile(
+    title: String, subtitle: String, icon: ImageVector, iconTint: Color,
+    modifier: Modifier = Modifier, onClick: () -> Unit
+) {
+    GlassListCard(modifier = modifier.clickable(onClick = onClick), shape = GlassCardShapeSmall) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                Text(subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(icon, title, tint = iconTint, modifier = Modifier.size(24.dp))
+        }
+    }
+}
