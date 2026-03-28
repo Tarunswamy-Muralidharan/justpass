@@ -145,7 +145,10 @@ fun ProfileScreen(
                         // Cache academic info for instant display next time
                         bio.currentSem?.let { securePrefs.cachedCurrentSem = it }
                         bio.section?.let { securePrefs.cachedSection = it }
-                        (bio.department ?: bio.programmeName)?.let { securePrefs.cachedDepartment = it }
+                        // Detect and store short department name for reliable lookups
+                        val detected = com.example.attendancewidgetlaudea.data.model.detectDepartment(bio.programmeName)
+                            ?: com.example.attendancewidgetlaudea.data.model.detectDepartment(bio.department)
+                        securePrefs.cachedDepartment = detected?.shortName ?: bio.programmeName ?: bio.department
                     }
                 } catch (_: Exception) {}
             }

@@ -1,5 +1,9 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -56,6 +60,7 @@ fun AcademicCalendarScreen(
     val uiState by viewModel.uiState.collectAsState()
     val isDark = isSystemInDarkTheme()
     val today = remember { LocalDate.now() }
+    var slideDirection by remember { mutableIntStateOf(1) }
 
     // Map events by date for quick lookup
     val eventsByDate = remember(uiState.events) {
@@ -128,19 +133,28 @@ fun AcademicCalendarScreen(
                 item {
                     MonthNavigator(
                         month = uiState.selectedMonth,
-                        onPrevious = { viewModel.previousMonth() },
-                        onNext = { viewModel.nextMonth() }
+                        onPrevious = { slideDirection = -1; viewModel.previousMonth() },
+                        onNext = { slideDirection = 1; viewModel.nextMonth() }
                     )
                 }
 
-                // Calendar grid
+                // Calendar grid with slide animation
                 item {
-                    CalendarGrid(
-                        month = uiState.selectedMonth,
-                        today = today,
-                        eventsByDate = eventsByDate,
-                        isDark = isDark
-                    )
+                    AnimatedContent(
+                        targetState = uiState.selectedMonth,
+                        transitionSpec = {
+                            slideInHorizontally { width -> slideDirection * width } togetherWith
+                                    slideOutHorizontally { width -> -slideDirection * width }
+                        },
+                        label = "calendar_slide"
+                    ) { month ->
+                        CalendarGrid(
+                            month = month,
+                            today = today,
+                            eventsByDate = eventsByDate,
+                            isDark = isDark
+                        )
+                    }
                 }
 
                 // Legend
