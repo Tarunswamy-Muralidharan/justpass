@@ -119,6 +119,9 @@ dependencies {
     // Liquid Glass Effects
     implementation(libs.liquid)
 
+    // ML Kit Text Recognition (OCR)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

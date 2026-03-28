@@ -1,18 +1,35 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfRenderer
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,6 +42,9 @@ import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.viewmodel.CgpaViewModel
 import com.example.attendancewidgetlaudea.ui.viewmodel.ResultViewModel
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,23 +70,105 @@ fun CgpaCalculatorScreen(
         }
     }
 
-    // Build elective suggestions from result data
-    val electiveSuggestions = remember(resultState.grades, uiState.department, uiState.regulation) {
-        val curriculum = getCurriculum(uiState.department, uiState.regulation)
-        val curriculumCodes = curriculum.values.flatten()
-            .filter { !it.isElective }
-            .map { it.code.trim().uppercase() }
-            .toSet()
-        resultState.grades
+    // Build elective suggestions from regulation data + result data
+    val electiveSuggestions = remember(uiState.department, uiState.regulation, resultState.grades) {
+        val allElectives = getAllElectives(uiState.department, uiState.regulation).map { "${it.name} (${it.code})" }
+        // Also include any elective names from results that aren't in the curriculum
+        val resultNames = resultState.grades
             .filter { entry ->
+                val curriculum = getCurriculum(uiState.department, uiState.regulation)
+                val curriculumCodes = curriculum.values.flatten()
+                    .filter { !it.isElective }
+                    .map { it.code.trim().uppercase() }
+                    .toSet()
                 val code = entry.courseCode?.trim()?.uppercase() ?: ""
                 code.isNotEmpty() && code !in curriculumCodes
             }
             .mapNotNull { it.courseTitle?.trim() }
-            .distinct()
+        (allElectives + resultNames).distinct()
     }
 
     var showDeptPicker by remember { mutableStateOf(false) }
+    var ocrProcessing by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    // OCR: parse grades from image or PDF
+    val scope = rememberCoroutineScope()
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        ocrProcessing = true
+        val mimeType = context.contentResolver.getType(uri) ?: ""
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+        if (mimeType == "application/pdf") {
+            // PDF: render each page to bitmap and OCR
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val fd = context.contentResolver.openFileDescriptor(uri, "r") ?: throw Exception("Can't open PDF")
+                    val renderer = PdfRenderer(fd)
+                    val allText = StringBuilder()
+                    for (i in 0 until renderer.pageCount) {
+                        val page = renderer.openPage(i)
+                        val bmp = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
+                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        page.close()
+                        val image = InputImage.fromBitmap(bmp, 0)
+                        val result = com.google.android.gms.tasks.Tasks.await(recognizer.process(image))
+                        allText.appendLine(result.text)
+                        bmp.recycle()
+                    }
+                    renderer.close()
+                    fd.close()
+                    val parsed = parseGradesFromOcr(allText.toString())
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        if (parsed.isNotEmpty()) {
+                            viewModel.applyOcrGrades(parsed)
+                            Toast.makeText(context, "Found ${parsed.size} grades from PDF", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "No grades detected in PDF. Try a clearer file.", Toast.LENGTH_LONG).show()
+                        }
+                        ocrProcessing = false
+                    }
+                } catch (e: Exception) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        Toast.makeText(context, "PDF error: ${e.message}", Toast.LENGTH_LONG).show()
+                        ocrProcessing = false
+                    }
+                }
+            }
+        } else {
+            // Image: direct OCR
+            try {
+                val image = InputImage.fromFilePath(context, uri)
+                recognizer.process(image)
+                    .addOnSuccessListener { visionText ->
+                        android.util.Log.d("OCR_DEBUG", "Full text:\n${visionText.text}")
+                        for (block in visionText.textBlocks) {
+                            for (bline in block.lines) {
+                                android.util.Log.d("OCR_LINE", bline.text)
+                            }
+                        }
+                        val parsed = parseGradesFromOcr(visionText.text)
+                        if (parsed.isNotEmpty()) {
+                            viewModel.applyOcrGrades(parsed)
+                            Toast.makeText(context, "Found ${parsed.size} grades", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "No grades detected. Try a clearer image.", Toast.LENGTH_LONG).show()
+                        }
+                        ocrProcessing = false
+                    }
+                    .addOnFailureListener {
+                        Toast.makeText(context, "OCR failed: ${it.message}", Toast.LENGTH_LONG).show()
+                        ocrProcessing = false
+                    }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                ocrProcessing = false
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -117,6 +219,80 @@ fun CgpaCalculatorScreen(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(uiState.regulation.displayName, fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Import grades from image/PDF — camera tilt + flash animation
+        val infiniteTransition = rememberInfiniteTransition(label = "cam")
+        // Tilt: 0° → -12° → 0° → snap pause
+        val camTilt by infiniteTransition.animateFloat(
+            initialValue = 0f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2000, easing = androidx.compose.animation.core.LinearEasing),
+                repeatMode = androidx.compose.animation.core.RepeatMode.Restart
+            ), label = "cam_tilt"
+        )
+        // Flash: brief white flash at the "snap" moment
+        val flashAlpha by infiniteTransition.animateFloat(
+            initialValue = 0f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2000, easing = androidx.compose.animation.core.LinearEasing),
+                repeatMode = androidx.compose.animation.core.RepeatMode.Restart
+            ), label = "cam_flash"
+        )
+        // Convert linear 0-1 to tilt: tilt left (0-0.3), snap back (0.3-0.4), hold (0.4-1.0)
+        val tiltAngle = when {
+            camTilt < 0.3f -> -12f * (camTilt / 0.3f)
+            camTilt < 0.4f -> -12f * (1f - (camTilt - 0.3f) / 0.1f)
+            else -> 0f
+        }
+        // Flash only at snap moment (0.3-0.45)
+        val flashValue = when {
+            flashAlpha in 0.30f..0.35f -> (flashAlpha - 0.30f) / 0.05f
+            flashAlpha in 0.35f..0.45f -> 1f - (flashAlpha - 0.35f) / 0.10f
+            else -> 0f
+        }
+        GlassListCard(
+            modifier = Modifier.fillMaxWidth().clickable(enabled = !ocrProcessing) {
+                filePickerLauncher.launch("*/*")
+            },
+            shape = GlassCardShapeSmall,
+            tintColor = Color(0xFF7C4DFF).copy(alpha = 0.08f)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .background(
+                            Color(0xFF7C4DFF).copy(alpha = 0.18f + flashValue * 0.3f),
+                            RoundedCornerShape(10.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (ocrProcessing) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp,
+                            color = Color(0xFF7C4DFF))
+                    } else {
+                        Icon(Icons.Default.CameraAlt, null,
+                            tint = Color.White.copy(alpha = 0.7f + flashValue * 0.3f),
+                            modifier = Modifier.size(20.dp).rotate(tiltAngle).scale(1f + flashValue * 0.1f))
+                    }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (ocrProcessing) "Scanning for grades..." else "Import Grades from Image",
+                        fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text("Upload a photo or PDF of your grade sheet",
+                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
 
@@ -206,7 +382,7 @@ fun CgpaCalculatorScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text("Semester ${uiState.selectedSemester}", fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     Text("${String.format("%.1f", totalCredits)} credits", fontSize = 11.sp,
@@ -215,9 +391,20 @@ fun CgpaCalculatorScreen(
                 if (currentSgpa > 0) {
                     Column(horizontalAlignment = Alignment.End) {
                         Text("SGPA", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(String.format("%.2f", currentSgpa), fontSize = 24.sp,
+                        Text(String.format("%.3f", currentSgpa), fontSize = 24.sp,
                             fontWeight = FontWeight.Bold, color = getGpaColor(currentSgpa))
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                FilledTonalButton(
+                    onClick = { viewModel.resetSemester(uiState.selectedSemester) },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = Color(0xFFFF5252).copy(alpha = 0.12f)
+                    )
+                ) {
+                    Text("Reset", fontSize = 11.sp, color = Color(0xFFFF5252),
+                        fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -462,4 +649,75 @@ private fun getGradeColor(grade: LetterGrade): Color {
         LetterGrade.C -> Color(0xFFFF8A80)
         LetterGrade.RA, LetterGrade.AB -> Color(0xFFFF5252)
     }
+}
+
+/** Parse course codes and grades from OCR text.
+ *  ML Kit reads tables column-by-column, so we extract course codes and
+ *  grade points separately and match them positionally.
+ *  Grade points (10,9,8,7,6,5) are far more reliable via OCR than letter grades. */
+private fun parseGradesFromOcr(text: String): List<Pair<String, String>> {
+    val upper = text.uppercase()
+    val lines = upper.lines().map { it.trim() }.filter { it.isNotEmpty() }
+
+    // 1) Extract course codes (2-4 letters + 3-4 digits, e.g., CS3492, GE3151)
+    val codePattern = Regex("^[A-Z]{2,4}\\d{3,4}$")
+    val courseCodes = lines.filter { codePattern.matches(it) }
+
+    if (courseCodes.isEmpty()) return emptyList()
+
+    // 2) Try line-by-line first (code and grade on same line)
+    val lineResults = mutableListOf<Pair<String, String>>()
+    val fullCodePattern = Regex("[A-Z]{2,4}\\d{3,4}")
+    for (line in lines) {
+        val codeMatch = fullCodePattern.find(line) ?: continue
+        val afterCode = line.substring(codeMatch.range.last + 1)
+        // Look for "CREDITS GRADE GP PASS" pattern
+        val rowMatch = Regex("\\d+\\s+(O|A\\+?|B\\+?|C|RA|AB)\\s+\\d+").find(afterCode)
+        if (rowMatch != null) {
+            lineResults.add(codeMatch.value to rowMatch.groupValues[1])
+        }
+    }
+    if (lineResults.size >= courseCodes.size / 2) return lineResults.distinctBy { it.first }
+
+    // 3) Column-by-column approach: match course codes with grade points positionally
+    // Grade points are standalone numbers: 10, 9, 8, 7, 6, 5, 0
+    // They appear as a consecutive block of single numbers after the grades column
+    val gpToGrade = mapOf(10 to "O", 9 to "A+", 8 to "A", 7 to "B+", 6 to "B", 5 to "C", 0 to "RA")
+
+    // Find consecutive runs of lines that are valid grade points
+    val numberLines = lines.mapIndexedNotNull { idx, line ->
+        val num = line.toIntOrNull()
+        if (num != null && num in gpToGrade) idx to num else null
+    }
+
+    // Find the longest consecutive run of grade-point-like numbers
+    // that matches the number of course codes
+    var bestRun = listOf<Pair<Int, Int>>()
+    var currentRun = mutableListOf<Pair<Int, Int>>()
+    for (i in numberLines.indices) {
+        if (currentRun.isEmpty() || numberLines[i].first == numberLines[i - 1].first + 1) {
+            currentRun.add(numberLines[i])
+        } else {
+            if (currentRun.size > bestRun.size) bestRun = currentRun.toList()
+            currentRun = mutableListOf(numberLines[i])
+        }
+    }
+    if (currentRun.size > bestRun.size) bestRun = currentRun.toList()
+
+    // Match: if the run length equals course code count, pair them
+    if (bestRun.size == courseCodes.size) {
+        return courseCodes.zip(bestRun.map { gpToGrade[it.second]!! })
+    }
+
+    // 4) Fallback: try matching grade points that are >= courseCodes count
+    // Take the first N grade points that match
+    val allGradePoints = lines.mapNotNull { line ->
+        val num = line.toIntOrNull()
+        if (num != null && num in gpToGrade) gpToGrade[num] else null
+    }
+    if (allGradePoints.size >= courseCodes.size) {
+        return courseCodes.zip(allGradePoints.take(courseCodes.size))
+    }
+
+    return emptyList()
 }
