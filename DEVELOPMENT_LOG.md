@@ -961,3 +961,42 @@ Removed developer's name ("Tarunswamy M") and Discord icon from all visible scre
 - **ProfileScreen:** Same removal of name + Discord icon
 
 **Reason:** Privacy preference — with 1600+ users, developer preferred not to have personal info visible in the app UI.
+
+---
+
+### Challenge 16: Wrong SGPA & Department Detection on Other Accounts
+
+**Problem:**
+When logging into a friend's account (EEE department), the GPA Calculator showed "Computer Science and Engineering" instead of "Electrical and Electronics Engineering". The Semester Result screen also calculated a wrong SGPA because it was looking up credits from the wrong department's curriculum.
+
+**Root Cause:**
+Three compounding issues in the department detection pipeline:
+
+1. **`cachedDepartment` stored the wrong field:** `ProfileScreen.kt` saved `bio.programmeName ?: bio.department` — preferring the long programme name (e.g., "BE ELECTRICAL & ELECTRONICS ENGINEERING") over the API's clean `department` field (e.g., "ELECTRICAL AND ELECTRONICS ENGINEERING"). The order was backwards.
+
+2. **`ResultScreen` ignored `cachedDepartment` entirely:** The SGPA fallback calculation used only `detectDepartment(prefs.programmeName)`. If `programmeName` didn't match any pattern, it silently defaulted to `Department.CSE` — giving completely wrong curriculum credits.
+
+3. **`MainActivity` had the wrong priority:** The GPA Calculator used `detectDepartment(prefs.programmeName ?: prefs.cachedDepartment)` — trying `programmeName` first, making `cachedDepartment` redundant since `programmeName` was almost always non-null.
+
+**Solution:**
+Three surgical fixes:
+
+1. **ProfileScreen.kt:** Flipped to `bio.department ?: bio.programmeName` — now `cachedDepartment` stores the API's direct `department` field first (shorter, more reliable for matching).
+
+2. **ResultScreen.kt:** Changed from single-source to fallback chain:
+   ```kotlin
+   val dept = detectDepartment(prefs.cachedDepartment)
+       ?: detectDepartment(prefs.programmeName)
+       ?: Department.CSE
+   ```
+
+3. **MainActivity.kt:** Same fallback chain — try `cachedDepartment` first, then `programmeName`.
+
+**Verification:**
+Tested on an EEE student's account (BARATH, 715523105010):
+- GPA Calculator: Now correctly shows "Electrical and Electronics Engineer..." with proper EEE curriculum
+- Semester Result: SGPA 7.581 matches across both screens
+- All EE course codes (EE3401, EE3402, etc.) correctly identified
+
+**Lesson Learned:**
+When an API returns both a short identifier field (`department`) and a long descriptive field (`programmeName`), always prefer the short one for detection/matching — it's more consistent and less prone to format variations. Build fallback chains (try A, then B, then default) instead of relying on a single source for critical calculations like GPA.
