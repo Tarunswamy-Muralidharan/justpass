@@ -337,7 +337,9 @@ fun AttendanceApp() {
                             val batch = securePrefs.batchYear.takeIf { it > 0 }
                                 ?: securePrefs.rollNumber?.drop(4)?.take(2)?.toIntOrNull()?.let { 2000 + it }
                             val detectedDept = com.example.attendancewidgetlaudea.data.model.detectDepartment(
-                                securePrefs.programmeName ?: securePrefs.cachedDepartment
+                                securePrefs.cachedDepartment
+                            ) ?: com.example.attendancewidgetlaudea.data.model.detectDepartment(
+                                securePrefs.programmeName
                             )
                             CgpaCalculatorScreen(
                                 onBack = {
