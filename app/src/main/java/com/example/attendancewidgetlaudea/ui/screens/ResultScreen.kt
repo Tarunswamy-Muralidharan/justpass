@@ -151,7 +151,9 @@ fun ResultScreen(
                             val prefs = SecurePreferences.getInstance(context)
                             val batchYear = prefs.batchYear.takeIf { it > 0 }
                                 ?: prefs.rollNumber?.drop(4)?.take(2)?.toIntOrNull()?.let { 2000 + it } ?: 2023
-                            val dept = detectDepartment(prefs.programmeName) ?: Department.CSE
+                            val dept = detectDepartment(prefs.cachedDepartment)
+                                ?: detectDepartment(prefs.programmeName)
+                                ?: Department.CSE
                             val reg = getRegulationForBatch(batchYear)
                             val curriculum = getCurriculum(dept, reg)
                             // Build course code -> credits map from all semesters

@@ -145,7 +145,7 @@ fun ProfileScreen(
                         // Cache academic info for instant display next time
                         bio.currentSem?.let { securePrefs.cachedCurrentSem = it }
                         bio.section?.let { securePrefs.cachedSection = it }
-                        (bio.programmeName ?: bio.department)?.let { securePrefs.cachedDepartment = it }
+                        (bio.department ?: bio.programmeName)?.let { securePrefs.cachedDepartment = it }
                     }
                 } catch (_: Exception) {}
             }
