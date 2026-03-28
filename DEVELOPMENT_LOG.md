@@ -1000,3 +1000,48 @@ Tested on an EEE student's account (BARATH, 715523105010):
 
 **Lesson Learned:**
 When an API returns both a short identifier field (`department`) and a long descriptive field (`programmeName`), always prefer the short one for detection/matching — it's more consistent and less prone to format variations. Build fallback chains (try A, then B, then default) instead of relying on a single source for critical calculations like GPA.
+
+---
+
+### Challenge 17: Login Broke After Adding fetchStudentBiodata() on Startup
+
+**Problem:**
+After adding `fetchStudentBiodata()` calls to the startup `LaunchedEffect` and `onLoginSuccess` callback to pre-fetch department data, the app could no longer log in — stuck at "Could not fetch attendance data" after 60 seconds.
+
+**Root Cause:**
+Race condition between the login WebView flow and the biodata fetch:
+1. `fetchStudentBiodata()` uses `webViewAuthenticator.fetchStudentProfile()` which shares mutable token state (`_cachedAuthToken`) and the global `CookieManager` singleton with the login WebView
+2. The IO thread biodata fetch raced with the Main thread login flow, corrupting the Keycloak session
+3. This caused the attendance XHR intercept to fail silently
+
+**Solution:**
+- Removed ALL `fetchStudentBiodata()` calls from MainActivity (startup + login callback)
+- Department detection on startup uses only locally-stored `programmeName` — no network calls
+- Moved biodata fetch to `DashboardScreen` LaunchedEffect, which runs safely AFTER login WebView is fully destroyed
+- Critical rule: NEVER call WebViewAuthenticator methods during or immediately after login
+
+**Lesson Learned:**
+WebView-based authentication flows have shared global state (CookieManager, cached tokens). Never make concurrent network calls that use the same auth infrastructure while login is in progress. Defer data fetching to after the login flow is completely finished and the WebView is destroyed.
+
+---
+
+### Challenge 18: OCR Grade Import — ML Kit Reads Tables Column-by-Column
+
+**Problem:**
+Google ML Kit Text Recognition on Anna University grade sheets returned "no grades detected." The OCR output showed course codes, grades, and grade points, but they were in separate blocks — ML Kit reads table columns vertically, not rows horizontally.
+
+**Root Cause:**
+The initial parser expected course codes and letter grades on the same line (row-by-row). But ML Kit extracted:
+- Column 1: BS3171, CY3151, GE3151... (course codes)
+- Column 2: A, B+, A... (letter grades — often misread: "O" missed, "B+" → "B4")
+- Column 3: 10, 8, 7, 8... (grade points — read perfectly as numbers)
+
+**Solution:**
+Rewrote the parser to use **grade points instead of letter grades** (10=O, 9=A+, 8=A, 7=B+, 6=B, 5=C):
+1. Extract all course codes (regex: 2-4 letters + 3-4 digits)
+2. Find consecutive runs of valid grade point numbers (10, 9, 8, 7, 6, 5, 0)
+3. Match positionally: first code with first grade point, etc.
+4. Falls back to line-by-line parsing for well-structured text
+
+**Lesson Learned:**
+OCR on structured tables produces column-first output, not row-first. Numbers are far more reliably recognized than single letters. When parsing tabular data from OCR, use the most reliable column (numbers > multi-character strings > single characters).
