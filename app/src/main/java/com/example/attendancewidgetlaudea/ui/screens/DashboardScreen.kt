@@ -88,6 +88,28 @@ fun DashboardScreen(
     val securePrefs = remember { SecurePreferences.getInstance(context) }
     val attendanceTarget = remember { securePrefs.attendanceTarget }
 
+    // Fetch biodata (department, programmeName) on first Dashboard load if missing
+    // Safe here because login WebView is fully destroyed before Dashboard renders
+    LaunchedEffect(Unit) {
+        if (securePrefs.programmeName == null) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val repo = com.example.attendancewidgetlaudea.data.repository.AttendanceRepository.getInstance(context)
+                    val bio = repo.fetchStudentBiodata()
+                    bio?.let {
+                        it.programmeName?.let { p -> securePrefs.programmeName = p }
+                        it.batchYear?.let { b -> securePrefs.batchYear = b }
+                        it.currentSem?.let { s -> securePrefs.cachedCurrentSem = s }
+                        it.section?.let { s -> securePrefs.cachedSection = s }
+                        val detected = com.example.attendancewidgetlaudea.data.model.detectDepartment(it.programmeName)
+                            ?: com.example.attendancewidgetlaudea.data.model.detectDepartment(it.department)
+                        securePrefs.cachedDepartment = detected?.shortName ?: it.programmeName ?: it.department
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
     // Glow animation around the header card on refresh — persists 2s after refresh ends
     var refreshGlowKey by remember { mutableIntStateOf(0) }
     val glowAnim = remember { Animatable(0f) }

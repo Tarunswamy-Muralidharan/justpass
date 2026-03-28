@@ -135,6 +135,39 @@ class CgpaViewModel(application: Application) : AndroidViewModel(application) {
         saveElectiveNames()
     }
 
+    fun resetSemester(semester: Int) {
+        val current = _uiState.value.semesterGrades.toMutableMap()
+        val semGrades = current[semester] ?: return
+        current[semester] = semGrades.map { it.copy(grade = null, customName = null) }
+        _uiState.value = _uiState.value.copy(semesterGrades = current)
+        saveGrades()
+        saveElectiveNames()
+    }
+
+    /** Apply grades parsed from OCR — matches by course code across all semesters */
+    fun applyOcrGrades(ocrGrades: List<Pair<String, String>>) {
+        val current = _uiState.value.semesterGrades.toMutableMap()
+
+        for ((code, gradeStr) in ocrGrades) {
+            val grade = mapLetterGrade(gradeStr) ?: continue
+            val upperCode = code.trim().uppercase()
+
+            // Search across all semesters for matching course code
+            for ((sem, semGrades) in current) {
+                val list = semGrades.toMutableList()
+                val idx = list.indexOfFirst { it.subject.code.trim().uppercase() == upperCode }
+                if (idx >= 0) {
+                    list[idx] = list[idx].copy(grade = grade)
+                    current[sem] = list
+                    break
+                }
+            }
+        }
+
+        _uiState.value = _uiState.value.copy(semesterGrades = current)
+        saveGrades()
+    }
+
     private fun mapLetterGrade(label: String?): LetterGrade? {
         return when (label?.trim()?.uppercase()) {
             "O" -> LetterGrade.O
