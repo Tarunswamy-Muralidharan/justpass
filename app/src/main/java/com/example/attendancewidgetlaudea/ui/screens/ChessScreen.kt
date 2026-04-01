@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.attendancewidgetlaudea.data.model.ChessProfile
 import com.example.attendancewidgetlaudea.data.model.OnlinePlayer
+import com.example.attendancewidgetlaudea.ui.viewmodel.MatchHistoryEntry
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.viewmodel.ChessViewModel
@@ -94,6 +96,14 @@ fun ChessScreen(
         )
     }
 
+    // Match history dialog
+    if (uiState.showHistory) {
+        MatchHistoryDialog(
+            history = uiState.matchHistory,
+            onDismiss = { viewModel.toggleHistory() }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp)) {
         // Header
         GlassListCard(
@@ -118,6 +128,11 @@ fun ChessScreen(
                 // Edit name
                 IconButton(onClick = { viewModel.openNameSetup() }, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.Edit, "Edit name", modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                // History
+                IconButton(onClick = { viewModel.toggleHistory() }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.History, "History", modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 // Leaderboard
@@ -438,6 +453,66 @@ private fun LeaderboardDialog(
                             Text("${profile.rating}", fontSize = 14.sp, fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary)
                             Text(" SR", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
+}
+
+// ─── Match History Dialog ───────────────────────────────────────────────────
+
+@Composable
+private fun MatchHistoryDialog(
+    history: List<MatchHistoryEntry>,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1E2A3A),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.History, "History", tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text("Match History", fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            if (history.isEmpty()) {
+                Text("No games played yet", fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                    items(history) { match ->
+                        val resultColor = when (match.result) {
+                            "win" -> Color(0xFF00E676)
+                            "loss" -> Color(0xFFFF5252)
+                            "draw" -> Color(0xFFFFC107)
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        val resultText = when (match.result) {
+                            "win" -> "Won"
+                            "loss" -> "Lost"
+                            "draw" -> "Draw"
+                            "aborted" -> "Aborted"
+                            else -> "?"
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(resultText, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                                color = resultColor, modifier = Modifier.width(56.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("vs ${match.opponentName}", fontSize = 13.sp,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(formatTimeAgo(match.timestamp), fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }

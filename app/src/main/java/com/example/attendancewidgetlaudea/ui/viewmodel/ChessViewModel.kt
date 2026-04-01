@@ -9,7 +9,10 @@ import com.example.attendancewidgetlaudea.data.model.ChessProfile
 import com.example.attendancewidgetlaudea.data.model.FriendRequest
 import com.example.attendancewidgetlaudea.data.model.OnlinePlayer
 import com.example.attendancewidgetlaudea.data.repository.ChessRepository
+import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +20,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+
+data class MatchHistoryEntry(
+    val opponentName: String,
+    val result: String, // "win", "loss", "draw", "aborted"
+    val timestamp: Long,
+    val lichessGameId: String
+)
 
 data class ChessUiState(
     val isOnline: Boolean = false,
@@ -25,12 +36,14 @@ data class ChessUiState(
     val onlinePlayers: List<OnlinePlayer> = emptyList(),
     val leaderboard: List<ChessProfile> = emptyList(),
     val friendRequests: List<FriendRequest> = emptyList(),
+    val matchHistory: List<MatchHistoryEntry> = emptyList(),
     val pendingChallenge: ChessChallenge? = null,
     val sentChallengeId: String? = null,
     val sentChallengeName: String? = null,
     val acceptedChallenge: ChessChallenge? = null,
     val showNameSetup: Boolean = false,
     val showLeaderboard: Boolean = false,
+    val showHistory: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -38,6 +51,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repo = ChessRepository()
     private val securePrefs = SecurePreferences.getInstance(application)
+    private val prefs = application.getSharedPreferences("chess_history", 0)
 
     private val _uiState = MutableStateFlow(ChessUiState())
     val uiState: StateFlow<ChessUiState> = _uiState.asStateFlow()
@@ -48,14 +62,15 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     private var sentChallengeListener: ListenerRegistration? = null
     private var heartbeatJob: Job? = null
     private var friendIds: Set<String> = emptySet()
+    private var myPlayerId: String = ""
 
     fun goOnline() {
         val rollNumber = securePrefs.rollNumber ?: return
         val realName = securePrefs.displayName ?: "Player"
-        val playerId = repo.getPlayerId(rollNumber)
+        myPlayerId = repo.getPlayerId(rollNumber)
 
         viewModelScope.launch {
-            val profile = repo.getOrCreateProfile(playerId, realName, rollNumber)
+            val profile = repo.getOrCreateProfile(myPlayerId, realName, rollNumber)
             if (profile == null) {
                 _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = "Failed to connect")
                 return@launch
@@ -63,48 +78,55 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
             _uiState.value = _uiState.value.copy(myProfile = profile, isLoading = false)
 
-            // If first time (no name chosen), show setup
             if (profile.gamesPlayed == 0 && profile.nameMode == "random") {
                 _uiState.value = _uiState.value.copy(showNameSetup = true)
             }
 
-            // Go online with visible name
-            repo.goOnline(playerId, profile.visibleName)
+            repo.goOnline(myPlayerId, profile.visibleName)
             _uiState.value = _uiState.value.copy(isOnline = true)
 
-            // Load friends
-            friendIds = repo.getFriendIds(playerId)
+            friendIds = repo.getFriendIds(myPlayerId)
 
-            // Listen for online players
-            onlineListener = repo.listenOnlinePlayers(playerId, friendIds) { players ->
+            onlineListener = repo.listenOnlinePlayers(myPlayerId, friendIds) { players ->
                 _uiState.value = _uiState.value.copy(onlinePlayers = players)
             }
 
-            // Listen for incoming challenges
-            incomingListener = repo.listenIncomingChallenges(playerId) { challenge ->
+            incomingListener = repo.listenIncomingChallenges(myPlayerId) { challenge ->
                 _uiState.value = _uiState.value.copy(pendingChallenge = challenge)
             }
 
-            // Listen for friend requests
-            friendReqListener = repo.listenFriendRequests(playerId) { requests ->
+            friendReqListener = repo.listenFriendRequests(myPlayerId) { requests ->
                 _uiState.value = _uiState.value.copy(friendRequests = requests)
             }
 
-            // Cleanup + heartbeat
             repo.cleanupExpiredChallenges()
+
+            // Load local match history
+            loadMatchHistory()
+
             heartbeatJob = viewModelScope.launch {
                 while (isActive) {
-                    delay(30_000L)
-                    repo.heartbeat(playerId)
+                    delay(25_000L) // heartbeat every 25s (stale threshold is 45s)
+                    repo.heartbeat(myPlayerId)
                 }
             }
         }
     }
 
     fun goOffline() {
-        val id = _uiState.value.myProfile?.id ?: return
-        viewModelScope.launch { repo.goOffline(id) }
         cleanup()
+        // Use GlobalScope + Dispatchers.IO so the delete completes even if ViewModel is destroyed
+        if (myPlayerId.isNotBlank()) {
+            GlobalScope.launch(Dispatchers.IO) {
+                try {
+                    FirebaseFirestore.getInstance()
+                        .collection("chess_online")
+                        .document(myPlayerId)
+                        .delete()
+                        .await()
+                } catch (_: Exception) {}
+            }
+        }
         _uiState.value = ChessUiState()
     }
 
@@ -123,7 +145,6 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             repo.updateProfile(profile.id, nickname, mode)
             val updated = profile.copy(nickname = nickname, nameMode = mode)
             _uiState.value = _uiState.value.copy(myProfile = updated, showNameSetup = false)
-            // Update online presence with new name
             repo.goOnline(profile.id, updated.visibleName)
         }
     }
@@ -147,6 +168,38 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.value = _uiState.value.copy(leaderboard = board)
             }
         }
+    }
+
+    // ─── Match History (local) ──────────────────────────────────────────────
+
+    fun toggleHistory() {
+        _uiState.value = _uiState.value.copy(showHistory = !_uiState.value.showHistory)
+    }
+
+    private fun loadMatchHistory() {
+        val json = prefs.getString("history", null) ?: return
+        try {
+            val entries = json.split("|||").filter { it.isNotBlank() }.map { entry ->
+                val parts = entry.split("||")
+                MatchHistoryEntry(
+                    opponentName = parts.getOrElse(0) { "Unknown" },
+                    result = parts.getOrElse(1) { "unknown" },
+                    timestamp = parts.getOrElse(2) { "0" }.toLongOrNull() ?: 0L,
+                    lichessGameId = parts.getOrElse(3) { "" }
+                )
+            }.sortedByDescending { it.timestamp }
+            _uiState.value = _uiState.value.copy(matchHistory = entries)
+        } catch (_: Exception) {}
+    }
+
+    private fun saveMatchToHistory(opponentName: String, result: String, lichessGameId: String) {
+        val entry = "$opponentName||$result||${System.currentTimeMillis()}||$lichessGameId"
+        val existing = prefs.getString("history", "") ?: ""
+        // Keep max 50 entries
+        val entries = existing.split("|||").filter { it.isNotBlank() }.takeLast(49)
+        val updated = (entries + entry).joinToString("|||")
+        prefs.edit().putString("history", updated).apply()
+        loadMatchHistory()
     }
 
     // ─── Friends ────────────────────────────────────────────────────────────
@@ -246,9 +299,24 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             val recentGames = repo.getRecentGames(profile.id)
             val unchecked = recentGames.filter { !it.resultChecked && it.lichessGameId.isNotBlank() }
             for (game in unchecked) {
-                repo.processGameResult(game)
+                val result = repo.checkLichessGameResult(game.lichessGameId)
+                if (result != null && result != "ongoing") {
+                    repo.processGameResult(game)
+
+                    // Save to local history
+                    val myColor = if (game.fromId == profile.id) game.fromColor.ifBlank { "white" }
+                                  else if (game.fromColor == "white") "black" else "white"
+                    val opponentName = if (game.fromId == profile.id) game.toName else game.fromName
+                    val myResult = when {
+                        result == "draw" -> "draw"
+                        result == "aborted" -> "aborted"
+                        result == myColor -> "win"
+                        else -> "loss"
+                    }
+                    saveMatchToHistory(opponentName, myResult, game.lichessGameId)
+                }
             }
-            // Refresh profile after processing
+            // Refresh profile
             if (unchecked.isNotEmpty()) {
                 val refreshed = repo.getOrCreateProfile(profile.id, profile.displayName, "")
                 if (refreshed != null) {
@@ -268,9 +336,17 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
-        val id = _uiState.value.myProfile?.id
-        if (!id.isNullOrBlank()) {
-            viewModelScope.launch { repo.goOffline(id) }
+        // GlobalScope so delete completes even after ViewModel destruction
+        if (myPlayerId.isNotBlank()) {
+            GlobalScope.launch(Dispatchers.IO) {
+                try {
+                    FirebaseFirestore.getInstance()
+                        .collection("chess_online")
+                        .document(myPlayerId)
+                        .delete()
+                        .await()
+                } catch (_: Exception) {}
+            }
         }
         cleanup()
     }
