@@ -21,6 +21,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.EventSeat
+import androidx.compose.material.icons.filled.FlightTakeoff
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
@@ -79,7 +82,9 @@ fun DashboardScreen(
     onCalendarClick: () -> Unit = {},
     onCircularsClick: () -> Unit = {},
     onCgpaClick: () -> Unit = {},
-    onExamSeatClick: () -> Unit = {}
+    onExamSeatClick: () -> Unit = {},
+    onSyllabusClick: () -> Unit = {},
+    onChessClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
@@ -370,9 +375,9 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("What if I take leave?", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface)
-                        Text("Tap to expand", fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+                            color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+                        Icon(Icons.Default.FlightTakeoff, contentDescription = "Leave",
+                            tint = Color(0xFFFF9800), modifier = Modifier.size(22.dp))
                     }
                     if (days > 0) {
                         Spacer(modifier = Modifier.height(6.dp))
@@ -570,6 +575,16 @@ fun DashboardScreen(
 
         DashboardTile("Exam Seat Finder", "Find your hall & seat", Icons.Default.EventSeat, Color(0xFFFF8A65),
             Modifier.fillMaxWidth()) { Analytics.logTileClicked("exam_seat"); onExamSeatClick() }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        DashboardTile("Syllabus", "R2021 subject-wise syllabus", Icons.Default.MenuBook, Color(0xFF7C4DFF),
+            Modifier.fillMaxWidth()) { Analytics.logTileClicked("syllabus"); onSyllabusClick() }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        DashboardTile("Chess Lobby", "Find opponents & play on Lichess", Icons.Default.SportsEsports, Color(0xFF4CAF50),
+            Modifier.fillMaxWidth()) { Analytics.logTileClicked("chess"); onChessClick() }
 
         uiState.errorMessage?.let { error ->
             Spacer(modifier = Modifier.height(8.dp))

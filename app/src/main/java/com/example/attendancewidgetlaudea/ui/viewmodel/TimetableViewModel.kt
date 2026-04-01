@@ -49,6 +49,20 @@ class TimetableViewModel(application: Application) : AndroidViewModel(applicatio
         fetchTimetable()
     }
 
+    /**
+     * Recompute "Today" marker — called from the screen's LaunchedEffect
+     * so it stays correct even if the app process survives past midnight.
+     */
+    fun refreshTodayIndex() {
+        val todayIndex = getTodayDayIndex()
+        if (_uiState.value.todayDayIndex != todayIndex) {
+            _uiState.value = _uiState.value.copy(
+                selectedDayIndex = todayIndex,
+                todayDayIndex = todayIndex
+            )
+        }
+    }
+
     private fun getTodayDayIndex(): Int {
         // Calendar.MONDAY=2 ... Calendar.SATURDAY=7, SUNDAY=1
         val dayOfWeek = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)

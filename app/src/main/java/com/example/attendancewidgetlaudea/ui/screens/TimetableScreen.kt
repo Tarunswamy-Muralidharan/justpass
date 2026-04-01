@@ -35,6 +35,9 @@ fun TimetableScreen(cardState: LiquidState, viewModel: TimetableViewModel = view
     val uiState by viewModel.uiState.collectAsState()
     val isDark = isSystemInDarkTheme()
 
+    // Recompute "Today" each time the screen is shown (survives midnight)
+    LaunchedEffect(Unit) { viewModel.refreshTodayIndex() }
+
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         // Day tabs — real liquid glass
         if (uiState.days.isNotEmpty()) {
