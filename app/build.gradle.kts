@@ -111,6 +111,7 @@ dependencies {
     // Firebase
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
+    implementation(libs.firebase.firestore)
 
     // Apache POI (Excel parsing)
     implementation(libs.poi)

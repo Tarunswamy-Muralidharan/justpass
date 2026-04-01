@@ -11,17 +11,20 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,6 +46,7 @@ import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.viewmodel.CgpaViewModel
 import com.example.attendancewidgetlaudea.ui.viewmodel.ResultViewModel
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 
@@ -139,33 +143,62 @@ fun CgpaCalculatorScreen(
                 }
             }
         } else {
-            // Image: direct OCR
-            try {
-                val image = InputImage.fromFilePath(context, uri)
-                recognizer.process(image)
-                    .addOnSuccessListener { visionText ->
-                        android.util.Log.d("OCR_DEBUG", "Full text:\n${visionText.text}")
-                        for (block in visionText.textBlocks) {
-                            for (bline in block.lines) {
-                                android.util.Log.d("OCR_LINE", bline.text)
-                            }
+            // Image: upscale 2x for better OCR, then spatial matching
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    // Load bitmap and upscale for better small-text recognition
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    val original = BitmapFactory.decodeStream(inputStream)
+                    inputStream?.close()
+                    if (original == null) {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            Toast.makeText(context, "Cannot read image", Toast.LENGTH_LONG).show()
+                            ocrProcessing = false
                         }
-                        val parsed = parseGradesFromOcr(visionText.text)
+                        return@launch
+                    }
+
+                    // Scale up 2x — helps ML Kit detect small grade point digits
+                    val scaled = Bitmap.createScaledBitmap(original, original.width * 2, original.height * 2, true)
+                    original.recycle()
+
+                    val image = InputImage.fromBitmap(scaled, 0)
+                    val visionText = com.google.android.gms.tasks.Tasks.await(recognizer.process(image))
+                    scaled.recycle()
+
+                    android.util.Log.d("OCR_DEBUG", "Full text:\n${visionText.text}")
+                    for (block in visionText.textBlocks) {
+                        for (bline in block.lines) {
+                            android.util.Log.d("OCR_LINE", bline.text)
+                        }
+                    }
+
+                    // Try spatial matching first (uses bounding boxes), fall back to text-based
+                    val parsed = parseGradesSpatial(visionText).ifEmpty {
+                        parseGradesFromOcr(visionText.text)
+                    }
+
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         if (parsed.isNotEmpty()) {
                             viewModel.applyOcrGrades(parsed)
-                            Toast.makeText(context, "Found ${parsed.size} grades", Toast.LENGTH_SHORT).show()
+                            val passCount = visionText.text.uppercase().lines().count { it.trim() == "PASS" }
+                            val total = if (passCount > 0) passCount else parsed.size
+                            if (parsed.size < total) {
+                                Toast.makeText(context, "Found ${parsed.size}/$total grades. Check remaining manually.", Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(context, "Found ${parsed.size} grades", Toast.LENGTH_SHORT).show()
+                            }
                         } else {
-                            Toast.makeText(context, "No grades detected. Try a clearer image.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "No grades detected. Try a clearer, closer photo.", Toast.LENGTH_LONG).show()
                         }
                         ocrProcessing = false
                     }
-                    .addOnFailureListener {
-                        Toast.makeText(context, "OCR failed: ${it.message}", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        Toast.makeText(context, "OCR error: ${e.message}", Toast.LENGTH_LONG).show()
                         ocrProcessing = false
                     }
-            } catch (e: Exception) {
-                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                ocrProcessing = false
+                }
             }
         }
     }
@@ -224,36 +257,68 @@ fun CgpaCalculatorScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Import grades from image/PDF — camera tilt + flash animation
+        // Import grades — 4-phase camera animation:
+        // 1) Ready (0.0-0.20)  2) Focusing (0.20-0.45)  3) Capture (0.45-0.65)  4) Saved (0.65-1.0)
         val infiniteTransition = rememberInfiniteTransition(label = "cam")
-        // Tilt: 0° → -12° → 0° → snap pause
-        val camTilt by infiniteTransition.animateFloat(
+        val camPhase by infiniteTransition.animateFloat(
             initialValue = 0f, targetValue = 1f,
             animationSpec = infiniteRepeatable(
-                animation = tween(2000, easing = androidx.compose.animation.core.LinearEasing),
+                animation = tween(3500, easing = androidx.compose.animation.core.LinearEasing),
                 repeatMode = androidx.compose.animation.core.RepeatMode.Restart
-            ), label = "cam_tilt"
+            ), label = "cam_phase"
         )
-        // Flash: brief white flash at the "snap" moment
-        val flashAlpha by infiniteTransition.animateFloat(
-            initialValue = 0f, targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(2000, easing = androidx.compose.animation.core.LinearEasing),
-                repeatMode = androidx.compose.animation.core.RepeatMode.Restart
-            ), label = "cam_flash"
-        )
-        // Convert linear 0-1 to tilt: tilt left (0-0.3), snap back (0.3-0.4), hold (0.4-1.0)
-        val tiltAngle = when {
-            camTilt < 0.3f -> -12f * (camTilt / 0.3f)
-            camTilt < 0.4f -> -12f * (1f - (camTilt - 0.3f) / 0.1f)
+
+        // Phase-derived values
+        // Focus brackets: fade in during phase 2, out during phase 3
+        val bracketAlpha = when {
+            camPhase < 0.20f -> 0f
+            camPhase < 0.30f -> (camPhase - 0.20f) / 0.10f
+            camPhase < 0.45f -> 1f
+            camPhase < 0.55f -> 1f - (camPhase - 0.45f) / 0.10f
             else -> 0f
         }
-        // Flash only at snap moment (0.3-0.45)
+        // Focus bracket scale: starts wide, tightens
+        val bracketScale = when {
+            camPhase < 0.20f -> 1.3f
+            camPhase < 0.45f -> 1.3f - 0.3f * ((camPhase - 0.20f) / 0.25f)
+            else -> 1f
+        }
+        // Red focus dot: appears during focusing
+        val redDotAlpha = when {
+            camPhase < 0.25f -> 0f
+            camPhase < 0.30f -> (camPhase - 0.25f) / 0.05f
+            camPhase < 0.45f -> if ((camPhase * 20).toInt() % 2 == 0) 1f else 0.3f // blink
+            else -> 0f
+        }
+        // Flash: burst at capture moment
         val flashValue = when {
-            flashAlpha in 0.30f..0.35f -> (flashAlpha - 0.30f) / 0.05f
-            flashAlpha in 0.35f..0.45f -> 1f - (flashAlpha - 0.35f) / 0.10f
+            camPhase < 0.45f -> 0f
+            camPhase < 0.50f -> (camPhase - 0.45f) / 0.05f
+            camPhase < 0.60f -> 1f - (camPhase - 0.50f) / 0.10f
             else -> 0f
         }
+        // Camera scale: slight pulse on capture
+        val camScale = when {
+            camPhase < 0.45f -> 1f
+            camPhase < 0.50f -> 1f + 0.15f * ((camPhase - 0.45f) / 0.05f)
+            camPhase < 0.55f -> 1.15f - 0.15f * ((camPhase - 0.50f) / 0.05f)
+            else -> 1f
+        }
+        // Checkmark + image: fade in during saved phase
+        val savedAlpha = when {
+            camPhase < 0.65f -> 0f
+            camPhase < 0.75f -> (camPhase - 0.65f) / 0.10f
+            camPhase < 0.92f -> 1f
+            else -> 1f - (camPhase - 0.92f) / 0.08f // fade out before restart
+        }
+        // Camera icon fades during saved phase
+        val camAlpha = when {
+            camPhase < 0.65f -> 1f
+            camPhase < 0.75f -> 1f - 0.5f * ((camPhase - 0.65f) / 0.10f)
+            camPhase < 0.92f -> 0.5f
+            else -> 0.5f + 0.5f * ((camPhase - 0.92f) / 0.08f)
+        }
+
         GlassListCard(
             modifier = Modifier.fillMaxWidth().clickable(enabled = !ocrProcessing) {
                 filePickerLauncher.launch("*/*")
@@ -269,7 +334,7 @@ fun CgpaCalculatorScreen(
                     modifier = Modifier
                         .size(38.dp)
                         .background(
-                            Color(0xFF7C4DFF).copy(alpha = 0.18f + flashValue * 0.3f),
+                            Color(0xFF7C4DFF).copy(alpha = 0.18f + flashValue * 0.4f),
                             RoundedCornerShape(10.dp)
                         ),
                     contentAlignment = Alignment.Center
@@ -278,9 +343,56 @@ fun CgpaCalculatorScreen(
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp,
                             color = Color(0xFF7C4DFF))
                     } else {
+                        // Focus brackets (phase 2)
+                        if (bracketAlpha > 0f) {
+                            Canvas(modifier = Modifier.size(28.dp).scale(bracketScale)) {
+                                val s = size.width
+                                val len = s * 0.25f
+                                val stroke = androidx.compose.ui.graphics.drawscope.Stroke(
+                                    width = 1.5.dp.toPx(),
+                                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                                )
+                                val bracketColor = Color.White.copy(alpha = bracketAlpha * 0.9f)
+                                // Top-left
+                                drawLine(bracketColor, Offset(0f, len), Offset(0f, 0f), stroke.width)
+                                drawLine(bracketColor, Offset(0f, 0f), Offset(len, 0f), stroke.width)
+                                // Top-right
+                                drawLine(bracketColor, Offset(s - len, 0f), Offset(s, 0f), stroke.width)
+                                drawLine(bracketColor, Offset(s, 0f), Offset(s, len), stroke.width)
+                                // Bottom-left
+                                drawLine(bracketColor, Offset(0f, s - len), Offset(0f, s), stroke.width)
+                                drawLine(bracketColor, Offset(0f, s), Offset(len, s), stroke.width)
+                                // Bottom-right
+                                drawLine(bracketColor, Offset(s - len, s), Offset(s, s), stroke.width)
+                                drawLine(bracketColor, Offset(s, s - len), Offset(s, s), stroke.width)
+                            }
+                        }
+                        // Camera icon
                         Icon(Icons.Default.CameraAlt, null,
-                            tint = Color.White.copy(alpha = 0.7f + flashValue * 0.3f),
-                            modifier = Modifier.size(20.dp).rotate(tiltAngle).scale(1f + flashValue * 0.1f))
+                            tint = Color.White.copy(alpha = 0.7f * camAlpha + flashValue * 0.3f),
+                            modifier = Modifier.size(20.dp).scale(camScale))
+                        // Red focus dot (phase 2)
+                        if (redDotAlpha > 0f) {
+                            Box(modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp)
+                                .size(5.dp)
+                                .background(Color(0xFFFF1744).copy(alpha = redDotAlpha), CircleShape))
+                        }
+                        // Saved: checkmark badge (phase 4)
+                        if (savedAlpha > 0f) {
+                            Box(modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(1.dp)
+                                .size(14.dp)
+                                .background(Color(0xFF00C853).copy(alpha = savedAlpha), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Check, null,
+                                    tint = Color.White.copy(alpha = savedAlpha),
+                                    modifier = Modifier.size(9.dp))
+                            }
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -651,73 +763,385 @@ private fun getGradeColor(grade: LetterGrade): Color {
     }
 }
 
-/** Parse course codes and grades from OCR text.
- *  ML Kit reads tables column-by-column, so we extract course codes and
- *  grade points separately and match them positionally.
- *  Grade points (10,9,8,7,6,5) are far more reliable via OCR than letter grades. */
+/** Spatial OCR parser — uses ML Kit bounding boxes to match course codes
+ *  with grade points by Y-coordinate (same row in the table).
+ *  Two-pass: GPs first (most reliable), then letter grades for remaining.
+ *  This prevents misalignment when ML Kit skips reading some cells. */
+private fun parseGradesSpatial(visionText: Text): List<Pair<String, String>> {
+    val codeRegex = Regex("\\b([A-Z]{2}\\d{4})\\b")
+    val gpToGrade = mapOf(10 to "O", 9 to "A+", 8 to "A", 7 to "B+", 6 to "B", 5 to "C", 0 to "RA")
+    val letterGrades = listOf("A+", "B+", "RA", "AB", "O", "A", "B", "C")
+
+    // Fuzzy grade point
+    fun fuzzyGP(s: String): Int? {
+        s.trim().toIntOrNull()?.let { if (it in gpToGrade) return it }
+        val t = s.trim()
+        if (t.length == 2 && t[0] in "1IlL") return 10
+        return null
+    }
+
+    // Fuzzy letter grade (conservative — no ambiguous mappings)
+    fun fuzzyGrade(s: String): String? {
+        val t = s.replace(Regex("\\s+"), "").uppercase()
+        if (t in letterGrades) return t
+        return when (t) {
+            "0" -> "O"      // zero → O
+            "B4" -> "B+"    // B+ misread
+            "8+" -> "B+"    // B+ misread
+            "8" -> "B"      // B misread
+            else -> null     // "E", "Q" etc. too ambiguous — skip
+        }
+    }
+
+    // Collect all lines with bounding box center Y and X
+    data class OcrItem(val text: String, val centerY: Float, val centerX: Float, val right: Float)
+
+    val allItems = mutableListOf<OcrItem>()
+    for (block in visionText.textBlocks) {
+        for (line in block.lines) {
+            val box = line.boundingBox ?: continue
+            allItems.add(OcrItem(
+                text = line.text.uppercase().trim(),
+                centerY = (box.top + box.bottom) / 2f,
+                centerX = (box.left + box.right) / 2f,
+                right = box.right.toFloat()
+            ))
+        }
+    }
+
+    if (allItems.isEmpty()) return emptyList()
+
+    // Estimate row height from course code Y-coordinate gaps
+    val codeItems = allItems.filter {
+        val m = codeRegex.find(it.text)
+        m != null && !m.groupValues[1].startsWith("NM")
+    }
+    if (codeItems.size < 2) return emptyList()
+
+    val sortedCodes = codeItems.sortedBy { it.centerY }
+    val yGaps = sortedCodes.zipWithNext().map { (a, b) -> b.centerY - a.centerY }.filter { it > 5 }
+    val rowHeight = if (yGaps.isNotEmpty()) yGaps.average().toFloat() else 30f
+    // Tight tolerance: less than half a row height to avoid cross-row matching
+    val yTolerance = rowHeight * 0.45f
+
+    android.util.Log.d("OCR_SPATIAL", "Row height: $rowHeight, tolerance: $yTolerance, codes: ${sortedCodes.size}")
+    for (c in sortedCodes) {
+        val code = codeRegex.find(c.text)?.groupValues?.get(1) ?: "?"
+        android.util.Log.d("OCR_SPATIAL", "  Code: $code at Y=${c.centerY.toInt()} X=${c.centerX.toInt()}")
+    }
+
+    // Identify the grade point column: GP items that are to the right of course codes
+    // and within the table area (filter out GPA/CGPA summary numbers)
+    val codeMaxX = sortedCodes.maxOf { it.right }
+    val codeMinY = sortedCodes.minOf { it.centerY } - rowHeight
+    val codeMaxY = sortedCodes.maxOf { it.centerY } + rowHeight
+
+    val gpItems = allItems.mapNotNull { item ->
+        val gp = fuzzyGP(item.text)
+        // Must be: to the right of codes, within table Y range, short text (1-2 chars)
+        if (gp != null && item.centerX > codeMaxX && item.text.trim().length <= 2
+            && item.centerY >= codeMinY && item.centerY <= codeMaxY)
+            Triple(item, gp, gpToGrade[gp]!!) else null
+    }
+
+    val letterItems = allItems.mapNotNull { item ->
+        val g = fuzzyGrade(item.text)
+        // Must be: to the right of codes, within table Y range, short text
+        if (g != null && item.centerX > codeMaxX && item.text.trim().length <= 2
+            && item.centerY >= codeMinY && item.centerY <= codeMaxY)
+            item to g else null
+    }
+
+    android.util.Log.d("OCR_SPATIAL", "GP items in table: ${gpItems.size}, letter items: ${letterItems.size}")
+    for (gp in gpItems) android.util.Log.d("OCR_SPATIAL", "  GP: ${gp.second} at Y=${gp.first.centerY.toInt()} X=${gp.first.centerX.toInt()}")
+
+    // === PASS 1: Order-preserving GP matching ===
+    // Both codes and GPs are in the same table, so they share top-to-bottom order.
+    // This handles perspective skew where a GP's Y drifts closer to an adjacent row.
+    val results = mutableMapOf<String, String>()
+    val sortedGPs = gpItems.sortedBy { it.first.centerY }
+    val validCodes = sortedCodes.mapNotNull { item ->
+        val code = codeRegex.find(item.text)?.groupValues?.get(1)
+        if (code != null && !code.startsWith("NM")) item to code else null
+    }
+
+    // For each GP (in Y order), find the best code (in Y order) that hasn't been matched,
+    // only looking forward from the last matched code position to preserve row order.
+    var nextCodeIdx = 0
+    val wideYTolerance = rowHeight * 1.2f // wider tolerance since we enforce order
+
+    for ((gpItem, gpVal, gradeName) in sortedGPs) {
+        var bestIdx = -1
+        var bestDist = Float.MAX_VALUE
+
+        for (i in nextCodeIdx until validCodes.size) {
+            val dist = kotlin.math.abs(validCodes[i].first.centerY - gpItem.centerY)
+            if (dist < bestDist) {
+                bestDist = dist
+                bestIdx = i
+            }
+            // If distance is growing and we've passed the GP's Y level, stop looking
+            if (validCodes[i].first.centerY > gpItem.centerY + wideYTolerance) break
+        }
+
+        if (bestIdx >= 0 && bestDist < wideYTolerance) {
+            val code = validCodes[bestIdx].second
+            results[code] = gradeName
+            nextCodeIdx = bestIdx + 1
+            android.util.Log.d("OCR_SPATIAL", "$code → $gradeName (GP $gpVal, ΔY=${bestDist.toInt()}, ordered)")
+        }
+    }
+
+    // === PASS 2: For unmatched codes, try letter grades ===
+    val usedLetterItems = mutableSetOf<OcrItem>()
+    for (codeItem in sortedCodes) {
+        val code = codeRegex.find(codeItem.text)?.groupValues?.get(1) ?: continue
+        if (code.startsWith("NM") || code in results) continue
+
+        val letterMatch = letterItems
+            .filter { it.first !in usedLetterItems }
+            .filter { kotlin.math.abs(it.first.centerY - codeItem.centerY) < yTolerance }
+            .minByOrNull { kotlin.math.abs(it.first.centerY - codeItem.centerY) }
+
+        if (letterMatch != null) {
+            results[code] = letterMatch.second
+            usedLetterItems.add(letterMatch.first)
+            android.util.Log.d("OCR_SPATIAL", "$code → ${letterMatch.second} (letter, ΔY=${kotlin.math.abs(letterMatch.first.centerY - codeItem.centerY).toInt()})")
+        } else {
+            android.util.Log.d("OCR_SPATIAL", "$code → NO MATCH (no GP or grade on same row)")
+        }
+    }
+
+    val resultList = results.map { it.key to it.value }
+    android.util.Log.d("OCR_SPATIAL", "Spatial result: ${resultList.size}/${sortedCodes.size} — $resultList")
+    return resultList
+}
+
+/** Robust OCR grade parser for Anna University grade sheets.
+ *  Handles any layout ML Kit produces: row-by-row, column-by-column, mixed blocks.
+ *  Uses fuzzy matching for OCR errors and combines multiple data sources. */
 private fun parseGradesFromOcr(text: String): List<Pair<String, String>> {
     val upper = text.uppercase()
     val lines = upper.lines().map { it.trim() }.filter { it.isNotEmpty() }
 
-    // 1) Extract course codes (2-4 letters + 3-4 digits, e.g., CS3492, GE3151)
-    val codePattern = Regex("^[A-Z]{2,4}\\d{3,4}$")
-    val courseCodes = lines.filter { codePattern.matches(it) }
-
-    if (courseCodes.isEmpty()) return emptyList()
-
-    // 2) Try line-by-line first (code and grade on same line)
-    val lineResults = mutableListOf<Pair<String, String>>()
-    val fullCodePattern = Regex("[A-Z]{2,4}\\d{3,4}")
-    for (line in lines) {
-        val codeMatch = fullCodePattern.find(line) ?: continue
-        val afterCode = line.substring(codeMatch.range.last + 1)
-        // Look for "CREDITS GRADE GP PASS" pattern
-        val rowMatch = Regex("\\d+\\s+(O|A\\+?|B\\+?|C|RA|AB)\\s+\\d+").find(afterCode)
-        if (rowMatch != null) {
-            lineResults.add(codeMatch.value to rowMatch.groupValues[1])
-        }
-    }
-    if (lineResults.size >= courseCodes.size / 2) return lineResults.distinctBy { it.first }
-
-    // 3) Column-by-column approach: match course codes with grade points positionally
-    // Grade points are standalone numbers: 10, 9, 8, 7, 6, 5, 0
-    // They appear as a consecutive block of single numbers after the grades column
+    // Strict: exactly 2 uppercase letters + exactly 4 digits (Anna University format)
+    val codeRegex = Regex("\\b([A-Z]{2}\\d{4})\\b")
     val gpToGrade = mapOf(10 to "O", 9 to "A+", 8 to "A", 7 to "B+", 6 to "B", 5 to "C", 0 to "RA")
+    val letterGrades = listOf("A+", "B+", "RA", "AB", "O", "A", "B", "C")
+    // Roman numerals that appear as semester labels in grade sheets
+    val romanNumerals = setOf("I", "II", "III", "IV", "V", "VI", "VII", "VIII",
+        "VL", "VIL", "VLL", "VII", "VILL", "VI", "VIL", "VLL")
 
-    // Find consecutive runs of lines that are valid grade points
-    val numberLines = lines.mapIndexedNotNull { idx, line ->
-        val num = line.toIntOrNull()
-        if (num != null && num in gpToGrade) idx to num else null
-    }
-
-    // Find the longest consecutive run of grade-point-like numbers
-    // that matches the number of course codes
-    var bestRun = listOf<Pair<Int, Int>>()
-    var currentRun = mutableListOf<Pair<Int, Int>>()
-    for (i in numberLines.indices) {
-        if (currentRun.isEmpty() || numberLines[i].first == numberLines[i - 1].first + 1) {
-            currentRun.add(numberLines[i])
-        } else {
-            if (currentRun.size > bestRun.size) bestRun = currentRun.toList()
-            currentRun = mutableListOf(numberLines[i])
+    // --- Extract all unique course codes, filtering out noise ---
+    val allCodes = mutableListOf<String>()
+    for (line in lines) {
+        for (m in codeRegex.findAll(line)) {
+            val code = m.groupValues[1]
+            // Skip NM prefix (Naan Mudhalvan — not counted in GPA)
+            if (code.startsWith("NM")) continue
+            if (code !in allCodes) allCodes.add(code)
         }
     }
-    if (currentRun.size > bestRun.size) bestRun = currentRun.toList()
+    android.util.Log.d("OCR_PARSE", "Found ${allCodes.size} codes: $allCodes")
+    if (allCodes.isEmpty()) return emptyList()
 
-    // Match: if the run length equals course code count, pair them
-    if (bestRun.size == courseCodes.size) {
-        return courseCodes.zip(bestRun.map { gpToGrade[it.second]!! })
+    // Count PASS lines to know expected subject count
+    val passCount = lines.count { it == "PASS" }
+    val expectedCount = if (passCount > 0) passCount else allCodes.size
+    android.util.Log.d("OCR_PARSE", "Expected subjects: $expectedCount (PASS=$passCount, codes=${allCodes.size})")
+
+    // --- Fuzzy grade point parser ---
+    fun fuzzyGradePoint(s: String): Int? {
+        val trimmed = s.trim()
+        trimmed.toIntOrNull()?.let { if (it in gpToGrade) return it }
+        // OCR misreads of "10": 1X, 1O, IO, lO, l0, I0
+        if (trimmed.length == 2 && trimmed[0] in "1IlL") {
+            val cleaned = trimmed.replace(Regex("[XxOoIl]"), "0")
+            cleaned.toIntOrNull()?.let { if (it in gpToGrade) return it }
+            return 10
+        }
+        return null
     }
 
-    // 4) Fallback: try matching grade points that are >= courseCodes count
-    // Take the first N grade points that match
-    val allGradePoints = lines.mapNotNull { line ->
-        val num = line.toIntOrNull()
-        if (num != null && num in gpToGrade) gpToGrade[num] else null
-    }
-    if (allGradePoints.size >= courseCodes.size) {
-        return courseCodes.zip(allGradePoints.take(courseCodes.size))
+    // --- Fuzzy letter grade ---
+    fun fuzzyLetterGrade(s: String): String? {
+        val t = s.replace(Regex("\\s+"), "")
+        if (t in letterGrades) return t
+        return when (t) {
+            "0" -> "O"      // O misread as zero
+            "Q" -> "O"      // O misread as Q
+            "8+" -> "B+"    // B misread as 8
+            "8" -> "B"      // B misread as 8
+            "B4" -> "B+"    // B+ misread as B4
+            "RI" -> "RA"
+            "PA" -> "RA"
+            else -> null
+        }
     }
 
+    // --- Check if a line is noise (Roman numeral, header, etc.) ---
+    fun isNoiseLine(s: String): Boolean {
+        val up = s.uppercase().replace(Regex("\\s+"), "")
+        if (up in romanNumerals) return true
+        if (Regex("^V+I*L*$").matches(up)) return true // catches Vi, Vll, VIl, etc.
+        return false
+    }
+
+    // ====== Strategy 1: Row matching (code + grade on the same line) ======
+    val rowResults = mutableListOf<Pair<String, String>>()
+    for (line in lines) {
+        val codeMatch = codeRegex.find(line) ?: continue
+        val code = codeMatch.groupValues[1]
+        if (code.startsWith("NM") || code !in allCodes) continue
+        val afterCode = line.substring(codeMatch.range.last + 1).trim()
+        if (afterCode.isEmpty()) continue
+
+        val fullRow = Regex("\\b\\d+\\s+(O|A\\+|A|B\\+|B|C|RA|AB)\\s+\\d+").find(afterCode)
+        if (fullRow != null) { rowResults.add(code to fullRow.groupValues[1]); continue }
+
+        val gradeGp = Regex("\\b(O|A\\+|A|B\\+|B|C|RA|AB)\\s+(10|[0-9])\\b").find(afterCode)
+        if (gradeGp != null) { rowResults.add(code to gradeGp.groupValues[1]); continue }
+
+        val tokens = afterCode.split(Regex("\\s+"))
+        val lastGp = tokens.lastOrNull()?.let { fuzzyGradePoint(it) }
+        if (lastGp != null) { rowResults.add(code to gpToGrade[lastGp]!!); continue }
+
+        for (t in tokens.reversed()) {
+            val fg = fuzzyLetterGrade(t)
+            if (fg != null) { rowResults.add(code to fg); break }
+        }
+    }
+    val distinctRow = rowResults.distinctBy { it.first }
+    android.util.Log.d("OCR_PARSE", "Strategy 1 (row): ${distinctRow.size} — $distinctRow")
+    if (distinctRow.size >= allCodes.size / 2) return distinctRow
+
+    // ====== Strategy 2: Grade points after POINT header (most reliable for column layout) ======
+    val pointHeaderIdx = lines.indexOfLast { "POINT" in it && !it.contains("AVERAGE") && !it.contains("EARNED") }
+    if (pointHeaderIdx >= 0) {
+        val gpsAfterHeader = mutableListOf<String>()
+        for (i in (pointHeaderIdx + 1) until lines.size) {
+            if (isNoiseLine(lines[i])) continue
+            val gp = fuzzyGradePoint(lines[i])
+            if (gp != null) {
+                gpsAfterHeader.add(gpToGrade[gp]!!)
+            } else if (lines[i] == "PASS" || lines[i] == "FAIL") {
+                break
+            }
+        }
+        android.util.Log.d("OCR_PARSE", "Strategy 2 (post-POINT): ${gpsAfterHeader.size} GPs: $gpsAfterHeader")
+        if (gpsAfterHeader.size >= allCodes.size / 2) {
+            val result = allCodes.take(gpsAfterHeader.size).zip(gpsAfterHeader)
+            return result
+        }
+    }
+
+    // ====== Strategy 3: Letter grades after GRADE header ======
+    val gradeHeaderIdx = lines.indexOfFirst { it == "GRADE" }
+    if (gradeHeaderIdx >= 0) {
+        val letterResults = mutableListOf<String>()
+        for (i in (gradeHeaderIdx + 1) until lines.size) {
+            if (isNoiseLine(lines[i])) continue
+            val fg = fuzzyLetterGrade(lines[i].replace(Regex("\\s+"), ""))
+            if (fg != null) {
+                letterResults.add(fg)
+            } else if (lines[i].contains("GRADE") || lines[i].contains("POINT") || lines[i].contains("RESULT")) {
+                break // hit next column header
+            }
+        }
+        android.util.Log.d("OCR_PARSE", "Strategy 3 (post-GRADE): ${letterResults.size} grades: $letterResults")
+        if (letterResults.size >= allCodes.size / 2) {
+            val result = allCodes.take(letterResults.size).zip(letterResults)
+            return result
+        }
+    }
+
+    // ====== Strategy 4: Column matching — fuzzy GP runs with gap tolerance ======
+    val gradePointLines = mutableListOf<Pair<Int, Int>>()
+    for ((idx, line) in lines.withIndex()) {
+        if (isNoiseLine(line)) continue
+        val gp = fuzzyGradePoint(line)
+        if (gp != null) gradePointLines.add(idx to gp)
+    }
+
+    val gpRuns = findGapTolerantRuns(gradePointLines, maxGap = 3)
+    val bestGpRun = gpRuns.filter { it.size >= 3 }
+        .minByOrNull { kotlin.math.abs(it.size - allCodes.size) }
+    if (bestGpRun != null && bestGpRun.size >= allCodes.size / 2) {
+        val grades = bestGpRun.map { gpToGrade[it.second]!! }
+        val result = allCodes.take(grades.size).zip(grades)
+        android.util.Log.d("OCR_PARSE", "Strategy 4 (GP runs): ${result.size} — $result")
+        return result
+    }
+
+    // ====== Strategy 5: Column matching — letter grade runs ======
+    val gradeLines = mutableListOf<Pair<Int, String>>()
+    for ((idx, line) in lines.withIndex()) {
+        if (isNoiseLine(line)) continue
+        val stripped = line.replace(Regex("\\s+"), "")
+        val fg = fuzzyLetterGrade(stripped)
+        if (fg != null) gradeLines.add(idx to fg)
+    }
+
+    val gradeRuns = findGapTolerantRunsStr(gradeLines, maxGap = 3)
+    val bestGradeRun = gradeRuns.filter { it.size >= 3 }
+        .minByOrNull { kotlin.math.abs(it.size - allCodes.size) }
+    if (bestGradeRun != null && bestGradeRun.size >= allCodes.size / 2) {
+        val grades = bestGradeRun.map { it.second }
+        val result = allCodes.take(grades.size).zip(grades)
+        android.util.Log.d("OCR_PARSE", "Strategy 5 (letter runs): ${result.size} — $result")
+        return result
+    }
+
+    // ====== Strategy 6: All fuzzy GPs from tokens ======
+    val allGps = mutableListOf<String>()
+    for (line in lines) {
+        if (isNoiseLine(line)) continue
+        for (token in line.split(Regex("\\s+"))) {
+            val gp = fuzzyGradePoint(token)
+            if (gp != null) allGps.add(gpToGrade[gp]!!)
+        }
+    }
+    if (allGps.size >= allCodes.size) {
+        val result = allCodes.zip(allGps.takeLast(allCodes.size))
+        android.util.Log.d("OCR_PARSE", "Strategy 6 (all GPs): ${result.size}")
+        return result
+    }
+
+    // ====== Fallback ======
+    if (distinctRow.isNotEmpty()) return distinctRow
+
+    android.util.Log.d("OCR_PARSE", "No grades detected from any strategy")
     return emptyList()
+}
+
+/** Find runs of items allowing gaps (non-matching lines between matches). */
+private fun findGapTolerantRuns(items: List<Pair<Int, Int>>, maxGap: Int): List<List<Pair<Int, Int>>> {
+    val runs = mutableListOf<List<Pair<Int, Int>>>()
+    var cur = mutableListOf<Pair<Int, Int>>()
+    for (i in items.indices) {
+        if (cur.isEmpty() || items[i].first <= items[i - 1].first + maxGap + 1) {
+            cur.add(items[i])
+        } else {
+            if (cur.size >= 2) runs.add(cur.toList())
+            cur = mutableListOf(items[i])
+        }
+    }
+    if (cur.size >= 2) runs.add(cur.toList())
+    return runs
+}
+
+/** Find runs of string-valued items allowing gaps. */
+private fun findGapTolerantRunsStr(items: List<Pair<Int, String>>, maxGap: Int): List<List<Pair<Int, String>>> {
+    val runs = mutableListOf<List<Pair<Int, String>>>()
+    var cur = mutableListOf<Pair<Int, String>>()
+    for (i in items.indices) {
+        if (cur.isEmpty() || items[i].first <= items[i - 1].first + maxGap + 1) {
+            cur.add(items[i])
+        } else {
+            if (cur.size >= 2) runs.add(cur.toList())
+            cur = mutableListOf(items[i])
+        }
+    }
+    if (cur.size >= 2) runs.add(cur.toList())
+    return runs
 }

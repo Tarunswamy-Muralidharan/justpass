@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
@@ -52,7 +53,9 @@ import com.example.attendancewidgetlaudea.ui.screens.TimetableScreen
 import com.example.attendancewidgetlaudea.ui.screens.AcademicCalendarScreen
 import com.example.attendancewidgetlaudea.ui.screens.CgpaCalculatorScreen
 import com.example.attendancewidgetlaudea.ui.screens.CircularsScreen
+import com.example.attendancewidgetlaudea.ui.screens.ChessScreen
 import com.example.attendancewidgetlaudea.ui.screens.ExamSeatScreen
+import com.example.attendancewidgetlaudea.ui.screens.SyllabusScreen
 import com.example.attendancewidgetlaudea.ui.theme.AttendanceWidgetLaudeaTheme
 import com.example.attendancewidgetlaudea.worker.AttendanceRefreshWorker
 import com.example.attendancewidgetlaudea.worker.CircularNotificationWorker
@@ -88,12 +91,13 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Screen {
-    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat
+    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess
 }
 
 private val bottomTabs = listOf(
     TabItemData("Home", Icons.Default.Home),
     TabItemData("Timetable", Icons.Default.DateRange),
+    TabItemData("GPA", Icons.Default.Calculate),
     TabItemData("CA Marks", Icons.Default.Star),
     TabItemData("Profile", Icons.Default.Person)
 )
@@ -270,8 +274,9 @@ fun AttendanceApp() {
                             currentScreen = when (index) {
                                 0 -> Screen.Dashboard
                                 1 -> Screen.Timetable
-                                2 -> Screen.CAMarks
-                                3 -> Screen.Profile
+                                2 -> Screen.CgpaCalculator
+                                3 -> Screen.CAMarks
+                                4 -> Screen.Profile
                                 else -> Screen.Dashboard
                             }
                             Analytics.logFeatureUsed(bottomTabs[index].label.lowercase())
@@ -281,7 +286,7 @@ fun AttendanceApp() {
                 }
             ) { cardState ->
                 Crossfade(
-                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat)) currentScreen.name
+                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess)) currentScreen.name
                                   else "tab_$selectedTabIndex",
                     animationSpec = tween(200),
                     label = "screenFade"
@@ -356,6 +361,32 @@ fun AttendanceApp() {
                                 userBatchYear = batch
                             )
                         }
+                        Screen.Syllabus.name -> {
+                            val detectedDept = com.example.attendancewidgetlaudea.data.model.detectDepartment(
+                                securePrefs.cachedDepartment
+                            ) ?: com.example.attendancewidgetlaudea.data.model.detectDepartment(
+                                securePrefs.programmeName
+                            )
+                            val batch = securePrefs.batchYear.takeIf { it > 0 }
+                                ?: securePrefs.rollNumber?.drop(4)?.take(2)?.toIntOrNull()?.let { 2000 + it }
+                            val regulation = com.example.attendancewidgetlaudea.data.model.getRegulationForBatch(batch ?: 2021)
+                            SyllabusScreen(
+                                cardState = cardState,
+                                userDepartment = detectedDept,
+                                userRegulation = regulation,
+                                onBack = {
+                                    currentScreen = Screen.Dashboard
+                                    selectedTabIndex = 0
+                                }
+                            )
+                        }
+                        Screen.Chess.name -> ChessScreen(
+                            cardState = cardState,
+                            onBack = {
+                                currentScreen = Screen.Dashboard
+                                selectedTabIndex = 0
+                            }
+                        )
                         Screen.ExamSeat.name -> ExamSeatScreen(
                             cardState = cardState,
                             onBack = {
@@ -399,17 +430,28 @@ fun AttendanceApp() {
                             onExamSeatClick = {
                                 Analytics.logFeatureUsed("exam_seat")
                                 currentScreen = Screen.ExamSeat
+                            },
+                            onSyllabusClick = {
+                                Analytics.logFeatureUsed("syllabus")
+                                currentScreen = Screen.Syllabus
+                            },
+                            onChessClick = {
+                                Analytics.logFeatureUsed("chess")
+                                currentScreen = Screen.Chess
                             }
                         )
                         "tab_1" -> TimetableScreen(cardState = cardState)
-                        "tab_2" -> CAMarksScreen(
+                        "tab_2" -> {
+                            // GPA Calculator from bottom nav — routed via CgpaCalculator screen name
+                        }
+                        "tab_3" -> CAMarksScreen(
                             cardState = cardState,
                             onBack = {
                                 selectedTabIndex = 0
                                 currentScreen = Screen.Dashboard
                             }
                         )
-                        "tab_3" -> ProfileScreen(
+                        "tab_4" -> ProfileScreen(
                             cardState = cardState,
                             displayName = displayName,
                             onLogout = handleLogout,
@@ -421,3 +463,4 @@ fun AttendanceApp() {
         }
     }
 }
+
