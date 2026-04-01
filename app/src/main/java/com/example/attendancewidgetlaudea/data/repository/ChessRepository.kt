@@ -26,7 +26,7 @@ class ChessRepository {
 
     companion object {
         private const val TAG = "ChessRepo"
-        private const val ONLINE_TIMEOUT_MS = 90_000L // 90 seconds stale threshold
+        private const val ONLINE_TIMEOUT_MS = 45_000L // 45 seconds stale (heartbeat is 25s)
     }
 
     // ─── Identity ───────────────────────────────────────────────────────────
