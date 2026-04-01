@@ -1045,3 +1045,182 @@ Rewrote the parser to use **grade points instead of letter grades** (10=O, 9=A+,
 
 **Lesson Learned:**
 OCR on structured tables produces column-first output, not row-first. Numbers are far more reliably recognized than single letters. When parsing tabular data from OCR, use the most reliable column (numbers > multi-character strings > single characters).
+
+---
+
+### Challenge 19: Timetable Showing Yesterday as "Today"
+
+**Problem:**
+Users reported the timetable screen showing Tuesday as "Today" when it was actually Wednesday. The "Today" badge was stuck on the previous day.
+
+**Root Cause:**
+`getTodayDayIndex()` was only called once in the ViewModel's `init {}` block. Android keeps app processes alive across midnight, so if the user opened the app on Tuesday and it stayed in memory overnight, the `todayDayIndex` was permanently set to Tuesday (index 1) instead of updating to Wednesday (index 2).
+
+**Debugging Process:**
+1. Took ADB screenshot — confirmed "Today" label was on TUE, device date was WED
+2. Ran `adb shell date` — confirmed Wednesday April 1
+3. Traced the code: `Calendar.getInstance().get(Calendar.DAY_OF_WEEK)` mapping was correct, but it only ran once during ViewModel initialization
+
+**Solution:**
+Added `refreshTodayIndex()` method to `TimetableViewModel` that recomputes the day index and updates both `todayDayIndex` and `selectedDayIndex` if they changed. Called it from the screen's `LaunchedEffect(Unit)` so it runs every time the timetable screen becomes visible.
+
+```kotlin
+fun refreshTodayIndex() {
+    val todayIndex = getTodayDayIndex()
+    if (_uiState.value.todayDayIndex != todayIndex) {
+        _uiState.value = _uiState.value.copy(
+            selectedDayIndex = todayIndex,
+            todayDayIndex = todayIndex
+        )
+    }
+}
+```
+
+**Lesson Learned:**
+Never compute time-dependent state only in ViewModel `init`. Android processes survive days in the background. Any date/time-based state must be recomputed on screen visibility, not just on creation.
+
+---
+
+### Challenge 20: Exam Seat Finder — Roll Number Not Found in Excel
+
+**Problem:**
+Users reported the exam seat finder sometimes failing to find their roll number even though it was clearly present in the Excel sheet. The app showed "Your roll number was not found."
+
+**Root Cause:**
+The matching used `String.equals()` (exact match). Excel cells often contain:
+- Non-breaking spaces (`\u00A0`) or zero-width spaces (`\u200B`)
+- Dots or dashes in roll numbers (e.g., "22Z.301" vs "22Z301")
+- Roll numbers embedded in longer strings (e.g., "22Z301 - CSE")
+- Invisible Unicode characters from copy-paste
+
+**Solution:**
+1. Added `normalizeRollNumber()` that strips all spaces, dots, dashes, and invisible Unicode characters, then uppercases
+2. Changed matching from exact `equals` to normalized comparison + `contains` check
+3. Added debug logging to show exactly what was matched and where
+
+```kotlin
+private fun normalizeRollNumber(raw: String): String {
+    return raw.trim().replace(Regex("[\\s.\\-\\u00A0\\u200B]+"), "").uppercase()
+}
+```
+
+Also added date/time extraction from the filename pattern (e.g., "3 Yr 03-02 FN-II.xlsx" → "2 Mar 2026 · 10:45 AM - 12:30 PM") and a step-by-step usage guide with annotated screenshots.
+
+**Lesson Learned:**
+Never use exact string matching on data from external sources (Excel, PDFs, user input). Always normalize first. Excel in particular loves invisible Unicode characters that look identical visually but fail programmatic comparison.
+
+---
+
+### Challenge 21: Custom Animated Bottom Nav Icons with Canvas
+
+**Problem:**
+Wanted rich animated icons (house door opening, calendar page flip, calculator sparks, star with comet) in the bottom navigation bar. Material Icons are static — no animation support.
+
+**Design Approach:**
+Each icon is drawn entirely with Compose `Canvas` using `drawLine`, `drawRect`, `drawPath`, `drawCircle`, etc. Animations driven by `animateFloatAsState` with springs and tweens.
+
+**Implementation Challenges:**
+
+1. **Home icon chimney smoke**: Needed continuously looping smoke puffs. Used `Animatable` inside a `LaunchedEffect(selected)` with an infinite `while(true)` loop. Three staggered puff circles rise and fade. The loop auto-cancels when `selected` changes to false via coroutine cancellation.
+
+2. **Calendar page flip — 3 pages**: Needed staggered multi-page flip. Used 3 separate `animateFloatAsState` with increasing `delayMillis` (0, 120, 250). Each page draws its own curl shadow, edge highlight, and lift amount at slightly different angles for depth.
+
+3. **Calculator × rotation**: The multiply symbol (×) is two crossed lines. Rotating them required manual trigonometry — computing new endpoints using `cos(angle)` and `sin(angle)` for each line. The rotation is driven by `symbolRotation` going from 0° to 360°.
+
+4. **Star comet orbit**: A comet orbits the star using polar coordinates (angle → x,y on a circle). The trail is 12 circles drawn at decreasing angles behind the comet head, each smaller and more transparent. Used `Animatable` with `tween(800ms)` for the 360° sweep.
+
+5. **GPA calculator settled state looked "blunt"**: Initial version had electric sparks that persisted after animation settled, looking static and unfinished. Fixed by fading sparks out above 95% progress and adding a subtle dark blue "screen on" glow with specular highlight that appears at the end — like a calculator that just powered on.
+
+**Architecture:**
+The `LiquidGlassBottomBar` composable in `GlassComponents.kt` uses a `when(index)` block to dispatch to the correct animated icon. Each icon takes `selected: Boolean` and `tint: Color`. The existing bounce scale animation wraps everything, so the custom icons also bounce on tap.
+
+**Lesson Learned:**
+Canvas-drawn icons are powerful but verbose (~100-150 lines each). The key to good icon animation is staggered timing — don't animate everything at once. Having distinct phases (entrance → active → settled) makes animations feel alive rather than mechanical. Spring animations with low damping (0.5-0.6) give the best "physical" feel.
+
+---
+
+### Challenge 22: Subject-Wise Syllabus — PDF Extraction at Scale
+
+**Problem:**
+Wanted offline syllabus viewing for all 7 departments, both R2021 (Anna University, ~400 pages per PDF) and R2025 (PSGiTech autonomous) regulations. Total: 14 PDFs, ~3000+ pages.
+
+**Approach:**
+1. Extract text from all PDFs using PyMuPDF (fitz) — fast (~30 seconds for all 7 R2021 PDFs vs 80+ minutes with pdfplumber)
+2. Parse subject headers using regex: `^([A-Z]{2,4}\d{3,4})\s+(.+?)\s+L\s*T\s+P\s+C`
+3. Parse curriculum tables (pages 5-10) for semester assignments
+4. Bundle as JSON in app assets
+
+**Obstacles:**
+
+1. **Missing semester 1 subjects**: The initial extraction script filtered out "common" prefixes (GE, MA, PH, CY, HS) assuming they were shared across departments. But these ARE part of each department's curriculum and users expect to see them. Fixed by removing the prefix filter and using the curriculum table to determine which subjects belong to each department.
+
+2. **Cross-PDF syllabus lookup**: Some common subjects (English, Math) only have their syllabus text in ONE department's PDF, not all. Built a global syllabus pool from all 7 PDFs first, then for each department, look up missing syllabi from the pool.
+
+3. **R2025 format differences**: R2025 PDFs use bold topic headers instead of "UNIT I/II/III" numbering, and the header regex needed adjustment (`L\s*T` instead of `L\s+T` for EEE PDF where L and T had no space).
+
+4. **Multi-line titles**: Some subject titles span two lines in the PDF. Required post-processing to reassemble broken titles before the "L T P C" marker.
+
+**Result:**
+- R2021: 462 subjects across 7 departments (80-112 per dept, semesters 1-8 + electives)
+- R2025: 147 subjects across 7 departments (21 per dept, semesters 1-2)
+- JSON file: 2.5MB bundled in app assets
+- Auto-detects regulation from batch year (≥2025 → R2025, else R2021)
+
+**Lesson Learned:**
+PDF text extraction is never clean. Every PDF has quirks — inconsistent spacing, merged columns, broken lines. Build your parser incrementally: start with the most common pattern, then add fallbacks for edge cases. Always verify by printing counts per semester per department.
+
+---
+
+### Challenge 23: Chess Lobby — Real-Time Matchmaking on Free Tier
+
+**Problem:**
+1500 app users, many play chess. Wanted in-app matchmaking to find opponents and play together. Requirements: free, anonymous, no accounts needed.
+
+**Architecture Decisions:**
+
+1. **Why Firestore over Realtime Database**: Firestore has better querying (filter challenges by status + user ID), offline support, and the free tier (50k reads/20k writes/day) is more than enough for ~300 DAU.
+
+2. **Why Lichess over Chess.com**: Chess.com has no public API for creating anonymous game links. Lichess has `POST /api/challenge/open` that returns two URLs (white + black) — no authentication, no accounts needed, completely free.
+
+3. **Anonymous identity**: Roll numbers are hashed to generate stable player IDs (`p_${abs(hashCode).toString(16)}`) and display names from a pool of 50 chess-themed names + numeric suffix (e.g., "SilentKnight#42"). Same user always gets the same anonymous name.
+
+**Implementation:**
+
+1. **Presence system**: Write to `chess_online/{playerId}` on screen enter, delete on leave. Heartbeat every 30 seconds updates timestamp. Stale entries (>60s old) filtered client-side. `DisposableEffect` in Compose handles cleanup.
+
+2. **Challenge flow**: Sender writes to `chess_challenges` → receiver listens with `whereEqualTo("toId", myId).whereEqualTo("status", "pending")` → accept triggers Lichess API → both URLs written back → sender's listener picks up the accepted status → both phones auto-open Lichess.
+
+3. **Lichess integration**: Simple HTTP POST to `lichess.org/api/challenge/open` with `clock.limit=600&clock.increment=0&rated=false` (10+0 casual). Response parsed with regex for the challenge URL.
+
+**Firestore Setup:**
+Enabled Firestore in Firebase Console via browser automation (Comet browser):
+- Standard edition, asia-south1 (Mumbai) region
+- Test mode security rules (allow all reads/writes for 30 days — needs proper rules before release)
+
+**Lesson Learned:**
+Real-time features don't require expensive infrastructure. Firestore's free tier + Lichess's free API = zero cost for a full matchmaking system. The key insight was reframing the problem: instead of building a chess game, just build the lobby and hand off to an existing platform.
+
+---
+
+### Challenge 24: 5-Tab Bottom Navigation — Fitting Without Clutter
+
+**Problem:**
+Added GPA Calculator as a 5th tab in the center of the bottom nav (Home | Timetable | GPA | CA Marks | Profile). Concerned about cramped layout on smaller screens.
+
+**Implementation:**
+The `LiquidGlassBottomBar` already used `Arrangement.SpaceAround` with weighted tabs, so adding a 5th tab just made each slot narrower. The sliding glass bubble indicator auto-calculated its width from `tabWidth = maxWidth / tabs.size`.
+
+**Index Shift Impact:**
+Adding GPA at index 2 shifted CA Marks to index 3 and Profile to index 4. This required updating:
+- Tab selection mapping in `onTabSelected` callback
+- All `selectedTabIndex = N` assignments in back handlers
+- The Crossfade `"tab_N"` route strings
+- The animated icon `when(index)` dispatch
+
+The CgpaCalculator screen was already in the special screens list (routed by `Screen.CgpaCalculator.name`), so it worked from both the dashboard tile AND the bottom nav without duplication.
+
+**Result:**
+5 tabs fit cleanly on both the Motorola Edge 60 Fusion (1220px wide) and Moto G54 (smaller screen). Each tab has its own custom animated icon, maintaining visual distinction despite the tighter spacing.
+
+**Lesson Learned:**
+When adding navigation items, audit ALL places that reference tab indices — they're hardcoded integers, not enums. A single missed index shift causes silent navigation bugs. Consider using named constants for tab indices in the future.
