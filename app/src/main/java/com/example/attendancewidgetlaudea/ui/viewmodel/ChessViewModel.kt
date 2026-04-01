@@ -238,19 +238,23 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 
-    // ─── Game result ────────────────────────────────────────────────────────
+    // ─── Auto game result checking ─────────────────────────────────────────
 
-    fun reportResult(result: String) {
+    fun checkPendingResults() {
         val profile = _uiState.value.myProfile ?: return
         viewModelScope.launch {
-            repo.recordGameResult(profile.id, result)
-            val updated = when (result) {
-                "win" -> profile.copy(wins = profile.wins + 1, gamesPlayed = profile.gamesPlayed + 1)
-                "loss" -> profile.copy(losses = profile.losses + 1, gamesPlayed = profile.gamesPlayed + 1)
-                "draw" -> profile.copy(draws = profile.draws + 1, gamesPlayed = profile.gamesPlayed + 1)
-                else -> profile
+            val recentGames = repo.getRecentGames(profile.id)
+            val unchecked = recentGames.filter { !it.resultChecked && it.lichessGameId.isNotBlank() }
+            for (game in unchecked) {
+                repo.processGameResult(game)
             }
-            _uiState.value = _uiState.value.copy(myProfile = updated)
+            // Refresh profile after processing
+            if (unchecked.isNotEmpty()) {
+                val refreshed = repo.getOrCreateProfile(profile.id, profile.displayName, "")
+                if (refreshed != null) {
+                    _uiState.value = _uiState.value.copy(myProfile = refreshed)
+                }
+            }
         }
     }
 

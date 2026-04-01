@@ -332,18 +332,23 @@ class ChessRepository {
             }
     }
 
+    /** Returns Pair(challengerUrl, opponentUrl) — challenger = fromId, opponent = toId (acceptor) */
     suspend fun acceptChallenge(challengeId: String): Pair<String, String>? {
         return try {
             val result = createLichessGame()
             if (result != null) {
+                // result = (whiteUrl, blackUrl, gameId)
+                // Challenger (fromId) gets white, Acceptor (toId) gets black
                 challengeCollection.document(challengeId).update(mapOf(
                     "status" to "accepted",
-                    "gameUrl" to result.first,
-                    "opponentUrl" to result.second,
-                    "lichessGameId" to result.third
+                    "gameUrl" to result.first,       // white URL → challenger
+                    "opponentUrl" to result.second,   // black URL → acceptor
+                    "lichessGameId" to result.third,
+                    "fromColor" to "white",
+                    "resultChecked" to false
                 )).await()
-            }
-            result?.let { Pair(it.first, it.second) }
+                Pair(result.first, result.second)
+            } else null
         } catch (e: Exception) {
             Log.e(TAG, "Failed to accept: ${e.message}")
             null
@@ -354,7 +359,7 @@ class ChessRepository {
         try { challengeCollection.document(challengeId).update("status", "declined").await() } catch (_: Exception) {}
     }
 
-    /** Returns (challengerUrl, opponentUrl, gameId) */
+    /** Returns (whiteUrl, blackUrl, gameId) */
     private suspend fun createLichessGame(): Triple<String, String, String>? {
         return withContext(Dispatchers.IO) {
             try {
@@ -367,24 +372,146 @@ class ChessRepository {
 
                 if (conn.responseCode == 200) {
                     val response = conn.inputStream.bufferedReader().readText()
-                    val challengeUrl = Regex("\"url\"\\s*:\\s*\"(https://lichess\\.org/[^\"]+)\"")
+                    Log.d(TAG, "Lichess response: $response")
+                    val whiteUrl = Regex("\"urlWhite\"\\s*:\\s*\"(https://lichess\\.org/[^\"]+)\"")
                         .find(response)?.groupValues?.get(1)
-                    val opponentUrl = Regex("\"urlWhite\"\\s*:\\s*\"(https://lichess\\.org/[^\"]+)\"")
+                    val blackUrl = Regex("\"urlBlack\"\\s*:\\s*\"(https://lichess\\.org/[^\"]+)\"")
                         .find(response)?.groupValues?.get(1)
-                        ?: Regex("\"urlBlack\"\\s*:\\s*\"(https://lichess\\.org/[^\"]+)\"")
-                            .find(response)?.groupValues?.get(1)
-                    // Extract game ID from the challenge object
+                    val fallbackUrl = Regex("\"url\"\\s*:\\s*\"(https://lichess\\.org/[^\"]+)\"")
+                        .find(response)?.groupValues?.get(1)
                     val gameId = Regex("\"id\"\\s*:\\s*\"([A-Za-z0-9]+)\"")
                         .find(response)?.groupValues?.get(1) ?: ""
 
-                    if (challengeUrl != null) {
-                        Triple(challengeUrl, opponentUrl ?: challengeUrl, gameId)
-                    } else null
+                    val white = whiteUrl ?: fallbackUrl ?: return@withContext null
+                    val black = blackUrl ?: fallbackUrl ?: return@withContext null
+                    Log.d(TAG, "Lichess game: $gameId, white=$white, black=$black")
+                    Triple(white, black, gameId)
                 } else null
             } catch (e: Exception) {
                 Log.e(TAG, "Lichess API failed: ${e.message}")
                 null
             }
+        }
+    }
+
+    /**
+     * Check game result from Lichess API.
+     * Returns "white", "black", "draw", "ongoing", or "aborted".
+     */
+    suspend fun checkLichessGameResult(gameId: String): String? {
+        if (gameId.isBlank()) return null
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = URL("https://lichess.org/api/game/$gameId")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.setRequestProperty("Accept", "application/json")
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+
+                if (conn.responseCode == 200) {
+                    val response = conn.inputStream.bufferedReader().readText()
+                    val status = Regex("\"status\"\\s*:\\s*\"([^\"]+)\"")
+                        .find(response)?.groupValues?.get(1) ?: ""
+                    val winner = Regex("\"winner\"\\s*:\\s*\"([^\"]+)\"")
+                        .find(response)?.groupValues?.get(1)
+
+                    Log.d(TAG, "Game $gameId: status=$status, winner=$winner")
+
+                    when {
+                        status == "started" || status == "created" -> "ongoing"
+                        status == "aborted" -> "aborted"
+                        status == "draw" || status == "stalemate" -> "draw"
+                        winner == "white" -> "white"
+                        winner == "black" -> "black"
+                        // resign, timeout, outoftime, mate — all have a winner
+                        status in listOf("resign", "timeout", "outoftime", "mate", "cheat") -> winner
+                        // noStart, unknownFinish — treat as aborted
+                        else -> "aborted"
+                    }
+                } else {
+                    Log.e(TAG, "Lichess game check failed: ${conn.responseCode}")
+                    null
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Check game result failed: ${e.message}")
+                null
+            }
+        }
+    }
+
+    /**
+     * Process game result for both players in a challenge.
+     * fromColor tells us which color the challenger (fromId) played.
+     */
+    suspend fun processGameResult(challenge: ChessChallenge) {
+        if (challenge.lichessGameId.isBlank() || challenge.resultChecked) return
+
+        val result = checkLichessGameResult(challenge.lichessGameId) ?: return
+        if (result == "ongoing") return // Game not finished yet
+
+        val fromColor = challenge.fromColor.ifBlank { "white" }
+        val toColor = if (fromColor == "white") "black" else "white"
+
+        when (result) {
+            "draw" -> {
+                recordGameResult(challenge.fromId, "draw")
+                recordGameResult(challenge.toId, "draw")
+            }
+            "aborted" -> { /* No rating change */ }
+            fromColor -> {
+                // Challenger won
+                recordGameResult(challenge.fromId, "win")
+                recordGameResult(challenge.toId, "loss")
+            }
+            toColor -> {
+                // Acceptor won
+                recordGameResult(challenge.fromId, "loss")
+                recordGameResult(challenge.toId, "win")
+            }
+        }
+
+        // Mark as checked so we don't double-count
+        try {
+            challengeCollection.document(challenge.id).update("resultChecked", true).await()
+        } catch (_: Exception) {}
+
+        Log.d(TAG, "Processed result for ${challenge.lichessGameId}: $result (from=$fromColor)")
+    }
+
+    /** Get recent accepted challenges for a player (to check results) */
+    suspend fun getRecentGames(playerId: String, limit: Int = 5): List<ChessChallenge> {
+        return try {
+            val asSender = challengeCollection
+                .whereEqualTo("fromId", playerId)
+                .whereEqualTo("status", "accepted")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(limit.toLong())
+                .get().await()
+
+            val asReceiver = challengeCollection
+                .whereEqualTo("toId", playerId)
+                .whereEqualTo("status", "accepted")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(limit.toLong())
+                .get().await()
+
+            (asSender.documents + asReceiver.documents).mapNotNull { doc ->
+                ChessChallenge(
+                    id = doc.id,
+                    fromId = doc.getString("fromId") ?: "",
+                    fromName = doc.getString("fromName") ?: "",
+                    toId = doc.getString("toId") ?: "",
+                    toName = doc.getString("toName") ?: "",
+                    status = "accepted",
+                    lichessGameId = doc.getString("lichessGameId") ?: "",
+                    fromColor = doc.getString("fromColor") ?: "white",
+                    resultChecked = doc.getBoolean("resultChecked") ?: false,
+                    timestamp = doc.getLong("timestamp") ?: 0L
+                )
+            }.sortedByDescending { it.timestamp }
+        } catch (e: Exception) {
+            Log.e(TAG, "Get recent games error: ${e.message}")
+            emptyList()
         }
     }
 

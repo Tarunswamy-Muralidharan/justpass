@@ -20,9 +20,11 @@ data class ChessChallenge(
     val toId: String = "",
     val toName: String = "",
     val status: String = "pending", // pending, accepted, declined, expired
-    val gameUrl: String = "",
-    val opponentUrl: String = "",
+    val gameUrl: String = "",       // URL for challenger
+    val opponentUrl: String = "",   // URL for opponent (acceptor)
     val lichessGameId: String = "", // for tracking result
+    val fromColor: String = "",     // "white" or "black" — challenger's color
+    val resultChecked: Boolean = false,
     val timestamp: Long = 0L
 )
 

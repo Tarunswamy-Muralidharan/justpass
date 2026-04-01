@@ -44,6 +44,9 @@ fun ChessScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
+    // Track if we left for Lichess
+    var wentToLichess by remember { mutableStateOf(false) }
+
     DisposableEffect(Unit) {
         viewModel.goOnline()
         onDispose { viewModel.goOffline() }
@@ -54,9 +57,23 @@ fun ChessScreen(
         val challenge = uiState.acceptedChallenge ?: return@LaunchedEffect
         val url = challenge.gameUrl.ifBlank { challenge.opponentUrl }
         if (url.isNotBlank()) {
+            wentToLichess = true
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
             viewModel.clearAcceptedChallenge()
         }
+    }
+
+    // Auto-check game results when returning from Lichess
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && wentToLichess) {
+                wentToLichess = false
+                viewModel.checkPendingResults()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Name setup dialog
@@ -204,36 +221,6 @@ fun ChessScreen(
                 shape = GlassCardShapeSmall, tintColor = Color(0xFFFF5252).copy(alpha = 0.08f)) {
                 Text(uiState.errorMessage!!, fontSize = 12.sp, color = Color(0xFFFF8A80),
                     modifier = Modifier.padding(12.dp), textAlign = TextAlign.Center)
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        // Report result buttons (after a game)
-        if (uiState.myProfile != null) {
-            GlassListCard(modifier = Modifier.fillMaxWidth(), shape = GlassCardShapeSmall) {
-                Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
-                    Text("Report last game result", fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { viewModel.reportResult("win") },
-                            shape = RoundedCornerShape(8.dp), modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(4.dp)) {
-                            Text("I Won", fontSize = 12.sp, color = Color(0xFF00E676))
-                        }
-                        OutlinedButton(onClick = { viewModel.reportResult("loss") },
-                            shape = RoundedCornerShape(8.dp), modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(4.dp)) {
-                            Text("I Lost", fontSize = 12.sp, color = Color(0xFFFF5252))
-                        }
-                        OutlinedButton(onClick = { viewModel.reportResult("draw") },
-                            shape = RoundedCornerShape(8.dp), modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(4.dp)) {
-                            Text("Draw", fontSize = 12.sp, color = Color(0xFFFFC107))
-                        }
-                    }
-                }
             }
         }
 
