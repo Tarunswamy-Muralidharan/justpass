@@ -110,6 +110,23 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                     repo.heartbeat(myPlayerId)
                 }
             }
+
+            // Periodic result checker — polls every 30s for unchecked game results
+            viewModelScope.launch {
+                delay(5_000L) // initial delay
+                while (isActive) {
+                    checkPendingResults()
+                    delay(30_000L)
+                }
+            }
+
+            // Periodic challenge cleanup — expire stale challenges every 60s
+            viewModelScope.launch {
+                while (isActive) {
+                    delay(60_000L)
+                    repo.cleanupExpiredChallenges()
+                }
+            }
         }
     }
 
@@ -227,12 +244,12 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     // ─── Challenges ─────────────────────────────────────────────────────────
 
-    fun sendChallenge(player: OnlinePlayer) {
+    fun sendChallenge(player: OnlinePlayer, timeControl: String = "rapid_10") {
         val profile = _uiState.value.myProfile ?: return
         if (_uiState.value.sentChallengeId != null) return
 
         viewModelScope.launch {
-            val challengeId = repo.sendChallenge(profile.id, profile.visibleName, player.id, player.displayName)
+            val challengeId = repo.sendChallenge(profile.id, profile.visibleName, player.id, player.displayName, timeControl)
             if (challengeId != null) {
                 _uiState.value = _uiState.value.copy(
                     sentChallengeId = challengeId, sentChallengeName = player.displayName
@@ -253,6 +270,18 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
+                // Auto-expire sent challenge after 90 seconds if no response
+                viewModelScope.launch {
+                    delay(90_000L)
+                    if (_uiState.value.sentChallengeId == challengeId) {
+                        _uiState.value = _uiState.value.copy(
+                            sentChallengeId = null, sentChallengeName = null,
+                            errorMessage = "${player.displayName} didn't respond"
+                        )
+                        sentChallengeListener?.remove()
+                        repo.declineChallenge(challengeId) // clean up in Firestore
+                    }
+                }
             }
         }
     }
@@ -260,7 +289,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     fun acceptChallenge() {
         val challenge = _uiState.value.pendingChallenge ?: return
         viewModelScope.launch {
-            val urls = repo.acceptChallenge(challenge.id)
+            val urls = repo.acceptChallenge(challenge.id, challenge.timeControl)
             if (urls != null) {
                 _uiState.value = _uiState.value.copy(
                     acceptedChallenge = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first),
@@ -280,6 +309,11 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearAcceptedChallenge() {
         _uiState.value = _uiState.value.copy(acceptedChallenge = null)
+        // Check results shortly after returning from Lichess
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(3000L)
+            checkPendingResults()
+        }
     }
 
     fun cancelSentChallenge() {

@@ -4,41 +4,57 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Nothing-style dot matrix checkmark pattern -->
-    <!-- Inactive dots (gray) - 5x5 grid -->
-    <!-- Row 1 -->
-    <path android:fillColor="#2A2A2A" android:pathData="M30,30m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M42,30m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M54,30m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M66,30m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#4CD964" android:pathData="M78,30m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+    <!-- Graduation cap - tilted for the "barely made it" vibe -->
+    <!-- Cap top (diamond/rhombus shape, tilted ~15 degrees) -->
+    <path
+        android:fillColor="#333333"
+        android:pathData="M54,28 L78,40 L54,52 L30,40 Z" />
+    <!-- Cap brim shadow -->
+    <path
+        android:fillColor="#222222"
+        android:pathData="M54,52 L78,40 L78,43 L54,55 L30,43 L30,40 Z" />
 
-    <!-- Row 2 -->
-    <path android:fillColor="#2A2A2A" android:pathData="M30,42m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M42,42m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M54,42m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#4CD964" android:pathData="M66,42m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M78,42m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+    <!-- Tassel string from center -->
+    <path
+        android:strokeColor="#FFD700"
+        android:strokeWidth="1.8"
+        android:pathData="M54,40 L54,46 Q56,52 64,56 Q68,58 70,64"
+        android:fillColor="#00000000" />
+    <!-- Tassel end (dangling gold threads) -->
+    <path
+        android:strokeColor="#FFD700"
+        android:strokeWidth="1.5"
+        android:pathData="M70,64 L68,71"
+        android:fillColor="#00000000" />
+    <path
+        android:strokeColor="#FFD700"
+        android:strokeWidth="1.5"
+        android:pathData="M70,64 L71,71"
+        android:fillColor="#00000000" />
+    <path
+        android:strokeColor="#FFD700"
+        android:strokeWidth="1.5"
+        android:pathData="M70,64 L74,70"
+        android:fillColor="#00000000" />
+    <!-- Tassel button -->
+    <path
+        android:fillColor="#FFD700"
+        android:pathData="M54,40m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0" />
 
-    <!-- Row 3 -->
-    <path android:fillColor="#4CD964" android:pathData="M30,54m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M42,54m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M54,54m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#4CD964" android:pathData="M66,54m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M78,54m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+    <!-- Big swooshy checkmark — the "just barely passed" check -->
+    <!-- Thick green checkmark cutting across diagonally -->
+    <path
+        android:fillColor="#4CD964"
+        android:pathData="M28,62 L32,58 L44,70 L76,36 L80,40 L44,78 Z" />
 
-    <!-- Row 4 -->
-    <path android:fillColor="#2A2A2A" android:pathData="M30,66m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#4CD964" android:pathData="M42,66m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#4CD964" android:pathData="M54,66m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M66,66m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M78,66m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+    <!-- Inner brighter highlight on check -->
+    <path
+        android:fillColor="#5CE76F"
+        android:pathData="M30,62 L33,59 L44,69 L75,37 L78,40 L44,76 Z" />
 
-    <!-- Row 5 -->
-    <path android:fillColor="#2A2A2A" android:pathData="M30,78m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M42,78m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#4CD964" android:pathData="M54,78m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M66,78m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <path android:fillColor="#2A2A2A" android:pathData="M78,78m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+    <!-- Small sweat drop near cap for comedic effect -->
+    <path
+        android:fillColor="#64B5F6"
+        android:pathData="M80,32 Q82,28 84,32 Q82,38 80,32 Z" />
 
 </vector>

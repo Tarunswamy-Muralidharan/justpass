@@ -275,13 +275,14 @@ class ChessRepository {
 
     // ─── Challenges ─────────────────────────────────────────────────────────
 
-    suspend fun sendChallenge(fromId: String, fromName: String, toId: String, toName: String): String? {
+    suspend fun sendChallenge(fromId: String, fromName: String, toId: String, toName: String, timeControl: String = "rapid_10"): String? {
         return try {
             val doc = challengeCollection.add(hashMapOf(
                 "fromId" to fromId, "fromName" to fromName,
                 "toId" to toId, "toName" to toName,
                 "status" to "pending", "gameUrl" to "", "opponentUrl" to "",
-                "lichessGameId" to "", "timestamp" to System.currentTimeMillis()
+                "lichessGameId" to "", "timeControl" to timeControl,
+                "timestamp" to System.currentTimeMillis()
             )).await()
             doc.id
         } catch (e: Exception) {
@@ -306,6 +307,12 @@ class ChessRepository {
                             toId = doc.getString("toId") ?: "",
                             toName = doc.getString("toName") ?: "",
                             status = "pending",
+                            gameUrl = doc.getString("gameUrl") ?: "",
+                            opponentUrl = doc.getString("opponentUrl") ?: "",
+                            lichessGameId = doc.getString("lichessGameId") ?: "",
+                            fromColor = doc.getString("fromColor") ?: "white",
+                            resultChecked = doc.getBoolean("resultChecked") ?: false,
+                            timeControl = doc.getString("timeControl") ?: "rapid_10",
                             timestamp = doc.getLong("timestamp") ?: 0L
                         ))
                     }
@@ -327,15 +334,23 @@ class ChessRepository {
                     gameUrl = doc.getString("gameUrl") ?: "",
                     opponentUrl = doc.getString("opponentUrl") ?: "",
                     lichessGameId = doc.getString("lichessGameId") ?: "",
+                    fromColor = doc.getString("fromColor") ?: "white",
+                    resultChecked = doc.getBoolean("resultChecked") ?: false,
+                    timeControl = doc.getString("timeControl") ?: "rapid_10",
                     timestamp = doc.getLong("timestamp") ?: 0L
                 ))
             }
     }
 
     /** Returns Pair(challengerUrl, opponentUrl) — challenger = fromId, opponent = toId (acceptor) */
-    suspend fun acceptChallenge(challengeId: String): Pair<String, String>? {
+    suspend fun acceptChallenge(challengeId: String, timeControl: String = "rapid_10"): Pair<String, String>? {
         return try {
-            val result = createLichessGame()
+            val tc = try {
+                com.example.attendancewidgetlaudea.data.model.TimeControl.valueOf(timeControl.uppercase())
+            } catch (_: Exception) {
+                com.example.attendancewidgetlaudea.data.model.TimeControl.RAPID_10
+            }
+            val result = createLichessGame(tc.paramString)
             if (result != null) {
                 // result = (whiteUrl, blackUrl, gameId)
                 // Challenger (fromId) gets white, Acceptor (toId) gets black
@@ -360,7 +375,7 @@ class ChessRepository {
     }
 
     /** Returns (whiteUrl, blackUrl, gameId) */
-    private suspend fun createLichessGame(): Triple<String, String, String>? {
+    private suspend fun createLichessGame(clockParams: String = "clock.limit=600&clock.increment=0&rated=false"): Triple<String, String, String>? {
         return withContext(Dispatchers.IO) {
             try {
                 val url = URL("https://lichess.org/api/challenge/open")
@@ -368,7 +383,7 @@ class ChessRepository {
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
                 conn.doOutput = true
-                conn.outputStream.write("clock.limit=600&clock.increment=0&rated=false".toByteArray())
+                conn.outputStream.write(clockParams.toByteArray())
 
                 if (conn.responseCode == 200) {
                     val response = conn.inputStream.bufferedReader().readText()

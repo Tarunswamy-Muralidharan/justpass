@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.animation.Crossfade
@@ -96,10 +97,10 @@ enum class Screen {
 
 private val bottomTabs = listOf(
     TabItemData("Home", Icons.Default.Home),
-    TabItemData("Timetable", Icons.Default.DateRange),
-    TabItemData("GPA", Icons.Default.Calculate),
     TabItemData("CA Marks", Icons.Default.Star),
-    TabItemData("Profile", Icons.Default.Person)
+    TabItemData("Chess", Icons.Default.SportsEsports),
+    TabItemData("GPA", Icons.Default.Calculate),
+    TabItemData("Timetable", Icons.Default.DateRange)
 )
 
 @Composable
@@ -258,7 +259,7 @@ fun AttendanceApp() {
         Screen.PrivacyPolicy -> {
             com.example.attendancewidgetlaudea.ui.screens.PrivacyPolicyScreen(onBack = {
                 currentScreen = Screen.Profile
-                selectedTabIndex = 3
+                selectedTabIndex = 0
             })
         }
         else -> {
@@ -273,10 +274,10 @@ fun AttendanceApp() {
                             selectedTabIndex = index
                             currentScreen = when (index) {
                                 0 -> Screen.Dashboard
-                                1 -> Screen.Timetable
-                                2 -> Screen.CgpaCalculator
-                                3 -> Screen.CAMarks
-                                4 -> Screen.Profile
+                                1 -> Screen.CAMarks
+                                2 -> Screen.Chess
+                                3 -> Screen.CgpaCalculator
+                                4 -> Screen.Timetable
                                 else -> Screen.Dashboard
                             }
                             Analytics.logFeatureUsed(bottomTabs[index].label.lowercase())
@@ -286,7 +287,7 @@ fun AttendanceApp() {
                 }
             ) { cardState ->
                 Crossfade(
-                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess)) currentScreen.name
+                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Profile)) currentScreen.name
                                   else "tab_$selectedTabIndex",
                     animationSpec = tween(200),
                     label = "screenFade"
@@ -438,20 +439,25 @@ fun AttendanceApp() {
                             onChessClick = {
                                 Analytics.logFeatureUsed("chess")
                                 currentScreen = Screen.Chess
+                            },
+                            onProfileClick = {
+                                Analytics.logFeatureUsed("profile")
+                                currentScreen = Screen.Profile
                             }
                         )
-                        "tab_1" -> TimetableScreen(cardState = cardState)
-                        "tab_2" -> {
-                            // GPA Calculator from bottom nav — routed via CgpaCalculator screen name
-                        }
-                        "tab_3" -> CAMarksScreen(
+                        "tab_1" -> CAMarksScreen(
                             cardState = cardState,
                             onBack = {
                                 selectedTabIndex = 0
                                 currentScreen = Screen.Dashboard
                             }
                         )
-                        "tab_4" -> ProfileScreen(
+                        // tab_2 (Games) and tab_3 (GPA) are routed via screen name
+                        "tab_2" -> {}
+                        "tab_3" -> {}
+                        "tab_4" -> TimetableScreen(cardState = cardState)
+                        // Profile accessed via header profile pic
+                        Screen.Profile.name -> ProfileScreen(
                             cardState = cardState,
                             displayName = displayName,
                             onLogout = handleLogout,

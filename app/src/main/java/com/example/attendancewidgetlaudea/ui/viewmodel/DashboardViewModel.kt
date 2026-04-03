@@ -35,8 +35,8 @@ data class DashboardUiState(
     val errorMessage: String? = null,
     // Per-day non-honours session counts (Mon=0 .. Sat=5)
     val sessionsPerDay: List<Int> = listOf(6, 6, 6, 6, 6, 6),
-    // Holiday dates from calendar
-    val holidayDates: Set<LocalDate> = emptySet()
+    // Holiday dates with names from calendar
+    val holidays: Map<LocalDate, String> = emptyMap()
 )
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -180,7 +180,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private fun loadHolidayDates() {
         viewModelScope.launch {
             try {
-                val holidays = withContext(Dispatchers.IO) {
+                val holidays: Map<LocalDate, String> = withContext(Dispatchers.IO) {
                     val now = LocalDate.now()
                     val timeMin = now.format(DateTimeFormatter.ISO_LOCAL_DATE) + "T00:00:00Z"
                     val timeMax = now.plusMonths(3).format(DateTimeFormatter.ISO_LOCAL_DATE) + "T00:00:00Z"
@@ -189,7 +189,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                             "&singleEvents=true&orderBy=startTime&maxResults=200"
                     val response = URL(url).readText()
                     val json = gson.fromJson(response, JsonObject::class.java)
-                    val items = json.getAsJsonArray("items") ?: return@withContext emptySet<LocalDate>()
+                    val items = json.getAsJsonArray("items") ?: return@withContext emptyMap<LocalDate, String>()
 
                     items.mapNotNull { item ->
                         val obj = item.asJsonObject
@@ -197,10 +197,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         if (CalendarEventType.fromSummary(summary) != CalendarEventType.HOLIDAY) return@mapNotNull null
                         val start = obj.getAsJsonObject("start")
                         val dateStr = start?.get("date")?.asString ?: start?.get("dateTime")?.asString?.substring(0, 10) ?: return@mapNotNull null
-                        try { LocalDate.parse(dateStr) } catch (_: Exception) { null }
-                    }.toSet()
+                        try {
+                            val date = LocalDate.parse(dateStr)
+                            val name = summary.removePrefix("Holiday ").removePrefix("Holiday").trim().ifEmpty { summary }
+                            date to name
+                        } catch (_: Exception) { null }
+                    }.toMap()
                 }
-                _uiState.value = _uiState.value.copy(holidayDates = holidays)
+                _uiState.value = _uiState.value.copy(holidays = holidays)
             } catch (_: Exception) {}
         }
     }
@@ -219,7 +223,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // Count working days until we reach numDays
         while (workingDaysCounted < numDays) {
             val dow = date.dayOfWeek
-            val isHoliday = date in state.holidayDates
+            val isHoliday = date in state.holidays
             val isSunday = dow == DayOfWeek.SUNDAY
 
             if (!isSunday && !isHoliday) {
@@ -235,5 +239,57 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             date = date.plusDays(1)
         }
         return totalSessions
+    }
+
+    /**
+     * Return holidays that fall within the leave date range.
+     * These are holidays that get skipped (not counted as working days).
+     */
+    fun getHolidaysInLeaveRange(startDate: LocalDate, numDays: Int): List<Pair<LocalDate, String>> {
+        if (numDays <= 0) return emptyList()
+        val state = _uiState.value
+        val result = mutableListOf<Pair<LocalDate, String>>()
+        var date = startDate
+        var workingDaysCounted = 0
+
+        while (workingDaysCounted < numDays) {
+            val dow = date.dayOfWeek
+            val holidayName = state.holidays[date]
+            val isSunday = dow == DayOfWeek.SUNDAY
+
+            if (holidayName != null) {
+                result.add(date to holidayName)
+            }
+            if (!isSunday && holidayName == null) {
+                workingDaysCounted++
+            }
+            date = date.plusDays(1)
+        }
+        return result
+    }
+
+    /**
+     * Return the actual working days that will be missed (i.e. the days
+     * that cause the attendance drop). Holidays and Sundays are excluded.
+     */
+    fun getWorkingDaysInLeaveRange(startDate: LocalDate, numDays: Int): List<LocalDate> {
+        if (numDays <= 0) return emptyList()
+        val state = _uiState.value
+        val result = mutableListOf<LocalDate>()
+        var date = startDate
+        var workingDaysCounted = 0
+
+        while (workingDaysCounted < numDays) {
+            val dow = date.dayOfWeek
+            val isHoliday = date in state.holidays
+            val isSunday = dow == DayOfWeek.SUNDAY
+
+            if (!isSunday && !isHoliday) {
+                result.add(date)
+                workingDaysCounted++
+            }
+            date = date.plusDays(1)
+        }
+        return result
     }
 }

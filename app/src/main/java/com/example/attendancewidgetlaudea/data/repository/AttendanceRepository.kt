@@ -84,14 +84,22 @@ class AttendanceRepository(private val context: Context) {
         // FAST PATH: Try direct HTTP with cached token (instant)
         try {
             val directResult = webViewAuthenticator.fetchAttendanceDirect(rollNumber)
-            if (directResult != null && directResult.isSuccess) {
-                val attendanceData = directResult.getOrThrow()
-                securePrefs.saveAttendanceData(attendanceData)
-                try {
-                    com.example.attendancewidgetlaudea.widget.AttendanceWidgetReceiver.updateWidget(context)
-                } catch (e: Exception) {}
-                android.util.Log.d("AttendanceRepo", "Fast refresh successful: ${attendanceData.attendanceWithExemption}%")
-                return Result.Success(attendanceData)
+            if (directResult != null) {
+                if (directResult.isSuccess) {
+                    val attendanceData = directResult.getOrThrow()
+                    securePrefs.saveAttendanceData(attendanceData)
+                    try {
+                        com.example.attendancewidgetlaudea.widget.AttendanceWidgetReceiver.updateWidget(context)
+                    } catch (e: Exception) {}
+                    android.util.Log.d("AttendanceRepo", "Fast refresh successful: ${attendanceData.attendanceWithExemption}%")
+                    return Result.Success(attendanceData)
+                }
+                // Server is down (5xx) — skip all retry paths, show cached data
+                val failure = directResult.exceptionOrNull()
+                if (failure is WebViewAuthenticator.ServerDownException) {
+                    android.util.Log.w("AttendanceRepo", "LAUDEA server down (HTTP ${failure.statusCode})")
+                    return Result.Error("LAUDEA server is temporarily down. Showing cached data.")
+                }
             }
         } catch (e: Exception) {
             android.util.Log.d("AttendanceRepo", "Fast refresh failed, trying token renewal")

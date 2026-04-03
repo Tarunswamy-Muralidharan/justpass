@@ -253,12 +253,12 @@ fun ExamSeatScreen(
             // Step 2
             GuideStep(
                 stepNumber = 2,
-                title = "Select \"Open with Laudea Attendance\"",
+                title = "Select \"Open with JustPass\"",
                 description = "Tap the app icon to instantly find your hall and seat number",
                 imageRes = R.drawable.guide_exam_open_with,
-                // Arrow pointing to the "Open with Laudea Attendance" option (~55% down, ~40% from left)
-                arrowFromFraction = Offset(0.40f, 0.46f),
-                arrowToFraction = Offset(0.40f, 0.56f)
+                // Arrow pointing to the "Open with Laudea Attendance" option
+                arrowFromFraction = Offset(0.40f, 0.33f),
+                arrowToFraction = Offset(0.40f, 0.43f)
             )
 
             Spacer(modifier = Modifier.height(100.dp)) // bottom padding for nav bar

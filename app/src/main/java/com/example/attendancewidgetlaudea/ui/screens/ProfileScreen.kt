@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Feedback
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
@@ -407,13 +408,13 @@ fun ProfileScreen(
                             val sourceApk = File(context.applicationInfo.sourceDir)
                             val shareDir = File(context.cacheDir, "apk_share")
                             shareDir.mkdirs()
-                            val destApk = File(shareDir, "LaudeaAttendance-v$appVersion.apk")
+                            val destApk = File(shareDir, "JustPass-v$appVersion.apk")
                             sourceApk.copyTo(destApk, overwrite = true)
                             val apkUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", destApk)
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "application/vnd.android.package-archive"
                                 putExtra(Intent.EXTRA_STREAM, apkUri)
-                                putExtra(Intent.EXTRA_TEXT, "Check out Laudea Attendance Widget — track your PSG iTech attendance right from your home screen!")
+                                putExtra(Intent.EXTRA_TEXT, "Check out JustPass — track your PSG iTech attendance right from your home screen!")
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                             context.startActivity(Intent.createChooser(shareIntent, "Share APK via"))
@@ -421,7 +422,7 @@ fun ProfileScreen(
                             // Fallback to link sharing
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, "Check out Laudea Attendance Widget — track your PSG iTech attendance right from your home screen!\n\nhttps://github.com/Tarunswamy-Muralidharan/-AttendanceWidgetLaudea/releases/latest")
+                                putExtra(Intent.EXTRA_TEXT, "Check out JustPass — track your PSG iTech attendance right from your home screen!\n\nhttps://github.com/Tarunswamy-Muralidharan/-AttendanceWidgetLaudea/releases/latest")
                             }
                             context.startActivity(Intent.createChooser(shareIntent, "Share via"))
                         }
@@ -442,6 +443,17 @@ fun ProfileScreen(
                                 updateState = checkForUpdate(appVersion)
                             }
                         }
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                ListItem(
+                    headlineContent = { Text("Report Bug / Feature Request") },
+                    leadingContent = { Icon(Icons.Default.Feedback, null) },
+                    supportingContent = { Text("Help us improve JustPass", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    modifier = Modifier.clickable {
+                        Analytics.logProfileAction("bug_report")
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Tarunswamy-Muralidharan/-AttendanceWidgetLaudea/issues/new/choose")))
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
@@ -588,14 +600,9 @@ fun ProfileScreen(
                 Text("App Info", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("Laudea Attendance Widget", fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                Text("JustPass", fontSize = 15.sp, fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface)
                 Text("Version $appVersion", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-                Spacer(modifier = Modifier.height(12.dp))
-                Text("for features or colabs", fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
             }
         }
 

@@ -14,8 +14,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Calculate
@@ -26,12 +32,16 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -84,7 +94,8 @@ fun DashboardScreen(
     onCgpaClick: () -> Unit = {},
     onExamSeatClick: () -> Unit = {},
     onSyllabusClick: () -> Unit = {},
-    onChessClick: () -> Unit = {}
+    onChessClick: () -> Unit = {},
+    onProfileClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
@@ -92,6 +103,16 @@ fun DashboardScreen(
     val context = LocalContext.current
     val securePrefs = remember { SecurePreferences.getInstance(context) }
     val attendanceTarget = remember { securePrefs.attendanceTarget }
+
+    // Load cached profile picture
+    val profileBitmap = remember {
+        securePrefs.cachedProfilePicPath?.let { path ->
+            try {
+                val file = java.io.File(path)
+                if (file.exists()) BitmapFactory.decodeFile(path) else null
+            } catch (_: Exception) { null }
+        }
+    }
 
     // Fetch biodata (department, programmeName) on first Dashboard load if missing
     // Safe here because login WebView is fully destroyed before Dashboard renders
@@ -146,17 +167,10 @@ fun DashboardScreen(
         Box(modifier = Modifier.fillMaxWidth()) {
             GlassListCard(modifier = Modifier.fillMaxWidth(), shape = GlassCardShape) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text(
-                            text = if (displayName.isNotEmpty()) "Welcome, ${displayName.split(" ").firstOrNull() ?: displayName}" else "Attendance",
-                            fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(uiState.rollNumber, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    // Refresh button on the left
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -166,6 +180,111 @@ fun DashboardScreen(
                         enabled = !uiState.isRefreshing
                     ) {
                         Icon(Icons.Default.Refresh, "Refresh", tint = MaterialTheme.colorScheme.primary)
+                    }
+                    // Welcome text in the middle
+                    Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                        Text(
+                            text = if (displayName.isNotEmpty()) "Welcome, ${displayName.split(" ").firstOrNull() ?: displayName}" else "JustPass",
+                            fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(uiState.rollNumber, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    // Profile picture on the right — with pulsing ripple rings
+                    val pulseTransition = rememberInfiniteTransition(label = "profilePulse")
+                    val pulse1Alpha by pulseTransition.animateFloat(
+                        initialValue = 0.9f,
+                        targetValue = 0f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(2000, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "p1A"
+                    )
+                    val pulse1Scale by pulseTransition.animateFloat(
+                        initialValue = 1f,
+                        targetValue = 1.6f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(2000, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "p1S"
+                    )
+                    // Second ripple, offset by half cycle
+                    val pulse2Alpha by pulseTransition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 0f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(2000, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "p2A"
+                    )
+                    val pulse2Scale by pulseTransition.animateFloat(
+                        initialValue = 1.3f,
+                        targetValue = 1.8f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(2000, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "p2S"
+                    )
+                    // Manually compute second ripple alpha from first (offset by half)
+                    val ripple2Alpha = if (pulse1Scale < 1.3f) (pulse1Scale - 1f) / 0.3f * 0.7f
+                                       else (1.6f - pulse1Scale) / 0.3f * 0.7f
+
+                    val primaryColor = MaterialTheme.colorScheme.primary
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clickable { onProfileClick() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Ripple ring 1
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .graphicsLayer {
+                                    scaleX = pulse1Scale
+                                    scaleY = pulse1Scale
+                                    alpha = pulse1Alpha
+                                }
+                                .border(2.dp, primaryColor, CircleShape)
+                        )
+                        // Ripple ring 2 (staggered)
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .graphicsLayer {
+                                    scaleX = pulse1Scale * 0.85f + 0.15f
+                                    scaleY = pulse1Scale * 0.85f + 0.15f
+                                    alpha = (pulse1Alpha * 0.6f).coerceIn(0f, 0.6f)
+                                }
+                                .border(1.5.dp, primaryColor.copy(alpha = 0.5f), CircleShape)
+                        )
+                        // Profile pic — centered
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .border(1.5.dp, primaryColor.copy(alpha = 0.4f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (profileBitmap != null) {
+                                Image(
+                                    bitmap = profileBitmap.asImageBitmap(),
+                                    contentDescription = "Profile",
+                                    modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Default.Person, "Profile",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -403,7 +522,7 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.onSurface)
                     },
                     text = {
-                        Column(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                             // Date picker row
                             Row(
                                 modifier = Modifier.fillMaxWidth()
@@ -492,9 +611,51 @@ fun DashboardScreen(
                                     Text("Hours missed", fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                if (uiState.holidayDates.isNotEmpty()) {
+
+                                // Show which actual working days will be missed
+                                val missedDays = viewModel.getWorkingDaysInLeaveRange(leaveStartDate, days)
+                                if (missedDays.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(Color(0xFFFF5252).copy(alpha = 0.10f))
+                                            .padding(10.dp)
+                                    ) {
+                                        Text("Days you'll actually miss:",
+                                            fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFFF5252).copy(alpha = 0.9f))
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        missedDays.forEach { date ->
+                                            val dayName = date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)
+                                            Text("• ${date.dayOfMonth} ${date.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)} ($dayName)",
+                                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                        }
+                                    }
+                                }
+
+                                // Show holidays that are crossed (skipped)
+                                val crossedHolidays = viewModel.getHolidaysInLeaveRange(leaveStartDate, days)
+                                if (crossedHolidays.isNotEmpty()) {
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Text("Holidays & Sundays are excluded",
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(Color(0xFF8E24AA).copy(alpha = 0.12f))
+                                            .padding(10.dp)
+                                    ) {
+                                        Text("Holidays crossed — no attendance impact",
+                                            fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF8E24AA).copy(alpha = 0.9f))
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        crossedHolidays.forEach { (date, name) ->
+                                            Text("• ${date.dayOfMonth} ${date.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)} — $name (skipped)",
+                                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                        }
+                                    }
+                                } else if (uiState.holidays.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Holidays & Sundays are automatically skipped",
                                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                                         textAlign = TextAlign.Center,
                                         modifier = Modifier.fillMaxWidth())
@@ -511,40 +672,139 @@ fun DashboardScreen(
                 )
             }
 
-            // Date picker dialog
+            // Custom holiday-aware date picker
             if (showDatePicker) {
-                val datePickerState = rememberDatePickerState(
-                    initialSelectedDateMillis = leaveStartDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-                )
-                val datePickerColors = DatePickerDefaults.colors(
-                    containerColor = Color(0xFF1A2535),
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    headlineContentColor = MaterialTheme.colorScheme.onSurface,
-                    weekdayContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    navigationContentColor = MaterialTheme.colorScheme.onSurface,
-                    yearContentColor = MaterialTheme.colorScheme.onSurface,
-                    dayContentColor = MaterialTheme.colorScheme.onSurface,
-                    selectedDayContainerColor = MaterialTheme.colorScheme.primary,
-                    todayDateBorderColor = Color(0xFF00E676),
-                    todayContentColor = Color(0xFF00E676)
-                )
-                DatePickerDialog(
+                var pickerMonth by remember { mutableStateOf(java.time.YearMonth.from(leaveStartDate)) }
+                var tempSelectedDate by remember { mutableStateOf(leaveStartDate) }
+                val holidaysInMonth = uiState.holidays.filter { (date, _) ->
+                    java.time.YearMonth.from(date) == pickerMonth
+                }
+
+                AlertDialog(
                     onDismissRequest = { showDatePicker = false },
+                    title = {
+                        Text("Select start date", fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface)
+                    },
+                    text = {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            // Month navigation
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(onClick = { pickerMonth = pickerMonth.minusMonths(1) }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous",
+                                        tint = MaterialTheme.colorScheme.onSurface)
+                                }
+                                Text(
+                                    "${pickerMonth.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)} ${pickerMonth.year}",
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                IconButton(onClick = { pickerMonth = pickerMonth.plusMonths(1) }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next",
+                                        tint = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Day headers
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                listOf("S", "M", "T", "W", "T", "F", "S").forEach { d ->
+                                    Text(d, modifier = Modifier.weight(1f),
+                                        textAlign = TextAlign.Center, fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Calendar grid
+                            val firstDay = pickerMonth.atDay(1)
+                            val daysInMonth = pickerMonth.lengthOfMonth()
+                            val sundayOffset = firstDay.dayOfWeek.value % 7
+                            val today = java.time.LocalDate.now()
+                            val rows = ((sundayOffset + daysInMonth + 6) / 7)
+                            var dayCounter = 1
+
+                            for (row in 0 until rows) {
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    for (col in 0..6) {
+                                        val cellIndex = row * 7 + col
+                                        if (cellIndex < sundayOffset || dayCounter > daysInMonth) {
+                                            Spacer(modifier = Modifier.weight(1f).aspectRatio(1f))
+                                        } else {
+                                            val date = pickerMonth.atDay(dayCounter)
+                                            val isHoliday = date in uiState.holidays
+                                            val isToday = date == today
+                                            val isSelected = date == tempSelectedDate
+                                            val isSunday = col == 0
+
+                                            Box(
+                                                modifier = Modifier.weight(1f).aspectRatio(1f).padding(1.dp)
+                                                    .then(
+                                                        if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                                                        else if (isToday) Modifier.border(1.5.dp, Color(0xFF00E676), RoundedCornerShape(8.dp))
+                                                        else Modifier
+                                                    )
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .then(if (isHoliday) Modifier.background(Color(0xFF8E24AA).copy(alpha = 0.25f)) else Modifier)
+                                                    .clickable { tempSelectedDate = date },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Text("$dayCounter", fontSize = 13.sp,
+                                                        fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                        color = when {
+                                                            isSelected -> MaterialTheme.colorScheme.primary
+                                                            isToday -> Color(0xFF00E676)
+                                                            isSunday || isHoliday -> Color(0xFF8E24AA)
+                                                            else -> MaterialTheme.colorScheme.onSurface
+                                                        })
+                                                    if (isHoliday) {
+                                                        Box(modifier = Modifier.size(4.dp).clip(CircleShape).background(Color(0xFF8E24AA)))
+                                                    }
+                                                }
+                                            }
+                                            dayCounter++
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Holidays this month
+                            if (holidaysInMonth.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                holidaysInMonth.forEach { (date, name) ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF8E24AA)))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("${date.dayOfMonth} ${date.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)} — $name",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                    }
+                                }
+                            }
+                        }
+                    },
                     confirmButton = {
                         TextButton(onClick = {
-                            datePickerState.selectedDateMillis?.let { millis ->
-                                leaveStartDate = java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-                            }
+                            leaveStartDate = tempSelectedDate
                             showDatePicker = false
                         }) { Text("OK") }
                     },
                     dismissButton = {
                         TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
                     },
-                    colors = DatePickerDefaults.colors(containerColor = Color(0xFF1A2535))
-                ) {
-                    DatePicker(state = datePickerState, colors = datePickerColors)
-                }
+                    containerColor = Color(0xFF1E2A3A)
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -581,11 +841,6 @@ fun DashboardScreen(
         DashboardTile("Syllabus", "R2021 subject-wise syllabus", Icons.Default.MenuBook, Color(0xFF7C4DFF),
             Modifier.fillMaxWidth()) { Analytics.logTileClicked("syllabus"); onSyllabusClick() }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        DashboardTile("Chess Lobby", "Find opponents & play on Lichess", Icons.Default.SportsEsports, Color(0xFF4CAF50),
-            Modifier.fillMaxWidth()) { Analytics.logTileClicked("chess"); onChessClick() }
-
         uiState.errorMessage?.let { error ->
             Spacer(modifier = Modifier.height(8.dp))
             GlassListCard(modifier = Modifier.fillMaxWidth(), tintColor = MaterialTheme.colorScheme.error.copy(alpha = 0.08f)) {
@@ -594,11 +849,6 @@ fun DashboardScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
-        // Credit
-        Text("for features or colabs", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-
-        Spacer(modifier = Modifier.height(8.dp))
 
         if (uiState.attendanceData.lastUpdated > 0) {
             Text("Last updated: ${formatTimestamp(uiState.attendanceData.lastUpdated)}",
