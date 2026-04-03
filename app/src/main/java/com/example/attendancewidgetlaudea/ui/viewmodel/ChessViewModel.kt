@@ -44,6 +44,8 @@ data class ChessUiState(
     val showNameSetup: Boolean = false,
     val showLeaderboard: Boolean = false,
     val showHistory: Boolean = false,
+    val showFriends: Boolean = false,
+    val friendProfiles: List<ChessProfile> = emptyList(),
     val errorMessage: String? = null
 )
 
@@ -183,6 +185,17 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 val board = repo.getLeaderboard()
                 _uiState.value = _uiState.value.copy(leaderboard = board)
+            }
+        }
+    }
+
+    fun toggleFriends() {
+        val show = !_uiState.value.showFriends
+        _uiState.value = _uiState.value.copy(showFriends = show)
+        if (show) {
+            viewModelScope.launch {
+                val profiles = repo.getFriendProfiles(friendIds)
+                _uiState.value = _uiState.value.copy(friendProfiles = profiles)
             }
         }
     }

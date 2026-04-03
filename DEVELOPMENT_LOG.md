@@ -1426,3 +1426,117 @@ Also added:
 
 **Lesson Learned:**
 Invisible interaction targets are a common UX failure. Animation draws the eye and communicates "this is interactive" without text labels. The double-ripple pattern (like a radar ping) is particularly effective because it suggests "something is here, tap to discover."
+
+---
+
+### Challenge 31: In-App Lichess WebView — The Flickering Saga
+
+**Problem:**
+When a chess challenge was accepted, the app opened Chrome to play on Lichess. Users had to switch apps, losing context. Wanted to play entirely within JustPass.
+
+**Research (Lichess API deep dive):**
+Studied the Lichess open-source project extensively:
+- **Board API** (`/api/board/game/{id}/move/{move}`): Allows fully native play but requires OAuth2 with `board:play` scope for BOTH players — massive friction for college students who don't have Lichess accounts.
+- **Spectator streaming** (`/api/stream/game/{id}`): No auth, but 3-move delay. Good for watching, not playing.
+- **Game export** (`/game/export/{gameId}`): No auth, returns PGN, opening name, clock times, accuracy.
+- **Embed options**: Lichess has `/tv/frame` for spectating but no game-specific embed.
+- **Libraries**: No official Android SDK. `chariot` (Java) requires Java 21+ (Android incompatible).
+
+**Decision:** WebView wins — `/api/challenge/open` already creates anonymous games (no auth), Lichess mobile web is lightweight SVG-based (`chessground` library, 10KB gzipped), and users never leave JustPass.
+
+**Implementation Attempts & Obstacles:**
+
+**Attempt 1 — Box overlay stacking (FAILED):**
+```
+Box {
+    WebView          ← bottom layer
+    LoadingOverlay   ← stacked ON TOP
+    ButtonsRow       ← stacked ON TOP
+}
+```
+Result: **Severe flickering.** Compose had to composite 3 layers every frame. The overlay and buttons were fighting with the WebView's GPU rendering pipeline. Even when the `AnimatedVisibility` loading overlay was invisible, it remained in the composition tree and intercepted both rendering and touch events.
+
+**Attempt 2 — CSS injection via MutationObserver (FAILED):**
+Injected JavaScript on `onPageStarted` that created a `<style>` tag hiding Lichess chrome (header, footer, chat) and a `MutationObserver` to enforce hiding on every DOM change. Result: **Even worse flickering.** The MutationObserver fired on every single DOM mutation — clock ticks (every second), move animations, Lichess SPA updates. Each firing ran `querySelector` + set `style.display`, causing constant layout reflows.
+
+**Attempt 3 — CSS injection only on onPageFinished (FAILED):**
+Removed MutationObserver, injected CSS only once in `onPageFinished`. Also injected in `onPageStarted` for early hiding. Result: **Still flickering** because `onPageFinished` fires for every sub-resource load in SPAs, and `onPageStarted` injection while the page is still loading forces a reparse.
+
+**Attempt 4 — Remove all CSS injection (PARTIAL SUCCESS):**
+Stripped all JavaScript injection. Let Lichess render naturally with its header visible. The flickering stopped because there was no JS fighting with the DOM. But the Lichess header (SIGN IN, REGISTER, hamburger menu) was visible, which looked non-native.
+
+**Attempt 5 — Column layout + single CSS injection (SUCCESS):**
+The root cause was finally identified: **Box overlay stacking, not CSS injection.** Changed the layout from `Box` (everything overlaid) to `Column` (buttons Row at top, WebView below taking remaining space). Nothing overlays the WebView. Added `setLayerType(LAYER_TYPE_HARDWARE)` for explicit GPU rendering.
+
+Then added back CSS injection — but only once in `onPageFinished`, with idempotency check (`if(document.getElementById('jp'))return`), and NO `onPageStarted` injection, NO `MutationObserver`. Just a static `<style>` tag.
+
+Result: **Zero flickering + Lichess header hidden.** The CSS `!important` rules persist without needing JS to re-enforce them. The `Column` layout means Compose doesn't fight the WebView for GPU rendering.
+
+**Touch event bug discovered during testing:**
+ADB `input tap` commands couldn't reach the WebView to tap "JOIN THE GAME". The `AnimatedVisibility` overlay with `Modifier.fillMaxSize()` stayed in the composition tree even when invisible and **blocked touch events**. Fixed by replacing `AnimatedVisibility` with a simple `if(isLoading)` that completely removes the overlay from the tree.
+
+**Exit confirmation dialog:**
+Added `BackHandler` and close button that both show "Leave game? If the game is still ongoing, you will lose on abandonment." with red Leave button and "Keep playing" dismiss.
+
+**Game-end detection:**
+Injected a JS polling script (`setInterval` every 2s) that checks for Lichess's game-over DOM elements (`.result-wrap .status`). When detected, calls `JustPass.onGameEnd(result)` via `@JavascriptInterface`. The result text (e.g., "White wins", "Draw") is passed back to Compose, which shows a Game Over dialog with the result color-coded + "Play Again" / "Back to Lobby" buttons.
+
+**Lesson Learned:**
+Never overlay Compose elements on top of `AndroidView` WebViews. The rendering pipelines fight each other — Compose uses Skia/RenderNode, WebView uses its own Chromium compositor. Stacking them in a `Box` forces Compose to composite both every frame, causing GPU contention and visible flicker. Use `Column`/`Row` to keep them side-by-side instead. CSS injection in WebViews should be minimal (one static `<style>` tag) and never use `MutationObserver` on real-time content.
+
+---
+
+### Challenge 32: Firestore Composite Index — Missing Index Blocking Match Results
+
+**Problem:**
+After playing chess games, match results weren't appearing in history and leaderboard wasn't updating. Users could play but results vanished.
+
+**Root Cause (found via logcat):**
+```
+FAILED_PRECONDITION: The query requires an index.
+```
+The `getRecentGames()` function queried `chess_challenges` with `whereEqualTo("fromId") + whereEqualTo("status") + orderBy("timestamp", DESCENDING)`. Firestore requires a composite index for queries combining equality filters with ordering on different fields. Two queries needed indexes:
+1. `fromId` + `status` + `timestamp` (for games where player was the challenger)
+2. `toId` + `status` + `timestamp` (for games where player was the acceptor)
+
+**Fix — Index 1 (fromId):**
+Firestore helpfully includes a direct URL to create the missing index in the error message. Opened the URL in Firebase Console via Chrome browser automation — navigated to the page, found the "Save" button in the "Create or update indexes" dialog, clicked it. Index built instantly (status went from "Building..." to "Enabled" in under a minute).
+
+**Fix — Index 2 (toId) — the struggle:**
+Tried to create the second index via:
+1. **Firebase Console UI**: The "Add index" form had a text field that wouldn't accept "toId" — it kept showing "told" due to a React state sync issue with the input. Tried triple-click select, Home+Shift+End, Ctrl+A — the form wouldn't clear properly.
+2. **JavaScript injection**: Set the input value via `nativeInputValueSetter` + dispatched `input`/`change` events. The JS returned "toId" but the React state still showed "told".
+3. **Direct URL with proto-encoded params**: Generated a base64-encoded protobuf matching Firestore's URL format using Python. The URL loaded the Indexes page but the create dialog didn't auto-open.
+4. **gcloud CLI**: `gcloud firestore indexes composite create` — not installed on the machine.
+
+**Final solution:** Removed the `orderBy("timestamp")` clause from the `toId` query entirely. This means the query only uses `whereEqualTo("toId") + whereEqualTo("status")` which doesn't need a composite index (Firestore auto-indexes individual fields). Results are still sorted client-side via `sortedByDescending { it.timestamp }` after merging both queries.
+
+**Lesson Learned:**
+Firestore composite indexes are silently required — your app compiles fine, Firestore doesn't throw at write time, and the error only appears at query time buried in logcat. Always check logcat for `FAILED_PRECONDITION` after adding new compound queries. When possible, design queries to avoid composite indexes by dropping `orderBy` and sorting client-side — one fewer infrastructure dependency.
+
+---
+
+### Challenge 33: Friends List & Game Analysis
+
+**Problem:**
+Friends were only visible as badges on online players. No way to see offline friends. Match history showed results but no way to review the actual game.
+
+**Implementation:**
+
+1. **Friends Dialog**: New `FriendsDialog` composable showing all friends (online + offline) with:
+   - Green/gray online indicator
+   - "Online now" or "Last seen X ago" status
+   - SR rating + W/L/D stats
+   - Added `getFriendProfiles()` to ChessRepository that fetches full profiles from Firestore (handles `whereIn` 30-item limit via chunking)
+   - Purple person icon in header bar opens the dialog
+
+2. **Analyze Button in Match History**: Each match entry now has an "Analyze" button that opens `https://lichess.org/{gameId}` in the same in-app WebView. This gives access to Lichess's full post-game analysis — move list, opening name, blunders, engine evaluation — all without any API auth.
+
+3. **Game Result Dialog with Play Again**: When a game ends (detected via JS polling), auto-closes WebView after 1.5s and shows:
+   - "Game Over" dialog with result text color-coded (green=win, red=loss, yellow=draw)
+   - "Play Again" button → re-opens time control picker for the same opponent
+   - "Back to Lobby" button → returns to player list
+   - Tracks `lastChallengedPlayer` state across the challenge flow
+
+**Lesson Learned:**
+Lichess's game URLs (`lichess.org/{gameId}`) double as analysis boards after the game ends — the same URL that was used for playing automatically shows the analysis interface post-game. No separate API endpoint needed. This is an elegant design choice by Lichess that makes integration trivial.
