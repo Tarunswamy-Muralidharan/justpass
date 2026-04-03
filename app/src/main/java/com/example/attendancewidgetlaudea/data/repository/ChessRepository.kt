@@ -111,6 +111,33 @@ class ChessRepository {
 
     // ─── Leaderboard ────────────────────────────────────────────────────────
 
+    /** Get full friend profiles (including offline) */
+    suspend fun getFriendProfiles(friendIds: Set<String>): List<ChessProfile> {
+        if (friendIds.isEmpty()) return emptyList()
+        return try {
+            // Firestore `whereIn` max 30 items
+            friendIds.chunked(30).flatMap { chunk ->
+                profileCollection.whereIn("__name__", chunk.toList())
+                    .get().await().documents.mapNotNull { doc ->
+                        ChessProfile(
+                            id = doc.id,
+                            displayName = doc.getString("displayName") ?: "",
+                            nickname = doc.getString("nickname") ?: "",
+                            nameMode = doc.getString("nameMode") ?: "random",
+                            wins = doc.getLong("wins")?.toInt() ?: 0,
+                            losses = doc.getLong("losses")?.toInt() ?: 0,
+                            draws = doc.getLong("draws")?.toInt() ?: 0,
+                            gamesPlayed = doc.getLong("gamesPlayed")?.toInt() ?: 0,
+                            lastOnline = doc.getLong("lastOnline") ?: 0L
+                        )
+                    }
+            }.sortedByDescending { it.rating }
+        } catch (e: Exception) {
+            Log.e(TAG, "Get friends error: ${e.message}")
+            emptyList()
+        }
+    }
+
     suspend fun getLeaderboard(limit: Int = 20): List<ChessProfile> {
         return try {
             val docs = profileCollection
@@ -496,6 +523,8 @@ class ChessRepository {
     /** Get recent accepted challenges for a player (to check results) */
     suspend fun getRecentGames(playerId: String, limit: Int = 5): List<ChessChallenge> {
         return try {
+            // Only fromId query uses composite index (fromId+status+timestamp)
+            // toId query skips orderBy to avoid needing a second composite index
             val asSender = challengeCollection
                 .whereEqualTo("fromId", playerId)
                 .whereEqualTo("status", "accepted")
@@ -506,7 +535,6 @@ class ChessRepository {
             val asReceiver = challengeCollection
                 .whereEqualTo("toId", playerId)
                 .whereEqualTo("status", "accepted")
-                .orderBy("timestamp", Query.Direction.DESCENDING)
                 .limit(limit.toLong())
                 .get().await()
 
