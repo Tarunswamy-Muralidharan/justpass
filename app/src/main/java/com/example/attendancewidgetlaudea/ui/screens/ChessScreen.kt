@@ -1,7 +1,17 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
+import android.view.ViewGroup
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -12,12 +22,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,6 +43,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.attendancewidgetlaudea.data.model.ChessProfile
 import com.example.attendancewidgetlaudea.data.model.OnlinePlayer
@@ -50,36 +63,22 @@ fun ChessScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    // Track if we left for Lichess
-    var wentToLichess by remember { mutableStateOf(false) }
+    // In-app game WebView state
+    var activeGameUrl by remember { mutableStateOf<String?>(null) }
 
     DisposableEffect(Unit) {
         viewModel.goOnline()
         onDispose { viewModel.goOffline() }
     }
 
-    // Auto-open Lichess when challenge accepted
+    // Auto-open in-app game when challenge accepted
     LaunchedEffect(uiState.acceptedChallenge) {
         val challenge = uiState.acceptedChallenge ?: return@LaunchedEffect
         val url = challenge.gameUrl.ifBlank { challenge.opponentUrl }
         if (url.isNotBlank()) {
-            wentToLichess = true
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            activeGameUrl = url
             viewModel.clearAcceptedChallenge()
         }
-    }
-
-    // Auto-check game results when returning from Lichess
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && wentToLichess) {
-                wentToLichess = false
-                viewModel.checkPendingResults()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Name setup dialog
@@ -108,6 +107,21 @@ fun ChessScreen(
         )
     }
 
+    // ── In-app game WebView ──
+    if (activeGameUrl != null) {
+        LichessGameScreen(
+            url = activeGameUrl!!,
+            onClose = {
+                activeGameUrl = null
+                viewModel.checkPendingResults()
+            },
+            onOpenExternal = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(activeGameUrl)))
+            }
+        )
+        return
+    }
+
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp)) {
         // Header
         GlassListCard(
@@ -122,7 +136,8 @@ fun ChessScreen(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                 }
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Chess Lobby", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("Chess Lobby", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface)
                     if (uiState.myProfile != null) {
                         val p = uiState.myProfile!!
                         Text("${p.visibleName} · ${p.rating} SR",
@@ -361,6 +376,7 @@ private fun PlayerCard(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(player.displayName, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (player.isFriend) {
                         Spacer(Modifier.width(6.dp))
@@ -415,7 +431,7 @@ private fun NameSetupDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF1E2A3A),
-        title = { Text("Choose your name", fontWeight = FontWeight.Bold) },
+        title = { Text("Choose your name", fontWeight = FontWeight.Bold, color = Color.White) },
         text = {
             Column {
                 // Random option
@@ -424,7 +440,7 @@ private fun NameSetupDialog(
                     RadioButton(selected = selectedMode == "random", onClick = { selectedMode = "random" })
                     Spacer(Modifier.width(8.dp))
                     Column {
-                        Text("Random nickname", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text("Random nickname", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White)
                         Text(currentProfile?.let { com.example.attendancewidgetlaudea.data.repository.ChessRepository().generateRandomName("placeholder") } ?: "SilentKnight#42",
                             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -435,7 +451,7 @@ private fun NameSetupDialog(
                     verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = selectedMode == "custom", onClick = { selectedMode = "custom" })
                     Spacer(Modifier.width(8.dp))
-                    Text("Custom nickname", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text("Custom nickname", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White)
                 }
                 if (selectedMode == "custom") {
                     OutlinedTextField(
@@ -453,7 +469,7 @@ private fun NameSetupDialog(
                     RadioButton(selected = selectedMode == "real", onClick = { selectedMode = "real" })
                     Spacer(Modifier.width(8.dp))
                     Column {
-                        Text("College name & roll number", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text("College name & roll number", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White)
                         Text(currentProfile?.displayName ?: "", fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -485,7 +501,7 @@ private fun LeaderboardDialog(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.EmojiEvents, "Trophy", tint = Color(0xFFFFC107))
                 Spacer(Modifier.width(8.dp))
-                Text("College Leaderboard", fontWeight = FontWeight.Bold)
+                Text("College Leaderboard", fontWeight = FontWeight.Bold, color = Color.White)
             }
         },
         text = {
@@ -545,7 +561,7 @@ private fun MatchHistoryDialog(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.History, "History", tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.dp))
-                Text("Match History", fontWeight = FontWeight.Bold)
+                Text("Match History", fontWeight = FontWeight.Bold, color = Color.White)
             }
         },
         text = {
@@ -609,7 +625,7 @@ private fun TimeControlDialog(
         containerColor = Color(0xFF1E2A3A),
         title = {
             Column {
-                Text("Challenge $playerName", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("Challenge $playerName", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 Text("Pick a time control", fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -646,4 +662,142 @@ private fun TimeControlDialog(
         },
         confirmButton = {}
     )
+}
+
+/**
+ * Full-screen in-app Lichess game via WebView.
+ * Hides Lichess header/nav so it feels native to JustPass.
+ */
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun LichessGameScreen(
+    url: String,
+    onClose: () -> Unit,
+    onOpenExternal: () -> Unit
+) {
+    // Back button closes the game
+    BackHandler { onClose() }
+
+    var isLoading by remember { mutableStateOf(true) }
+
+    // CSS to hide Lichess header, footer, and side panels for a clean board-only look
+    val hideChromeCss = """
+        javascript:(function(){
+            var style = document.createElement('style');
+            style.textContent = `
+                header, .header, #top, .site-title, .site-buttons,
+                .mchat, .chat__members, .lobby__app,
+                .analyse__tools, .game__meta .setup,
+                .is2d .game__tournament, footer { display: none !important; }
+                .round__app { padding-top: 0 !important; }
+                body { padding-top: 0 !important; margin-top: 0 !important; }
+                .game__board { margin-top: 0 !important; }
+            `;
+            document.head.appendChild(style);
+        })()
+    """.trimIndent().replace("\n", "")
+
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A2E))) {
+        // WebView
+        AndroidView(
+            modifier = Modifier.fillMaxSize().statusBarsPadding(),
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.mediaPlaybackRequiresUserGesture = false
+                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    settings.userAgentString = settings.userAgentString + " JustPass-Chess"
+
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView?, pageUrl: String?) {
+                            super.onPageFinished(view, pageUrl)
+                            isLoading = false
+                            // Inject CSS to hide Lichess chrome
+                            view?.evaluateJavascript(hideChromeCss, null)
+                            // Re-inject after a delay (Lichess loads dynamically)
+                            view?.postDelayed({
+                                view.evaluateJavascript(hideChromeCss, null)
+                            }, 1500)
+                            view?.postDelayed({
+                                view.evaluateJavascript(hideChromeCss, null)
+                            }, 4000)
+                        }
+
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView?,
+                            request: android.webkit.WebResourceRequest?
+                        ): Boolean {
+                            val reqUrl = request?.url?.toString() ?: return false
+                            // Keep Lichess URLs in WebView, open others externally
+                            return if (reqUrl.contains("lichess.org")) {
+                                false // load in WebView
+                            } else {
+                                view?.context?.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(reqUrl)))
+                                true
+                            }
+                        }
+                    }
+
+                    webChromeClient = WebChromeClient()
+                    loadUrl(url)
+                }
+            }
+        )
+
+        // Loading overlay
+        AnimatedVisibility(
+            visible = isLoading,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A2E)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color(0xFF8BC34A))
+                    Spacer(Modifier.height(12.dp))
+                    Text("Loading game...", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+                }
+            }
+        }
+
+        // Top bar overlay — close + open in browser
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Close button
+            IconButton(
+                onClick = onClose,
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = Color.Black.copy(alpha = 0.5f)
+                )
+            ) {
+                Icon(Icons.Default.Close, "Close game", tint = Color.White)
+            }
+
+            // Open in browser button
+            IconButton(
+                onClick = onOpenExternal,
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = Color.Black.copy(alpha = 0.5f)
+                )
+            ) {
+                Icon(Icons.Default.OpenInBrowser, "Open in browser", tint = Color.White)
+            }
+        }
+    }
 }

@@ -68,7 +68,8 @@ fun SyllabusScreen(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Syllabus", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("Syllabus", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface)
                     if (uiState.department != null) {
                         val regLabel = if (uiState.regulation == Regulation.R2025) "R2025" else "R2021"
                         Text("${uiState.department!!.displayName} · $regLabel",
@@ -281,17 +282,20 @@ private fun SyllabusDetailScreen(subject: SyllabusSubject, onBack: () -> Unit) {
                     val parts = subject.credits.split(" ").mapNotNull { it.toIntOrNull() }
                     if (parts.size == 4) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("${parts[0]}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("${parts[0]}", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface)
                             Text("Lecture", fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("${parts[1]}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("${parts[1]}", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface)
                             Text("Tutorial", fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("${parts[2]}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("${parts[2]}", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface)
                             Text("Practical", fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }

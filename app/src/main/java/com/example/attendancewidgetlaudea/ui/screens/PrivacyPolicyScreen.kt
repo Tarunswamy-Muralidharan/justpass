@@ -23,7 +23,8 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-                    Text("Privacy Policy", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("Privacy Policy", fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface)
                 }
             }
             Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
