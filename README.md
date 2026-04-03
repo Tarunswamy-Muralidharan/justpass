@@ -198,6 +198,30 @@ Check [Releases](../../releases) for the latest APK.
 - Collapsible "How does Chess Lobby work?" card
 - 7 sections covering getting started, challenges, ratings, friends, history, Lichess info
 
+**In-App Lichess WebView (replacing Chrome intent):**
+- Researched Lichess API extensively: Board API (requires OAuth2 for both players), spectator streaming (no auth, 3-move delay), game export (PGN/eval/opening, no auth), embed options
+- Evaluated 3 approaches:
+  1. **Native Canvas board + Board API** -- best UX but requires both players to have Lichess accounts with OAuth2 tokens. Massive friction for college students who just want to play
+  2. **WebView in-app** -- loads Lichess game URL inside the app. Zero auth needed, anonymous open challenges work as-is. Full interactive board with drag-drop, clock, resign, draw
+  3. **Hybrid spectate + WebView** -- spectate via API, play via WebView
+- Chose **Option 2 (WebView)** -- 90% of native experience with 10% of the effort
+- Full-screen WebView with dark `#1A1A2E` background matching JustPass theme
+- CSS injection hides Lichess header, footer, chat panel, and site chrome for clean board-only look
+- Re-injects CSS at 1.5s and 4s to catch Lichess's dynamic content loading
+- Loading overlay with spinner + "Loading game..." text that fades out
+- Close button (top-left, semi-transparent black) returns to lobby + auto-checks game results
+- Open in browser fallback (top-right) if WebView has issues
+- Back button handled via `BackHandler` composable
+- Non-Lichess URLs open externally for safety
+- Lichess mobile web is lightweight SVG-based (`chessground` library, 10KB gzipped), runs smooth even on low-end phones
+
+**Dark Mode Header Fixes:**
+- ChessScreen: "Chess Lobby", dialog titles, player names, name setup options -- all invisible in dark mode
+- SyllabusScreen: "Syllabus" header, credit numbers (L/T/P/C)
+- PrivacyPolicyScreen: "Privacy Policy" header
+- Screen headers now use `MaterialTheme.colorScheme.onSurface` (adapts to dark/light)
+- Dark dialog titles (`containerColor = #1E2A3A`) use explicit `Color.White`
+
 ## Feedback
 
 Found a bug or have a feature request? [Open an issue](../../issues/new/choose)
