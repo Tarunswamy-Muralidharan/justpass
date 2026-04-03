@@ -77,7 +77,7 @@ fun LoginScreen(viewModel: LoginViewModel = viewModel(), onLoginSuccess: () -> U
             modifier = Modifier.fillMaxSize().systemBarsPadding().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
         ) {
-            Text("Laudea Attendance", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text("JustPass", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.height(8.dp))
             Text("PSG iTech", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(48.dp))

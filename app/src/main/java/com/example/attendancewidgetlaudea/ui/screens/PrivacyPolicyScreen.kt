@@ -32,7 +32,7 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                         Text("Privacy Policy", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(bottom = 16.dp))
                         Text(
                             text = "Last updated: December 08, 2025\n\n" +
-                                "1. Data Collection\nThis app ('AttendanceWidgetLaudea') collects your student Roll Number and Password solely for the purpose of fetching your attendance data from the Laudea portal.\n\n" +
+                                "1. Data Collection\nThis app ('JustPass') collects your student Roll Number and Password solely for the purpose of fetching your attendance data from the Laudea portal.\n\n" +
                                 "2. Data Storage\nYour credentials are encrypted and stored LOCALLY on your device using Android's EncryptedSharedPreferences. We do NOT transmit your data to any third-party server.\n\n" +
                                 "3. Data Usage\nThe app uses your credentials to log in to the Laudea portal automatically in the background to update the widget.\n\n" +
                                 "4. Third-Party Services\nThis app interacts with the Laudea Student Information System. Please refer to their terms of service.\n\n" +

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Laudea Attendance</string>
-    <string name="widget_name">Attendance Widget</string>
+    <string name="app_name">JustPass</string>
+    <string name="widget_name">JustPass Widget</string>
     <string name="widget_description">Shows your PSG iTech attendance stats at a glance</string>
 </resources>

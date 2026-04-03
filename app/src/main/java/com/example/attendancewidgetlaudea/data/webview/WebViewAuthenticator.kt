@@ -707,6 +707,8 @@ class WebViewAuthenticator(private val context: Context) {
                     // Token expired
                     cachedAuthToken = null
                     null
+                } else if (responseCode in 500..599) {
+                    Result.failure(ServerDownException(responseCode))
                 } else {
                     Result.failure(Exception("HTTP $responseCode"))
                 }
@@ -716,6 +718,9 @@ class WebViewAuthenticator(private val context: Context) {
             }
         }
     }
+
+    /** Thrown when the LAUDEA server returns a 5xx error. */
+    class ServerDownException(val statusCode: Int) : Exception("Server returned HTTP $statusCode")
 
     /**
      * Fetch CA marks using cached auth token (fast direct HTTP).

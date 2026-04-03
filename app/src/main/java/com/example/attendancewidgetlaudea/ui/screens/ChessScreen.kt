@@ -15,6 +15,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.attendancewidgetlaudea.data.model.ChessProfile
 import com.example.attendancewidgetlaudea.data.model.OnlinePlayer
+import com.example.attendancewidgetlaudea.data.model.TimeControl
 import com.example.attendancewidgetlaudea.ui.viewmodel.MatchHistoryEntry
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
@@ -151,6 +155,51 @@ fun ChessScreen(
             }
         }
 
+        // ── How it works — collapsible info card ──
+        var showInfo by remember { mutableStateOf(false) }
+        GlassListCard(
+            modifier = Modifier.fillMaxWidth().clickable { showInfo = !showInfo },
+            shape = GlassCardShapeSmall,
+            tintColor = Color(0xFF64B5F6).copy(alpha = 0.06f)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, "Info",
+                        tint = Color(0xFF64B5F6), modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("How does Chess Lobby work?", fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f))
+                    Icon(
+                        if (showInfo) Icons.Default.KeyboardArrowUp
+                        else Icons.Default.KeyboardArrowDown,
+                        "Toggle", tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                if (showInfo) {
+                    Spacer(Modifier.height(10.dp))
+                    val infoItems = listOf(
+                        "What is this?" to "A live chess matchmaking lobby for PSG iTech students. See who's online, challenge them, and play on Lichess!",
+                        "Getting started" to "1. Set your display name (tap the pencil icon)\n2. Link your Lichess username in your profile\n3. You'll automatically appear online when you open this screen",
+                        "Challenging someone" to "Tap the sword icon next to any online player. They'll get a popup to accept or decline. Once accepted, Lichess opens automatically for both of you.",
+                        "Ratings & Leaderboard" to "Every game updates your SR (Skill Rating). Win = +25, Loss = -20, Draw = +5. Tap the trophy icon to see the leaderboard!",
+                        "Friends" to "Tap the person+ icon to send a friend request. Friends show a star badge and appear at the top of the list.",
+                        "Match History" to "Tap the clock icon to see your recent games, results, and opponents.",
+                        "Need Lichess?" to "Lichess is 100% free — no account needed to play casual games. Download it from Play Store or visit lichess.org"
+                    )
+                    infoItems.forEach { (title, desc) ->
+                        Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary)
+                        Text(desc, fontSize = 11.sp, lineHeight = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+
         // My stats bar
         if (uiState.myProfile != null && uiState.myProfile!!.gamesPlayed > 0) {
             val p = uiState.myProfile!!
@@ -200,7 +249,12 @@ fun ChessScreen(
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Challenge!", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFA000))
                     Spacer(Modifier.height(4.dp))
+                    val tcLabel = try {
+                        val tc = TimeControl.valueOf(uiState.pendingChallenge!!.timeControl.uppercase())
+                        "${tc.icon} ${tc.description} ${tc.label}"
+                    } catch (_: Exception) { "Rapid 10 min" }
                     Text("${uiState.pendingChallenge!!.fromName} wants to play", fontSize = 13.sp)
+                    Text(tcLabel, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(onClick = { viewModel.acceptChallenge() },
@@ -244,6 +298,19 @@ fun ChessScreen(
             modifier = Modifier.padding(horizontal = 4.dp))
         Spacer(Modifier.height(6.dp))
 
+        // Time control picker dialog
+        var challengeTarget by remember { mutableStateOf<OnlinePlayer?>(null) }
+        if (challengeTarget != null) {
+            TimeControlDialog(
+                playerName = challengeTarget!!.displayName,
+                onSelect = { tc ->
+                    viewModel.sendChallenge(challengeTarget!!, tc.name.lowercase())
+                    challengeTarget = null
+                },
+                onDismiss = { challengeTarget = null }
+            )
+        }
+
         // Player list
         when {
             uiState.isLoading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
@@ -265,7 +332,7 @@ fun ChessScreen(
                     PlayerCard(
                         player = player,
                         canChallenge = uiState.sentChallengeId == null && uiState.pendingChallenge == null,
-                        onChallenge = { viewModel.sendChallenge(player) },
+                        onChallenge = { challengeTarget = player },
                         onAddFriend = { viewModel.sendFriendRequest(player) }
                     )
                 }
@@ -521,5 +588,62 @@ private fun MatchHistoryDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Close") }
         }
+    )
+}
+
+@Composable
+private fun TimeControlDialog(
+    playerName: String,
+    onSelect: (TimeControl) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val categories = listOf(
+        "Bullet" to listOf(TimeControl.BULLET, TimeControl.BULLET_1_1),
+        "Blitz" to listOf(TimeControl.BLITZ_3, TimeControl.BLITZ_3_2, TimeControl.BLITZ_5, TimeControl.BLITZ_5_3),
+        "Rapid" to listOf(TimeControl.RAPID_10, TimeControl.RAPID_10_5, TimeControl.RAPID_15_10),
+        "Classical" to listOf(TimeControl.CLASSICAL)
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1E2A3A),
+        title = {
+            Column {
+                Text("Challenge $playerName", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("Pick a time control", fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        text = {
+            Column {
+                categories.forEach { (category, controls) ->
+                    Text(category, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        controls.forEach { tc ->
+                            OutlinedButton(
+                                onClick = { onSelect(tc) },
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("${tc.icon} ${tc.description}", fontSize = 12.sp)
+                            }
+                        }
+                        repeat((3 - controls.size).coerceAtLeast(0)) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        confirmButton = {}
     )
 }
