@@ -1224,3 +1224,205 @@ The CgpaCalculator screen was already in the special screens list (routed by `Sc
 
 **Lesson Learned:**
 When adding navigation items, audit ALL places that reference tab indices — they're hardcoded integers, not enums. A single missed index shift causes silent navigation bugs. Consider using named constants for tab indices in the future.
+
+---
+
+### Challenge 25: Animated Isometric Chess Icon — Canvas Drawing From Reference Image
+
+**Problem:**
+The center bump bar tab for Chess needed a custom animated icon — not a static vector, but a colorful 3D chessboard with pieces moving around it. User provided reference images of what they wanted: a colorful chess board from a clipart, and a 3D isometric rendered chessboard viewed from a low front angle.
+
+**Approach:**
+Built entirely in Compose `Canvas` — no images, no vectors, pure draw calls. True isometric projection with parallelogram-shaped diamond tiles.
+
+**Implementation:**
+
+1. **Isometric projection**: Each grid cell (row, col) maps to screen coordinates via `isoPos(row, col) = (centerX + (col - row) * tileHW, centerY + (col + row) * tileHH)`. Four corners of each tile form a diamond shape.
+
+2. **3D tile depth**: Each tile has three visible faces — top (diamond), right side, and front side — each with different shading (top = bright, right = medium, front = slightly lighter). Tiny gaps between tiles so they read as individual raised blocks.
+
+3. **Ultra glossy effects**: Specular highlight (bright circle near top vertex), gradient shine band (top half brighter), bottom darkening, bright edge highlights along top-left edges, dark edges along bottom-right, and a glossy strip on side faces.
+
+4. **Thick platform base**: Isometric box underneath with top surface, front-left face (medium dark), and front-right face (darkest shadow). Padding around tiles so the base is slightly larger.
+
+5. **Color animation**: All tile colors, side colors, and base colors are `animateColorAsState` — default is dark slate/silver, selected smoothly transitions to chess.com green (#739552) + cream (#EBECD0).
+
+6. **Random piece movement**: White knight and dark bishop each run in independent `LaunchedEffect` coroutine loops. Each loop: wait random delay (800-1600ms) → pick a random valid move (knight L-shapes, bishop diagonals on 4x4 grid) → animate X and Y with `Animatable.animateTo()` using random duration (400-900ms) and `FastOutSlowInEasing`. Both axes animate in parallel via `coroutineScope { launch { ... } launch { ... } }`.
+
+7. **Calligraphy label**: "Chess" rendered in Great Vibes font (downloaded from Google Fonts repo), 16sp bold, turns green (#4CAF50) when selected.
+
+8. **Levitation**: Entire icon + label floats up/down 3dp in infinite loop (1.8s cycle, `FastOutSlowInEasing`, `RepeatMode.Reverse`).
+
+**Obstacles (9 iterations!):**
+
+1. **Flat rectangles**: First attempt drew a 3x3 grid of flat `drawRect` squares with lavender/purple colors. User said "it looks horrible" — it looked nothing like a 3D chessboard.
+
+2. **Fake 3D with side panels**: Second attempt added bottom and right "side face" rectangles for depth, chess.com green/cream colors, and rectangular tiles. Better but still flat — no isometric perspective.
+
+3. **True isometric projection**: Third attempt used proper isometric math — `isoPos(row, col)` transforms grid coordinates to diamond-shaped screen positions. Each tile is a `Path` with 4 diamond vertices. Added individual right and front side faces per tile. This finally matched the reference image.
+
+4. **Missing glossy look**: User wanted "ultra glossy". Added specular hotspot circles, gradient shine bands (top half highlight, bottom half darken), bright/dark edge lines, side face highlight strips.
+
+5. **Size iterations**: Started at 36dp → 52dp → 62dp → 78dp → settled at 70dp. Glass bubble expanded from 62dp to 88dp to cover the board + calligraphy text.
+
+6. **Bouncing pieces**: Initial piece movement used sine-wave hop arcs. User said they look like they're bouncing, wanted sliding. Removed all `hopArc()` functions — pieces now slide flat along the board surface.
+
+7. **Loop stutter**: Used `infiniteRepeatable` with a fixed 6-move path that visibly restarted every 7.2 seconds. User noticed the stutter. Replaced with independent random `LaunchedEffect` coroutines — each piece picks its next valid move randomly, so the pattern never repeats.
+
+8. **Distracting sparkles**: Had orbiting 4-point star sparkles around the board. User said "there is small star kinda thingy really small circling above the chess icon, remove that". Removed all sparkle code.
+
+9. **Green glow circle**: Had a `drawCircle` glow effect behind the board when selected. User said "some weird green circle is popping up". Removed it.
+
+10. **Calligraphy clipping**: The "Chess" text bottom was getting cut off by the nav bar. Fixed by pushing the entire Column up with `-12dp` offset and tuning font size from 16→14→16sp.
+
+**Lesson Learned:**
+Building UI from a reference image is deeply iterative. The user sees things you don't — a "flat" board, a "weird" glow, "bouncing" instead of "sliding". Each iteration taught me to look at the output more critically. True isometric projection math is straightforward but the visual polish (glossy effects, edge highlights) is what makes it look real. Random coroutine-based animation feels much more alive than fixed loops.
+
+---
+
+### Challenge 26: App Rebrand — "Laudea Attendance" to "JustPass"
+
+**Problem:**
+The name "Laudea Attendance" was generic and forgettable. User wanted a rebrand to "JustPass" — meme-worthy student survival branding ("Bro enakku topper venam… just pass podhum da").
+
+**Implementation:**
+Renamed across 7 files, 12+ locations:
+- `strings.xml`: app_name, widget_name
+- `LoginScreen.kt`: title text (32sp bold)
+- `DashboardScreen.kt`: fallback header text
+- `ProfileScreen.kt`: app info, share text (2 locations), APK filename
+- `ExamSeatScreen.kt`: guide text "Open with JustPass"
+- `PrivacyPolicyScreen.kt`: app reference in policy text
+
+**Logo:**
+Adaptive icon (`ic_launcher_foreground.xml` + `ic_launcher_background.xml`):
+- Dark navy background (#1A1A2E)
+- Tilted graduation cap (dark gray diamond + brim shadow)
+- Gold tassel with string path, dangling threads, and button
+- Big green checkmark (#4CD964) slashing across — the "barely made it" energy
+- Brighter inner highlight (#5CE76F) on the checkmark
+- Small blue sweat drop (#64B5F6) near the cap for comedic effect
+
+**Lesson Learned:**
+Rebranding is mostly grep + replace, but easy to miss locations like share text fallbacks, privacy policy references, and APK filenames. The logo needed to convey the app's personality in a tiny icon — the graduation cap + checkmark + sweat drop combo works because each element tells part of the "just barely passed" story.
+
+---
+
+### Challenge 27: Chess Time Controls — Bullet to Classical
+
+**Problem:**
+All chess games were hardcoded to 10+0 (Rapid). Users wanted chess.com-style time control selection — Bullet, Blitz, Rapid, Classical.
+
+**Implementation:**
+
+1. **TimeControl enum** in `ChessData.kt` with 10 presets, each carrying `clockLimit` (seconds), `increment` (seconds), `description` (e.g., "5+3"), `icon` (emoji), and `paramString` property that builds Lichess API params.
+
+2. **Time control picker dialog**: When tapping "Play", a `TimeControlDialog` pops up with buttons grouped by category (Bullet/Blitz/Rapid/Classical). Each button shows icon + time description.
+
+3. **Data flow**: Selected `TimeControl.name.lowercase()` → stored in Firestore challenge doc as `timeControl` field → read when opponent receives challenge → shown on incoming challenge popup (e.g., "⚡ 1 min Bullet") → passed to `createLichessGame()` which uses `tc.paramString` for `POST /api/challenge/open`.
+
+4. **Backward compatible**: Default `"rapid_10"` for challenges without the field (old clients).
+
+**Bug discovered during testing — Match results not showing:**
+
+The `listenChallengeStatus()` function was constructing `ChessChallenge` objects from Firestore documents but was NOT reading `fromColor`, `resultChecked`, or `timeControl` fields. When `checkPendingResults()` ran, challenges had empty `fromColor` — the `ifBlank { "white" }` fallback should have worked, but the incomplete data propagation meant accepted challenges weren't being processed correctly.
+
+Fixed both `listenChallengeStatus` and `listenIncomingChallenges` to read ALL fields from Firestore documents.
+
+Also added:
+- 90-second auto-expiry for unanswered challenges ("X didn't respond")
+- Periodic 30s result polling while on chess screen
+- Periodic 60s challenge cleanup
+- 3-second delayed result check after returning from Lichess
+
+**Lesson Learned:**
+When you add a field to a data model, audit EVERY place that constructs that model from external data (Firestore, API responses, etc.). The compiler won't catch missing fields if they have defaults — the object just silently gets empty/default values. This is especially dangerous with Firestore where you manually map document fields.
+
+---
+
+### Challenge 28: In-App Lichess via WebView — Eliminating the Browser Switch
+
+**Problem:**
+When a chess challenge was accepted, the app opened Chrome to play on Lichess. This broke the user flow — switching apps, losing context, no guarantee they'd come back for result tracking.
+
+**Research:**
+Studied the Lichess API extensively:
+- **Board API** (`/api/board/game/{id}/move/{move}`, `/api/board/game/stream/{id}`): Allows fully native play but requires OAuth2 with `board:play` scope for BOTH players. This means every user needs a Lichess account — massive friction for college students.
+- **Spectator streaming** (`/api/stream/game/{id}`): No auth needed but has 3-move delay. Good for watching, not playing.
+- **Game export** (`/game/export/{gameId}`): No auth, returns PGN, opening name, clock times, accuracy. Useful for post-game summary.
+- **Embed options**: Lichess has `/tv/frame` for spectating but no game-specific embed URL.
+- **Libraries**: No official Android SDK. `chariot` (Java) requires Java 21+ (Android incompatible). `chessground` is web-only TypeScript.
+
+**Decision: WebView wins.**
+- `/api/challenge/open` already creates anonymous games (no auth)
+- Lichess mobile web is lightweight SVG-based (`chessground` library, 10KB gzipped)
+- Full interactive board — drag-drop pieces, clock, resign, draw offer, chat
+- Users never leave JustPass
+- Zero signup required
+
+**Implementation:**
+
+1. **State management**: `activeGameUrl` state in `ChessScreen`. When challenge accepted, sets URL instead of launching Chrome intent. When set, lobby is hidden and `LichessGameScreen` composable renders.
+
+2. **WebView setup**: `AndroidView` wrapping a `WebView` with JavaScript enabled, DOM storage, WebSocket support (for real-time moves), wide viewport.
+
+3. **CSS injection**: JavaScript executed `onPageFinished` that creates a `<style>` element hiding Lichess chrome:
+   ```css
+   header, .site-title, .site-buttons, .mchat, footer { display: none !important; }
+   .round__app { padding-top: 0 !important; }
+   ```
+   Re-injected at 1.5s and 4s delays because Lichess loads content dynamically via JavaScript.
+
+4. **Loading UX**: Dark overlay (#1A1A2E) with `CircularProgressIndicator` + "Loading game..." text. Uses `AnimatedVisibility` with fade to smoothly disappear when `onPageFinished` fires.
+
+5. **Navigation controls**:
+   - Close button (top-left, semi-transparent black circle) — returns to lobby + triggers `checkPendingResults()`
+   - Open in browser button (top-right) — fallback if WebView has issues
+   - `BackHandler` composable intercepts Android back button
+
+6. **URL safety**: `shouldOverrideUrlLoading` keeps `lichess.org` URLs in the WebView but opens anything else (ads, external links) in the system browser.
+
+7. **User agent**: Appended `JustPass-Chess` to the default user agent string so Lichess can identify the traffic source.
+
+**Result:**
+Games now play entirely inside JustPass. The Lichess board renders cleanly — pieces are draggable, clock ticks in real-time, resign/draw/takeback buttons work. When the game ends, user taps close (or back) → returns to the lobby → results auto-detected from Lichess API within seconds.
+
+**Lesson Learned:**
+Before building a complex native solution, check if the target service has a good mobile web experience. Lichess's web UI is essentially their Android app's UI (the official Lichess app is also a WebView wrapper). CSS injection to hide site chrome is a powerful technique — 5 lines of CSS replaced months of native chess board development. The key trade-off: you depend on Lichess not changing their HTML structure, but the time savings are enormous.
+
+---
+
+### Challenge 29: Dark Mode Header Visibility
+
+**Problem:**
+Multiple screen headers (Chess Lobby, Syllabus, Privacy Policy) and dialog titles were using default text color (black) which was invisible against the dark glass backgrounds in dark mode.
+
+**Root Cause:**
+Compose `Text` defaults to `Color.Unspecified` which resolves to `LocalContentColor` → typically black in many contexts. Headers inside `GlassListCard` and dialogs with `containerColor = Color(0xFF1E2A3A)` inherited this wrong default.
+
+**Fix:**
+- Screen headers inside glass cards: `color = MaterialTheme.colorScheme.onSurface` (adapts to dark/light theme)
+- Dialog titles/options with dark `containerColor`: explicit `color = Color.White`
+- Fixed across: ChessScreen (7 texts), SyllabusScreen (4 texts), PrivacyPolicyScreen (1 text)
+
+**Lesson Learned:**
+Never rely on default text colors in custom-themed containers. Compose's color resolution chain (`LocalContentColor` → `ContentColorFor` → theme) doesn't always match your visual expectation, especially inside glass/translucent layouts. Always specify `color` explicitly for text that must be readable in both themes.
+
+---
+
+### Challenge 30: Profile Picture Discoverability
+
+**Problem:**
+Users didn't realize the profile picture in the dashboard header was tappable to view their profile. It looked like a static avatar.
+
+**Implementation:**
+1. **Pulsing double-ripple ring**: Two concentric rings expand outward from the profile pic in an infinite loop (2s cycle). Ring 1: 0.9→0 alpha, 1x→1.6x scale. Ring 2: staggered behind, semi-transparent.
+2. **Visual affordance**: Added a subtle 1.5dp primary-color border ring on the pic itself, making it look intentionally tappable.
+3. **Centering fix**: Wrapped in a 52dp `Box(contentAlignment = Center)` instead of a `Column` that was shifting alignment.
+
+Also added:
+- **"Report Bug / Feature Request"** in ProfileScreen → opens GitHub Issues
+- **Collapsible "How does Chess Lobby work?"** info card with 7 sections
+
+**Lesson Learned:**
+Invisible interaction targets are a common UX failure. Animation draws the eye and communicates "this is interactive" without text labels. The double-ripple pattern (like a radar ping) is particularly effective because it suggests "something is here, tap to discover."
