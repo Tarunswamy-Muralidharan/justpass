@@ -1540,3 +1540,60 @@ Friends were only visible as badges on online players. No way to see offline fri
 
 **Lesson Learned:**
 Lichess's game URLs (`lichess.org/{gameId}`) double as analysis boards after the game ends — the same URL that was used for playing automatically shows the analysis interface post-game. No separate API endpoint needed. This is an elegant design choice by Lichess that makes integration trivial.
+
+---
+
+### Challenge 34: Installing Two Copies of the Same App for Chess Testing
+
+**Problem:**
+Chess matchmaking requires two players online simultaneously. Only had one test phone (Moto G54). Needed two separate instances of JustPass, each logged into different student accounts, to test the full challenge → accept → play → result flow.
+
+**Approach:**
+Android identifies apps by `applicationId`. Two apps with different `applicationId` values can coexist on the same device. Changed the `applicationId` in `build.gradle.kts` from `com.example.attendancewidgetlaudea` to `com.example.attendancewidgetlaudea2` and installed a second copy.
+
+**Obstacle 1 — Firebase google-services.json:**
+First build with the new `applicationId` failed immediately:
+```
+No matching client found for package name 'com.example.attendancewidgetlaudea2'
+in google-services.json
+```
+The `google-services.json` file maps package names to Firebase config. It only had an entry for the original package. Fix: Added a second `client` block to `google-services.json` with `package_name: "com.example.attendancewidgetlaudea2"` using the same Firebase project credentials (same `mobilesdk_app_id`, same `api_key`). Both apps share the same Firestore database, which is exactly what we want for testing matchmaking.
+
+**Obstacle 2 — Activity class path:**
+Tried launching JustPass 2 via ADB:
+```
+adb shell am start -n com.example.attendancewidgetlaudea2/com.example.attendancewidgetlaudea2.MainActivity
+```
+Error: `Activity class does not exist`. The `applicationId` changed but the `namespace` in `build.gradle.kts` stayed as `com.example.attendancewidgetlaudea`. In Android, `applicationId` is the package for installation/identity, but `namespace` determines the actual Java/Kotlin package where classes live. The correct launch command was:
+```
+adb shell am start -n com.example.attendancewidgetlaudea2/com.example.attendancewidgetlaudea.MainActivity
+```
+Note: `applicationId` (left of `/`) differs from `namespace` (right of `/`).
+
+**Obstacle 3 — App name collision:**
+Both apps showed "JustPass" in the launcher, making them indistinguishable. Changed `strings.xml` `app_name` to "JustPass 1" and "JustPass 2" respectively for each build.
+
+**Obstacle 4 — Old launcher icon persisting:**
+After the rebrand to JustPass, the old dot-matrix checkmark icon was still showing instead of the new graduation cap + checkmark. Root cause: **Old `.webp` raster icons** in `mipmap-hdpi/xhdpi/xxhdpi/xxxhdpi` folders were taking priority over the `mipmap-anydpi-v26` adaptive icon XML. Android launchers prefer density-specific raster icons over adaptive icons on many devices. Fix: Deleted all 10 `.webp` files (`ic_launcher.webp` + `ic_launcher_round.webp` × 5 densities), leaving only the adaptive icon XML + vector foreground/background. Fresh install after uninstall showed the correct new logo.
+
+**Obstacle 5 — Credentials lost on uninstall:**
+Each uninstall/reinstall cycle wiped `EncryptedSharedPreferences` (login credentials, cached tokens). Had to re-login on both apps after every rebuild cycle. This became the biggest time sink — each login requires WebView-based Keycloak SSO flow (~15 seconds). Over the testing session, re-logged approximately 8 times across both apps.
+
+**Build cycle automation:**
+Developed a workflow for dual-app testing:
+1. Build and install JustPass 1 (original `applicationId`)
+2. Change `applicationId` + `app_name` + `google-services.json`
+3. Build and install JustPass 2
+4. Revert all 3 files back to original
+5. Test on phone
+
+This 5-step cycle was repeated ~6 times during the WebView flickering debugging session. Each cycle took ~40 seconds (build + install × 2).
+
+**ADB testing capabilities discovered:**
+- `adb shell input tap X Y` — works for native Compose UI but NOT for WebView content inside `AndroidView` (touch events don't dispatch through the Compose layer)
+- `adb shell uiautomator dump` — can find native UI element bounds but can't see inside WebViews
+- `adb exec-out screencap -p > file.png` — screenshots work perfectly for visual verification
+- `adb shell am start -n package/activity` — app switching works, but background apps lose Compose state (Chess screen resets to dashboard)
+
+**Lesson Learned:**
+Testing real-time multiplayer features on a single device is inherently painful but possible. The key insight: `applicationId` ≠ `namespace` in Android — changing one doesn't change the other, and both matter for different things (installation identity vs class resolution). Keep a mental note of every file that references the package name: `build.gradle.kts`, `google-services.json`, `strings.xml`, and any ADB commands. Automate the swap if you'll do it more than twice.
