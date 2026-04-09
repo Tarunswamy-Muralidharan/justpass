@@ -27,7 +27,7 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurface)
                 }
             }
-            Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
+            Column(modifier = Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 160.dp).verticalScroll(rememberScrollState())) {
                 GlassListCard(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(20.dp)) {
                         Text("Privacy Policy", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(bottom = 16.dp))

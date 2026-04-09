@@ -29,6 +29,7 @@ import com.example.attendancewidgetlaudea.data.model.CourseMarks
 import com.example.attendancewidgetlaudea.data.model.SubComponent
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
+import com.example.attendancewidgetlaudea.ui.components.RoseFourLoader
 import com.example.attendancewidgetlaudea.ui.viewmodel.CAMarksViewModel
 import io.github.fletchmckee.liquid.LiquidState
 
@@ -55,7 +56,7 @@ fun CAMarksScreen(cardState: LiquidState, viewModel: CAMarksViewModel = viewMode
 
         Box(modifier = Modifier.fillMaxSize()) {
             when {
-                uiState.isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                uiState.isLoading -> RoseFourLoader(modifier = Modifier.size(48.dp).align(Alignment.Center))
                 uiState.errorMessage != null -> {
                     Column(modifier = Modifier.align(Alignment.Center).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(uiState.errorMessage ?: "Unknown error", color = MaterialTheme.colorScheme.error)
@@ -66,7 +67,7 @@ fun CAMarksScreen(cardState: LiquidState, viewModel: CAMarksViewModel = viewMode
                 uiState.courseMarksList.isEmpty() -> Text("No CA marks available", modifier = Modifier.align(Alignment.Center))
                 else -> {
                     LazyColumn(modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 130.dp),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 160.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(uiState.courseMarksList) { CourseCard(it) }
                     }
@@ -141,7 +142,8 @@ private fun ComponentCard(component: Component) {
             Row(modifier = Modifier.fillMaxWidth().then(if (hasSub) Modifier.clickable { expanded = !expanded } else Modifier).padding(12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                    Text(component.name, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Text(component.name, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (hasSub) { Spacer(Modifier.width(4.dp)); Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, Modifier.size(20.dp)) }
                 }
                 component.marks?.let { m ->

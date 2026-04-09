@@ -2,6 +2,7 @@ package com.example.attendancewidgetlaudea
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
@@ -92,7 +93,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Screen {
-    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess
+    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, LiteRt
 }
 
 private val bottomTabs = listOf(
@@ -263,6 +264,26 @@ fun AttendanceApp() {
             })
         }
         else -> {
+            // Handle system back button: navigate back within app instead of exiting
+            BackHandler(enabled = currentScreen != Screen.Dashboard || selectedTabIndex != 0) {
+                when {
+                    // Sub-screens go back to dashboard
+                    currentScreen == Screen.SubjectDetail -> currentScreen = Screen.SubjectAttendance
+                    currentScreen == Screen.PrivacyPolicy -> {
+                        currentScreen = Screen.Profile
+                        selectedTabIndex = 0
+                    }
+                    currentScreen != Screen.Dashboard -> {
+                        currentScreen = Screen.Dashboard
+                        selectedTabIndex = 0
+                    }
+                    // Non-home tabs go back to home tab
+                    selectedTabIndex != 0 -> {
+                        selectedTabIndex = 0
+                        currentScreen = Screen.Dashboard
+                    }
+                }
+            }
             // Dual-state: cardState for card refraction, barState for bottom bar blur
             LiquidGlassScaffold(
                 bottomBar = { barState ->
@@ -287,7 +308,7 @@ fun AttendanceApp() {
                 }
             ) { cardState ->
                 Crossfade(
-                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Profile)) currentScreen.name
+                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Profile, Screen.LiteRt)) currentScreen.name
                                   else "tab_$selectedTabIndex",
                     animationSpec = tween(200),
                     label = "screenFade"
@@ -388,6 +409,26 @@ fun AttendanceApp() {
                                 selectedTabIndex = 0
                             }
                         )
+                        Screen.LiteRt.name -> com.example.attendancewidgetlaudea.ui.screens.LiteRtScreen(
+                            onBack = {
+                                currentScreen = Screen.Dashboard
+                                selectedTabIndex = 0
+                            },
+                            onNavigate = { action ->
+                                currentScreen = when (action) {
+                                    com.example.attendancewidgetlaudea.data.model.NavAction.SUBJECT_ATTENDANCE -> Screen.SubjectAttendance
+                                    com.example.attendancewidgetlaudea.data.model.NavAction.ABSENT_DAYS -> Screen.AbsentDays
+                                    com.example.attendancewidgetlaudea.data.model.NavAction.CA_MARKS -> Screen.CAMarks
+                                    com.example.attendancewidgetlaudea.data.model.NavAction.EXEMPTIONS -> Screen.Exemptions
+                                    com.example.attendancewidgetlaudea.data.model.NavAction.RESULTS -> Screen.Result
+                                    com.example.attendancewidgetlaudea.data.model.NavAction.GPA_CALCULATOR -> Screen.CgpaCalculator
+                                    com.example.attendancewidgetlaudea.data.model.NavAction.TIMETABLE -> { selectedTabIndex = 4; Screen.Dashboard }
+                                    com.example.attendancewidgetlaudea.data.model.NavAction.CALENDAR -> Screen.AcademicCalendar
+                                    com.example.attendancewidgetlaudea.data.model.NavAction.CIRCULARS -> Screen.Circulars
+                                    com.example.attendancewidgetlaudea.data.model.NavAction.SYLLABUS -> Screen.Syllabus
+                                }
+                            }
+                        )
                         Screen.ExamSeat.name -> ExamSeatScreen(
                             cardState = cardState,
                             onBack = {
@@ -439,6 +480,9 @@ fun AttendanceApp() {
                             onChessClick = {
                                 Analytics.logFeatureUsed("chess")
                                 currentScreen = Screen.Chess
+                            },
+                            onLiteRtClick = {
+                                currentScreen = Screen.LiteRt
                             },
                             onProfileClick = {
                                 Analytics.logFeatureUsed("profile")

@@ -17,12 +17,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.attendancewidgetlaudea.data.model.SubjectAttendance
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
+import com.example.attendancewidgetlaudea.ui.components.RoseFourLoader
 
 import com.example.attendancewidgetlaudea.ui.viewmodel.SubjectAttendanceViewModel
 import io.github.fletchmckee.liquid.LiquidState
@@ -66,7 +68,7 @@ fun SubjectAttendanceScreen(
         Box(modifier = Modifier.fillMaxSize()) {
             when {
                 uiState.isLoading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    RoseFourLoader(modifier = Modifier.size(48.dp).align(Alignment.Center))
                 }
                 uiState.errorMessage != null -> {
                     Column(
@@ -91,7 +93,7 @@ fun SubjectAttendanceScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
                             start = 16.dp, end = 16.dp,
-                            top = 8.dp, bottom = 130.dp
+                            top = 8.dp, bottom = 160.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
@@ -134,7 +136,9 @@ private fun SubjectCard(subject: SubjectAttendance, onClick: () -> Unit = {}) {
                     text = subject.courseCode,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "${String.format("%.1f", subject.attendancePercentage)}%",

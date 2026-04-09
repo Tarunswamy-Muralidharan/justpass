@@ -28,9 +28,11 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,12 +48,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.attendancewidgetlaudea.data.model.BoardTheme
 import com.example.attendancewidgetlaudea.data.model.ChessProfile
 import com.example.attendancewidgetlaudea.data.model.OnlinePlayer
 import com.example.attendancewidgetlaudea.data.model.TimeControl
 import com.example.attendancewidgetlaudea.ui.viewmodel.MatchHistoryEntry
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
+import com.example.attendancewidgetlaudea.ui.components.RoseFourLoader
 import com.example.attendancewidgetlaudea.ui.viewmodel.ChessViewModel
 import io.github.fletchmckee.liquid.LiquidState
 
@@ -69,25 +73,88 @@ fun ChessScreen(
     var gameResult by remember { mutableStateOf<String?>(null) }
     var lastChallengedPlayer by remember { mutableStateOf<OnlinePlayer?>(null) }
     var challengeTarget by remember { mutableStateOf<OnlinePlayer?>(null) }
+    // Track the active challenge for name-based results
+    var activeChallenge by remember { mutableStateOf<com.example.attendancewidgetlaudea.data.model.ChessChallenge?>(null) }
 
-    // Game result dialog
+    // Game result dialog — show player names instead of "White wins"/"Black wins"
     if (gameResult != null) {
+        val myName = uiState.myProfile?.visibleName ?: "You"
+        val opponentName = lastChallengedPlayer?.displayName
+            ?: activeChallenge?.let { ch ->
+                if (ch.fromId == (uiState.myProfile?.id ?: "")) ch.toName else ch.fromName
+            } ?: "Opponent"
+        // Determine my color from the challenge
+        val myColor = activeChallenge?.let { ch ->
+            val fromColor = ch.fromColor.ifBlank { "white" }
+            if (ch.fromId == (uiState.myProfile?.id ?: "")) fromColor
+            else if (fromColor == "white") "black" else "white"
+        }
+        // Parse "winner|text" format from JS (e.g. "white|Checkmate" or "draw|Draw")
+        val parts = gameResult!!.split("|", limit = 2)
+        val winnerColor = parts.getOrNull(0)?.lowercase()?.trim() ?: "unknown"
+        val rawResult = (parts.getOrNull(1) ?: gameResult!!).lowercase()
+        // Extract lichess game ID from the active challenge for replay/analysis
+        val resultGameId = activeChallenge?.lichessGameId ?: ""
+
+        val namedResult = when {
+            rawResult.contains("draw") || rawResult.contains("stalemate") || winnerColor == "draw" -> "Draw!"
+            rawResult.contains("abort") -> "Game Aborted"
+            // Use extracted winner color for reliable mapping
+            winnerColor == "white" || winnerColor == "black" -> {
+                val winnerIsMe = winnerColor == myColor
+                if (winnerIsMe) "$myName wins!" else "$opponentName wins!"
+            }
+            // Fallback: parse from raw text
+            rawResult.contains("win") -> "$myName wins!"
+            rawResult.contains("lose") || rawResult.contains("loss") -> "$opponentName wins!"
+            else -> parts.getOrNull(1) ?: gameResult!!
+        }
         val resultColor = when {
-            gameResult!!.contains("win", ignoreCase = true) -> Color(0xFF00E676)
-            gameResult!!.contains("lose", ignoreCase = true) || gameResult!!.contains("loss", ignoreCase = true) -> Color(0xFFFF5252)
-            gameResult!!.contains("draw", ignoreCase = true) -> Color(0xFFFFC107)
+            namedResult.contains(myName) && namedResult.contains("win", ignoreCase = true) -> Color(0xFF00E676)
+            namedResult.contains(opponentName) && namedResult.contains("win", ignoreCase = true) -> Color(0xFFFF5252)
+            namedResult.contains("Draw") -> Color(0xFFFFC107)
+            namedResult.contains("Abort") -> MaterialTheme.colorScheme.onSurfaceVariant
             else -> MaterialTheme.colorScheme.primary
         }
         AlertDialog(
-            onDismissRequest = { gameResult = null },
+            onDismissRequest = { gameResult = null; activeChallenge = null },
             containerColor = Color(0xFF1E2A3A),
             title = {
                 Text("Game Over", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 20.sp)
             },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Text(gameResult!!, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = resultColor,
-                        textAlign = TextAlign.Center)
+                    Text(namedResult, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = resultColor,
+                        textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    // Replay & Analysis buttons
+                    if (resultGameId.isNotBlank()) {
+                        Spacer(Modifier.height(16.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    gameResult = null; activeChallenge = null
+                                    activeGameUrl = "https://lichess.org/$resultGameId"
+                                },
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.History, null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Replay")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW,
+                                        Uri.parse("https://lichess.org/$resultGameId#analysis")))
+                                    gameResult = null; activeChallenge = null
+                                },
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.Info, null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Analysis")
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -95,6 +162,7 @@ fun ChessScreen(
                     Button(
                         onClick = {
                             gameResult = null
+                            activeChallenge = null
                             // Re-challenge same opponent
                             challengeTarget = lastChallengedPlayer
                         },
@@ -105,7 +173,7 @@ fun ChessScreen(
             },
             dismissButton = {
                 OutlinedButton(
-                    onClick = { gameResult = null },
+                    onClick = { gameResult = null; activeChallenge = null },
                     shape = RoundedCornerShape(10.dp)
                 ) { Text("Back to Lobby") }
             }
@@ -120,6 +188,7 @@ fun ChessScreen(
     // Auto-open in-app game when challenge accepted
     LaunchedEffect(uiState.acceptedChallenge) {
         val challenge = uiState.acceptedChallenge ?: return@LaunchedEffect
+        activeChallenge = challenge // save for name-based results
         val url = challenge.gameUrl.ifBlank { challenge.opponentUrl }
         if (url.isNotBlank()) {
             activeGameUrl = url
@@ -159,6 +228,15 @@ fun ChessScreen(
         )
     }
 
+    // Board theme picker dialog
+    if (uiState.showThemePicker) {
+        BoardThemeDialog(
+            currentTheme = uiState.boardTheme,
+            onSelect = { viewModel.setBoardTheme(it) },
+            onDismiss = { viewModel.toggleThemePicker() }
+        )
+    }
+
     // Friends list dialog
     if (uiState.showFriends) {
         FriendsDialog(
@@ -174,6 +252,7 @@ fun ChessScreen(
     if (activeGameUrl != null) {
         LichessGameScreen(
             url = activeGameUrl!!,
+            boardTheme = uiState.boardTheme,
             onClose = { result ->
                 activeGameUrl = null
                 viewModel.checkPendingResults()
@@ -189,6 +268,7 @@ fun ChessScreen(
         return
     }
 
+    var showInfo by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp)) {
         // Header
         GlassListCard(
@@ -196,42 +276,23 @@ fun ChessScreen(
             shape = RoundedCornerShape(16.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", modifier = Modifier.size(20.dp))
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Chess Lobby", fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface)
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (uiState.myProfile != null) {
                         val p = uiState.myProfile!!
                         Text("${p.visibleName} · ${p.rating} SR",
-                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                // Edit name
-                IconButton(onClick = { viewModel.openNameSetup() }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Edit, "Edit name", modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                // Friends
-                IconButton(onClick = { viewModel.toggleFriends() }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.PersonAdd, "Friends", modifier = Modifier.size(16.dp),
-                        tint = Color(0xFF7C4DFF))
-                }
-                // History
-                IconButton(onClick = { viewModel.toggleHistory() }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.History, "History", modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                // Leaderboard
-                IconButton(onClick = { viewModel.toggleLeaderboard() }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.EmojiEvents, "Leaderboard", modifier = Modifier.size(18.dp),
-                        tint = Color(0xFFFFC107))
-                }
-                Spacer(Modifier.width(4.dp))
                 // Online count
                 if (uiState.isOnline) {
                     Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF00E676)))
@@ -242,50 +303,160 @@ fun ChessScreen(
             }
         }
 
-        // ── How it works — collapsible info card ──
-        var showInfo by remember { mutableStateOf(false) }
-        GlassListCard(
-            modifier = Modifier.fillMaxWidth().clickable { showInfo = !showInfo },
-            shape = GlassCardShapeSmall,
-            tintColor = Color(0xFF64B5F6).copy(alpha = 0.06f)
+        // ── Action bar — Friends, Theme, History, Leaderboard, Edit Name ──
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, "Info",
-                        tint = Color(0xFF64B5F6), modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("How does Chess Lobby work?", fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f))
-                    Icon(
-                        if (showInfo) Icons.Default.KeyboardArrowUp
-                        else Icons.Default.KeyboardArrowDown,
-                        "Toggle", tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
+            // Friends
+            val onlineFriendCount = uiState.onlinePlayers.count { it.isFriend }
+            GlassListCard(
+                modifier = Modifier.weight(1f).clickable { viewModel.toggleFriends() },
+                shape = RoundedCornerShape(12.dp),
+                tintColor = Color(0xFF7C4DFF).copy(alpha = 0.10f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.People, null, Modifier.size(18.dp), tint = Color(0xFF7C4DFF))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Friends", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color.White, maxLines = 1)
+                    if (onlineFriendCount > 0) {
+                        Spacer(Modifier.width(4.dp))
+                        Box(
+                            modifier = Modifier.size(18.dp).clip(CircleShape)
+                                .background(Color(0xFF00E676)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("$onlineFriendCount", fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold, color = Color.Black)
+                        }
+                    }
                 }
-                if (showInfo) {
-                    Spacer(Modifier.height(10.dp))
+            }
+            // Board Theme
+            GlassListCard(
+                modifier = Modifier.weight(1f).clickable { viewModel.toggleThemePicker() },
+                shape = RoundedCornerShape(12.dp),
+                tintColor = Color(uiState.boardTheme.preview).copy(alpha = 0.12f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.Palette, null, Modifier.size(18.dp),
+                        tint = Color(uiState.boardTheme.preview))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Theme", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color.White, maxLines = 1)
+                }
+            }
+            // History
+            GlassListCard(
+                modifier = Modifier.weight(1f).clickable { viewModel.toggleHistory() },
+                shape = RoundedCornerShape(12.dp),
+                tintColor = Color(0xFF64B5F6).copy(alpha = 0.08f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.History, null, Modifier.size(18.dp), tint = Color(0xFF64B5F6))
+                    Spacer(Modifier.width(6.dp))
+                    Text("History", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color.White, maxLines = 1)
+                }
+            }
+        }
+        // Second row: Leaderboard + Edit Name + Info
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            // Leaderboard
+            GlassListCard(
+                modifier = Modifier.weight(1f).clickable { viewModel.toggleLeaderboard() },
+                shape = RoundedCornerShape(12.dp),
+                tintColor = Color(0xFFFFC107).copy(alpha = 0.10f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.EmojiEvents, null, Modifier.size(18.dp), tint = Color(0xFFFFC107))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Leaderboard", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color.White, maxLines = 1)
+                }
+            }
+            // Edit Name
+            GlassListCard(
+                modifier = Modifier.weight(1f).clickable { viewModel.openNameSetup() },
+                shape = RoundedCornerShape(12.dp),
+                tintColor = Color(0xFF80CBC4).copy(alpha = 0.08f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.Edit, null, Modifier.size(18.dp), tint = Color(0xFF80CBC4))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Name", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color.White, maxLines = 1)
+                }
+            }
+            // How it works
+            GlassListCard(
+                modifier = Modifier.weight(1f).clickable { showInfo = !showInfo },
+                shape = RoundedCornerShape(12.dp),
+                tintColor = Color(0xFF64B5F6).copy(alpha = 0.06f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.Info, null, Modifier.size(18.dp), tint = Color(0xFF64B5F6))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Info", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color.White, maxLines = 1)
+                }
+            }
+        }
+
+        // ── How it works — expandable info ──
+        AnimatedVisibility(visible = showInfo) {
+            GlassListCard(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                shape = RoundedCornerShape(12.dp),
+                tintColor = Color(0xFF64B5F6).copy(alpha = 0.06f)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
                     val infoItems = listOf(
-                        "What is this?" to "A live chess matchmaking lobby for PSG iTech students. See who's online, challenge them, and play on Lichess!",
-                        "Getting started" to "1. Set your display name (tap the pencil icon)\n2. Link your Lichess username in your profile\n3. You'll automatically appear online when you open this screen",
-                        "Challenging someone" to "Tap the sword icon next to any online player. They'll get a popup to accept or decline. Once accepted, Lichess opens automatically for both of you.",
-                        "Ratings & Leaderboard" to "Every game updates your SR (Skill Rating). Win = +25, Loss = -20, Draw = +5. Tap the trophy icon to see the leaderboard!",
-                        "Friends" to "Tap the person+ icon to send a friend request. Friends show a star badge and appear at the top of the list.",
-                        "Match History" to "Tap the clock icon to see your recent games, results, and opponents.",
-                        "Need Lichess?" to "Lichess is 100% free — no account needed to play casual games. Download it from Play Store or visit lichess.org"
+                        "What is this?" to "A live chess lobby for PSG iTech students. See who's online, challenge them, and play on Lichess!",
+                        "Getting started" to "1. Set your display name\n2. Link your Lichess username\n3. You'll appear online when you open this screen",
+                        "Challenging" to "Tap the sword icon next to any player. They get 15s to accept. Once accepted, Lichess opens for both.",
+                        "Ratings" to "Win = +25 SR, Loss = -20, Draw = +5. Check the leaderboard!",
+                        "Friends" to "Send friend requests — friends show a star badge and appear at the top.",
+                        "Need Lichess?" to "100% free — no account needed for casual games. Get it from Play Store or lichess.org"
                     )
                     infoItems.forEach { (title, desc) ->
                         Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary)
+                            color = Color(0xFF64B5F6))
                         Text(desc, fontSize = 11.sp, lineHeight = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(8.dp))
+                            color = Color.White.copy(alpha = 0.7f))
+                        Spacer(Modifier.height(6.dp))
                     }
                 }
             }
         }
-        Spacer(Modifier.height(4.dp))
 
         // My stats bar
         if (uiState.myProfile != null && uiState.myProfile!!.gamesPlayed > 0) {
@@ -327,20 +498,38 @@ fun ChessScreen(
             }
         }
 
-        // Incoming challenge
+        // Incoming challenge with countdown
         if (uiState.pendingChallenge != null) {
             Spacer(Modifier.height(4.dp))
+            val countdown = uiState.challengeCountdown ?: 15
+            val urgentColor = if (countdown <= 5) Color(0xFFFF5252) else Color(0xFFFFA000)
             GlassListCard(modifier = Modifier.fillMaxWidth(), shape = GlassCardShapeSmall,
-                tintColor = Color(0xFFFFA000).copy(alpha = 0.1f)) {
+                tintColor = urgentColor.copy(alpha = 0.1f)) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Challenge!", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFA000))
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center) {
+                        Text("Challenge!", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = urgentColor)
+                        Spacer(Modifier.width(12.dp))
+                        // Countdown badge
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(urgentColor.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("$countdown", fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                                color = urgentColor)
+                        }
+                    }
                     Spacer(Modifier.height(4.dp))
                     val tcLabel = try {
                         val tc = TimeControl.valueOf(uiState.pendingChallenge!!.timeControl.uppercase())
                         "${tc.icon} ${tc.description} ${tc.label}"
                     } catch (_: Exception) { "Rapid 10 min" }
-                    Text("${uiState.pendingChallenge!!.fromName} wants to play", fontSize = 13.sp)
+                    Text("${uiState.pendingChallenge!!.fromName} wants to play", fontSize = 13.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(tcLabel, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -354,16 +543,29 @@ fun ChessScreen(
             }
         }
 
-        // Waiting for response
+        // Waiting for response with sender countdown
         if (uiState.sentChallengeId != null) {
             Spacer(Modifier.height(4.dp))
+            val senderCountdown = uiState.senderCountdown ?: 15
             GlassListCard(modifier = Modifier.fillMaxWidth(), shape = GlassCardShapeSmall,
                 tintColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    // Circular countdown indicator
+                    Box(contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(
+                            progress = { senderCountdown / 15f },
+                            modifier = Modifier.size(40.dp),
+                            strokeWidth = 3.dp,
+                            color = if (senderCountdown <= 5) Color(0xFFFF5252) else MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f)
+                        )
+                        Text("$senderCountdown", fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                            color = if (senderCountdown <= 5) Color(0xFFFF5252) else MaterialTheme.colorScheme.primary)
+                    }
                     Spacer(Modifier.height(8.dp))
-                    Text("Waiting for ${uiState.sentChallengeName}...", fontSize = 13.sp)
+                    Text("Waiting for ${uiState.sentChallengeName}...", fontSize = 13.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(8.dp))
                     TextButton(onClick = { viewModel.cancelSentChallenge() }) { Text("Cancel", fontSize = 12.sp) }
                 }
@@ -400,7 +602,7 @@ fun ChessScreen(
 
         // Player list
         when {
-            uiState.isLoading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+            uiState.isLoading -> Box(Modifier.fillMaxSize(), Alignment.Center) { RoseFourLoader(modifier = Modifier.size(48.dp)) }
             uiState.onlinePlayers.isEmpty() -> Box(Modifier.fillMaxSize().weight(1f), Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("No other players online", fontSize = 15.sp,
@@ -412,7 +614,7 @@ fun ChessScreen(
             }
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 100.dp),
+                contentPadding = PaddingValues(bottom = 160.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 items(uiState.onlinePlayers, key = { it.id }) { player ->
@@ -449,11 +651,12 @@ private fun PlayerCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(player.displayName, fontSize = 14.sp, fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false))
                     if (player.isFriend) {
                         Spacer(Modifier.width(6.dp))
                         Text("friend", fontSize = 9.sp, color = Color(0xFF7C4DFF),
-                            fontWeight = FontWeight.Bold)
+                            fontWeight = FontWeight.Bold, maxLines = 1)
                     }
                 }
                 val ago = formatTimeAgo(player.timestamp)
@@ -754,6 +957,7 @@ private fun TimeControlDialog(
 @Composable
 private fun LichessGameScreen(
     url: String,
+    boardTheme: BoardTheme = BoardTheme.CHESS_COM,
     onClose: (result: String?) -> Unit,
     onOpenExternal: () -> Unit
 ) {
@@ -817,11 +1021,7 @@ private fun LichessGameScreen(
                 Icon(Icons.Default.Close, "Close game", tint = Color.White)
             }
             if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = Color(0xFF8BC34A),
-                    strokeWidth = 2.dp
-                )
+                RoseFourLoader(modifier = Modifier.size(24.dp))
             }
             IconButton(
                 onClick = onOpenExternal,
@@ -855,8 +1055,11 @@ private fun LichessGameScreen(
 
                     var pageReady = false
                     val hideJs = "javascript:(function(){if(document.getElementById('jp'))return;var s=document.createElement('style');s.id='jp';s.textContent='header,.header,#top,.site-title,.site-buttons,.mchat,footer,.fbt,.topnav,.clinput,.dasher,.hamburger,.signin,.signup,nav,.chat__members,.lobby__table,.lobby__app,.round__top__table,.game__meta__infos{display:none!important}#top,.top,div[role=banner],div[class*=site-buttons],div[class*=topnav]{display:none!important}body,.round__app,.round{padding-top:0!important;margin-top:0!important}';(document.head||document.documentElement).appendChild(s);})()"
+                    val boardCss = boardTheme.css
+                    val themeJs = "javascript:(function(){if(document.getElementById('jp-theme'))return;var s=document.createElement('style');s.id='jp-theme';s.textContent='$boardCss';(document.head||document.documentElement).appendChild(s);})()"
 
                     // Poll for game-over status in Lichess DOM
+                    // Extracts winner color from Lichess board state for accurate name mapping
                     val pollGameEnd = """javascript:(function(){
                         if(window._jpPoll)return;window._jpPoll=1;
                         setInterval(function(){
@@ -864,7 +1067,26 @@ private fun LichessGameScreen(
                             if(st){
                                 var txt=st.textContent.trim();
                                 if(txt&&(txt.indexOf('win')>=0||txt.indexOf('lose')>=0||txt.indexOf('draw')>=0||txt.indexOf('time')>=0||txt.indexOf('resign')>=0||txt.indexOf('mate')>=0||txt.indexOf('abort')>=0||txt.indexOf('stalemate')>=0)){
-                                    if(!window._jpDone){window._jpDone=1;JustPass.onGameEnd(txt);}
+                                    if(!window._jpDone){
+                                        window._jpDone=1;
+                                        var winner='unknown';
+                                        var wr=document.querySelector('.result-wrap');
+                                        if(wr){
+                                            var cl=wr.className||'';
+                                            if(cl.indexOf('white')>=0)winner='white';
+                                            else if(cl.indexOf('black')>=0)winner='black';
+                                        }
+                                        if(winner==='unknown'){
+                                            var rm=document.querySelector('.rmoves');
+                                            if(rm){
+                                                var rmt=rm.textContent||'';
+                                                if(rmt.indexOf('1-0')>=0)winner='white';
+                                                else if(rmt.indexOf('0-1')>=0)winner='black';
+                                                else if(rmt.indexOf('½')>=0)winner='draw';
+                                            }
+                                        }
+                                        JustPass.onGameEnd(winner+'|'+txt);
+                                    }
                                 }
                             }
                         },2000);
@@ -884,6 +1106,7 @@ private fun LichessGameScreen(
                         override fun onPageFinished(view: WebView?, pageUrl: String?) {
                             super.onPageFinished(view, pageUrl)
                             view?.evaluateJavascript(hideJs, null)
+                            view?.evaluateJavascript(themeJs, null)
                             view?.evaluateJavascript(pollGameEnd, null)
                             if (!pageReady) {
                                 pageReady = true
@@ -915,30 +1138,105 @@ private fun LichessGameScreen(
 }
 
 @Composable
+private fun BoardThemeDialog(
+    currentTheme: BoardTheme,
+    onSelect: (BoardTheme) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1E2A3A),
+        title = {
+            Text("Board Theme", fontWeight = FontWeight.Bold, color = Color.White)
+        },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(BoardTheme.entries.toList(), key = { it.name }) { theme ->
+                    val isSelected = theme == currentTheme
+                    GlassListCard(
+                        modifier = Modifier.fillMaxWidth().clickable { onSelect(theme) },
+                        shape = RoundedCornerShape(12.dp),
+                        tintColor = if (isSelected) Color(0xFF4285F4).copy(alpha = 0.12f)
+                            else Color.Transparent
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Preview: two squares side by side
+                            Row(modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                            ) {
+                                Box(Modifier.size(24.dp).background(
+                                    Color(android.graphics.Color.parseColor(theme.lightSquare))))
+                                Box(Modifier.size(24.dp).background(
+                                    Color(android.graphics.Color.parseColor(theme.darkSquare))))
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                theme.label,
+                                fontSize = 14.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Color(0xFF4285F4) else Color.White,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isSelected) {
+                                Text("✓", fontSize = 16.sp, color = Color(0xFF4285F4),
+                                    fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done", color = Color(0xFF4285F4))
+            }
+        }
+    )
+}
+
+@Composable
 private fun FriendsDialog(
     friends: List<ChessProfile>,
     onlinePlayers: List<OnlinePlayer>,
     onDismiss: () -> Unit
 ) {
     val onlineIds = onlinePlayers.map { it.id }.toSet()
+    val onlineCount = friends.count { it.id in onlineIds }
+    // Sort: online friends first, then by rating
+    val sortedFriends = friends.sortedWith(compareByDescending<ChessProfile> { it.id in onlineIds }.thenByDescending { it.rating })
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF1E2A3A),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.PersonAdd, "Friends", tint = Color(0xFF7C4DFF))
+                Icon(Icons.Default.People, "Friends", tint = Color(0xFF7C4DFF))
                 Spacer(Modifier.width(8.dp))
-                Text("Friends (${friends.size})", fontWeight = FontWeight.Bold, color = Color.White)
+                Text("Friends", fontWeight = FontWeight.Bold, color = Color.White)
+                if (onlineCount > 0) {
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF00E676).copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text("$onlineCount online", fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                            color = Color(0xFF00E676))
+                    }
+                }
             }
         },
         text = {
             if (friends.isEmpty()) {
-                Text("No friends yet. Tap the person+ icon on any player to send a friend request!",
+                Text("No friends yet. Tap the + icon on any player in the lobby to send a friend request!",
                     fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
-                    items(friends) { friend ->
+                    items(sortedFriends) { friend ->
                         val isOnline = friend.id in onlineIds
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),

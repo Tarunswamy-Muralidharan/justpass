@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -29,6 +30,7 @@ import com.example.attendancewidgetlaudea.ui.components.GlassCardShape
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.components.GlassListSurface
+import com.example.attendancewidgetlaudea.ui.components.RoseFourLoader
 import com.example.attendancewidgetlaudea.ui.viewmodel.ResultViewModel
 import io.github.fletchmckee.liquid.LiquidState
 
@@ -113,7 +115,7 @@ fun ResultScreen(
         Box(modifier = Modifier.fillMaxSize()) {
             when {
                 uiState.isLoading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    RoseFourLoader(modifier = Modifier.size(48.dp).align(Alignment.Center))
                 }
                 uiState.errorMessage != null -> {
                     Column(
@@ -177,7 +179,7 @@ fun ResultScreen(
 
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 130.dp),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 160.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         // GPA summary card
@@ -246,7 +248,8 @@ private fun GradeCard(entry: GradeEntry, isDark: Boolean) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(entry.courseCode ?: "--", fontWeight = FontWeight.Bold, fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurface)
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(entry.courseTitle ?: "", fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                     Spacer(modifier = Modifier.height(4.dp))

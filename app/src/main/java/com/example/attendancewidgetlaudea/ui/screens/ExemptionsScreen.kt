@@ -20,6 +20,7 @@ import com.example.attendancewidgetlaudea.data.model.Exemption
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.components.GlassListSurface
+import com.example.attendancewidgetlaudea.ui.components.RoseFourLoader
 
 import com.example.attendancewidgetlaudea.ui.viewmodel.ExemptionsViewModel
 import io.github.fletchmckee.liquid.LiquidState
@@ -58,7 +59,7 @@ fun ExemptionsScreen(
         Box(modifier = Modifier.fillMaxSize()) {
             when {
                 uiState.isLoading && uiState.exemptions.isEmpty() -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    RoseFourLoader(modifier = Modifier.size(48.dp).align(Alignment.Center))
                 }
                 uiState.errorMessage != null && uiState.exemptions.isEmpty() -> {
                     Column(
@@ -83,7 +84,7 @@ fun ExemptionsScreen(
                     }
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 130.dp),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 160.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(sorted) { exemption -> ExemptionCard(exemption) }

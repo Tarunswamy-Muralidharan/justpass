@@ -33,6 +33,7 @@ import com.example.attendancewidgetlaudea.data.model.CalendarEvent
 import com.example.attendancewidgetlaudea.data.model.CalendarEventType
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShape
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
+import com.example.attendancewidgetlaudea.ui.components.RoseFourLoader
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.components.GlassListSurface
 import com.example.attendancewidgetlaudea.ui.viewmodel.CalendarViewModel
@@ -111,7 +112,7 @@ fun AcademicCalendarScreen(
 
         if (uiState.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                RoseFourLoader(modifier = Modifier.size(48.dp))
             }
         } else if (uiState.errorMessage != null) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -126,7 +127,7 @@ fun AcademicCalendarScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 160.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Month navigation
@@ -208,7 +209,7 @@ fun AcademicCalendarScreen(
                     }
                 }
 
-                item { Spacer(modifier = Modifier.height(100.dp)) }
+                item { Spacer(modifier = Modifier.height(160.dp)) }
             }
         }
     }

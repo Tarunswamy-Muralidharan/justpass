@@ -86,7 +86,60 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             rollNumber = repository.getRollNumber() ?: "",
             attendanceData = repository.getCachedAttendance()
         )
+        // Load timetable session counts from cache immediately (quick, no network)
+        loadCachedSessionCounts()
         refreshAttendance()
+    }
+
+    /** Quick load from cached timetable + cached attendance — no network needed.
+     *  Uses cached subject attendance to identify registered courses and exclude honours.
+     *  Gets overwritten by loadTimetableSessionCounts() after refresh succeeds. */
+    private fun loadCachedSessionCounts() {
+        try {
+            val cachedJson = securePrefs.cachedTimetableJson ?: return
+            val response = gson.fromJson(cachedJson, TimetableResponse::class.java)
+            val days = response.toDayTimetables()
+
+            // Build registered course names from cached attendance data
+            val registeredNames = mutableSetOf<String>()
+            securePrefs.cachedSubjectAttendanceJson?.split(";")?.forEach { entry ->
+                val name = entry.substringBefore(":").trim().uppercase()
+                if (name.isNotBlank()) registeredNames.add(name)
+            }
+            securePrefs.cachedCAMarksJson?.split(";")?.forEach { entry ->
+                val name = entry.substringBefore(":").trim().uppercase()
+                if (name.isNotBlank()) registeredNames.add(name)
+            }
+
+            val excludedCodes = setOf("LIB", "MM")
+            // Map timetable course titles to codes, then find unregistered (honours)
+            val allSessions = days.flatMap { it.sessions }.filter { it.courseCode.isNotBlank() }
+            val registeredCodes = mutableSetOf<String>()
+            for (session in allSessions) {
+                val code = session.courseCode.trim().uppercase()
+                val title = session.courseTitle.trim().uppercase()
+                // Match if any cached subject name contains the title or vice versa
+                if (registeredNames.any { it.contains(title) || title.contains(it) }) {
+                    registeredCodes.add(code)
+                }
+            }
+
+            val allTimetableCodes = allSessions.map { it.courseCode.trim().uppercase() }.toSet()
+            // Honours = courses in timetable but NOT matched to attendance/marks
+            val honoursCodes = if (registeredNames.isNotEmpty()) {
+                (allTimetableCodes - registeredCodes) - excludedCodes
+            } else emptySet()
+
+            val counts = (0..5).map { dayIndex ->
+                val day = days.getOrNull(dayIndex)
+                day?.sessions?.count {
+                    it.courseCode.isNotBlank() && it.courseCode.trim().uppercase() !in honoursCodes
+                } ?: 6
+            }
+            if (counts.any { it != 6 }) {
+                _uiState.value = _uiState.value.copy(sessionsPerDay = counts)
+            }
+        } catch (_: Exception) {}
     }
 
     fun refreshAttendance() {
@@ -104,6 +157,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     if (_uiState.value.sessionsPerDay == listOf(6, 6, 6, 6, 6, 6)) {
                         loadTimetableSessionCounts()
                     }
+                    // Reload holidays if not yet loaded (retry on each refresh)
+                    if (_uiState.value.holidays.isEmpty()) {
+                        loadHolidayDates()
+                    }
+                    // Prefetch all tile data for AI advisor (background, silent)
+                    launch { repository.prefetchForAI() }
                 }
                 is Result.Error -> {
                     _uiState.value = _uiState.value.copy(
@@ -204,8 +263,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         } catch (_: Exception) { null }
                     }.toMap()
                 }
+                android.util.Log.d("DashboardVM", "Loaded ${holidays.size} holidays: ${holidays.keys}")
                 _uiState.value = _uiState.value.copy(holidays = holidays)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.e("DashboardVM", "Failed to load holidays", e)
+            }
         }
     }
 
@@ -213,21 +275,19 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
      * Calculate total sessions missed for leave starting from [startDate] for [numDays] working days.
      * Skips Sundays, holidays from calendar, and uses timetable session counts per weekday.
      */
-    fun calculateLeaveHours(startDate: LocalDate, numDays: Int): Int {
+    fun calculateLeaveHours(startDate: LocalDate, numDays: Int, holidays: Map<LocalDate, String> = _uiState.value.holidays): Int {
         if (numDays <= 0) return 0
         val state = _uiState.value
         var date = startDate
         var workingDaysCounted = 0
         var totalSessions = 0
 
-        // Count working days until we reach numDays
         while (workingDaysCounted < numDays) {
             val dow = date.dayOfWeek
-            val isHoliday = date in state.holidays
+            val isHoliday = date in holidays
             val isSunday = dow == DayOfWeek.SUNDAY
 
             if (!isSunday && !isHoliday) {
-                // Map DayOfWeek to timetable index (Mon=0..Sat=5)
                 val dayIndex = when (dow) {
                     DayOfWeek.MONDAY -> 0; DayOfWeek.TUESDAY -> 1; DayOfWeek.WEDNESDAY -> 2
                     DayOfWeek.THURSDAY -> 3; DayOfWeek.FRIDAY -> 4; DayOfWeek.SATURDAY -> 5
@@ -241,20 +301,47 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         return totalSessions
     }
 
-    /**
-     * Return holidays that fall within the leave date range.
-     * These are holidays that get skipped (not counted as working days).
-     */
-    fun getHolidaysInLeaveRange(startDate: LocalDate, numDays: Int): List<Pair<LocalDate, String>> {
-        if (numDays <= 0) return emptyList()
+    /** Get hours for a single date based on timetable */
+    fun getHoursForDate(date: LocalDate): Int {
         val state = _uiState.value
+        val dow = date.dayOfWeek
+        if (dow == DayOfWeek.SUNDAY) return 0
+        if (date in state.holidays) return 0
+        val dayIndex = when (dow) {
+            DayOfWeek.MONDAY -> 0; DayOfWeek.TUESDAY -> 1; DayOfWeek.WEDNESDAY -> 2
+            DayOfWeek.THURSDAY -> 3; DayOfWeek.FRIDAY -> 4; DayOfWeek.SATURDAY -> 5
+            else -> 0
+        }
+        return state.sessionsPerDay.getOrElse(dayIndex) { 6 }
+    }
+
+    /** Calculate total hours for a set of individually selected dates */
+    fun calculateHoursForDates(dates: Set<LocalDate>): Int {
+        val state = _uiState.value
+        var totalSessions = 0
+        for (date in dates) {
+            val dow = date.dayOfWeek
+            if (dow == DayOfWeek.SUNDAY) continue
+            if (date in state.holidays) continue
+            val dayIndex = when (dow) {
+                DayOfWeek.MONDAY -> 0; DayOfWeek.TUESDAY -> 1; DayOfWeek.WEDNESDAY -> 2
+                DayOfWeek.THURSDAY -> 3; DayOfWeek.FRIDAY -> 4; DayOfWeek.SATURDAY -> 5
+                else -> 0
+            }
+            totalSessions += state.sessionsPerDay.getOrElse(dayIndex) { 6 }
+        }
+        return totalSessions
+    }
+
+    fun getHolidaysInLeaveRange(startDate: LocalDate, numDays: Int, holidays: Map<LocalDate, String> = _uiState.value.holidays): List<Pair<LocalDate, String>> {
+        if (numDays <= 0) return emptyList()
         val result = mutableListOf<Pair<LocalDate, String>>()
         var date = startDate
         var workingDaysCounted = 0
 
         while (workingDaysCounted < numDays) {
             val dow = date.dayOfWeek
-            val holidayName = state.holidays[date]
+            val holidayName = holidays[date]
             val isSunday = dow == DayOfWeek.SUNDAY
 
             if (holidayName != null) {
@@ -268,20 +355,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         return result
     }
 
-    /**
-     * Return the actual working days that will be missed (i.e. the days
-     * that cause the attendance drop). Holidays and Sundays are excluded.
-     */
-    fun getWorkingDaysInLeaveRange(startDate: LocalDate, numDays: Int): List<LocalDate> {
+    fun getWorkingDaysInLeaveRange(startDate: LocalDate, numDays: Int, holidays: Map<LocalDate, String> = _uiState.value.holidays): List<LocalDate> {
         if (numDays <= 0) return emptyList()
-        val state = _uiState.value
         val result = mutableListOf<LocalDate>()
         var date = startDate
         var workingDaysCounted = 0
 
         while (workingDaysCounted < numDays) {
             val dow = date.dayOfWeek
-            val isHoliday = date in state.holidays
+            val isHoliday = date in holidays
             val isSunday = dow == DayOfWeek.SUNDAY
 
             if (!isSunday && !isHoliday) {

@@ -26,6 +26,7 @@ import com.example.attendancewidgetlaudea.data.model.Regulation
 import com.example.attendancewidgetlaudea.data.model.SyllabusSubject
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
+import com.example.attendancewidgetlaudea.ui.components.RoseFourLoader
 import com.example.attendancewidgetlaudea.ui.viewmodel.SyllabusViewModel
 import io.github.fletchmckee.liquid.LiquidState
 
@@ -162,7 +163,7 @@ fun SyllabusScreen(
         when {
             uiState.isLoading -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                    RoseFourLoader(modifier = Modifier.size(48.dp))
                 }
             }
             uiState.errorMessage != null -> {
@@ -179,7 +180,7 @@ fun SyllabusScreen(
                 } else {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 100.dp),
+                        contentPadding = PaddingValues(bottom = 160.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(filtered, key = { it.code }) { subject ->
@@ -205,11 +206,14 @@ private fun SubjectCard(subject: SyllabusSubject, onClick: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(subject.code, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary)
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false))
                     if (subject.credits.isNotBlank()) {
                         Spacer(Modifier.width(8.dp))
                         Text(subject.credits, fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            maxLines = 1)
                     }
                 }
                 Spacer(Modifier.height(2.dp))
@@ -347,7 +351,7 @@ private fun SyllabusDetailScreen(subject: SyllabusSubject, onBack: () -> Unit) {
                         }
                     }
                 }
-                Spacer(Modifier.height(80.dp))
+                Spacer(Modifier.height(160.dp))
             }
         }
     }
