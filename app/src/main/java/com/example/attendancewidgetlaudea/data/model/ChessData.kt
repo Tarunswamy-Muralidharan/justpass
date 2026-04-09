@@ -79,6 +79,32 @@ data class FriendRequest(
     val status: String = "pending" // pending, accepted, declined
 )
 
+/** Board color themes — CSS overrides injected into Lichess WebView */
+enum class BoardTheme(
+    val label: String,
+    val lightSquare: String,  // hex color
+    val darkSquare: String,
+    val preview: Long         // Compose Color bits for preview swatch (dark square)
+) {
+    CHESS_COM("Chess.com", "#EBECD0", "#779556", 0xFF779556),
+    LICHESS("Lichess", "#F0D9B5", "#B58863", 0xFFB58863),
+    BLUE("Ice Blue", "#DEE3E6", "#8CA2AD", 0xFF8CA2AD),
+    PURPLE("Royal Purple", "#E8DAF5", "#9B72CF", 0xFF9B72CF),
+    GREEN("Emerald", "#FFFFDD", "#86A666", 0xFF86A666),
+    WOOD("Walnut", "#F0D9B5", "#946F51", 0xFF946F51),
+    PINK("Bubblegum", "#F5E0E8", "#D87093", 0xFFD87093),
+    GREY("Slate", "#DEE3E6", "#788B97", 0xFF788B97),
+    CORAL("Coral", "#FFE4C4", "#CD6839", 0xFFCD6839),
+    MIDNIGHT("Midnight", "#C8C8D5", "#5D5D8A", 0xFF5D5D8A);
+
+    /** CSS to inject after Lichess page loads */
+    val css: String get() = """
+        cg-board{background-image:none!important}
+        cg-board square.white,cg-board square.light{background:${lightSquare}!important}
+        cg-board square.black,cg-board square.dark{background:${darkSquare}!important}
+    """.trimIndent().replace("\n", "")
+}
+
 // Fun anonymous chess names
 val CHESS_NAMES = listOf(
     "SilentKnight", "BishopStorm", "RookRush", "PawnStar", "QueenGambit",

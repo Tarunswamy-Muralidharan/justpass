@@ -70,6 +70,10 @@ class SecurePreferences(context: Context) {
         get() = regularPrefs.getInt(KEY_ATTENDANCE_TARGET, 75)
         set(value) = regularPrefs.edit().putInt(KEY_ATTENDANCE_TARGET, value).apply()
 
+    var chessBoardTheme: String
+        get() = regularPrefs.getString(KEY_CHESS_BOARD_THEME, "CHESS_COM") ?: "CHESS_COM"
+        set(value) = regularPrefs.edit().putString(KEY_CHESS_BOARD_THEME, value).apply()
+
     var programmeName: String?
         get() = regularPrefs.getString(KEY_PROGRAMME_NAME, null)
         set(value) = regularPrefs.edit().putString(KEY_PROGRAMME_NAME, value).apply()
@@ -126,6 +130,23 @@ class SecurePreferences(context: Context) {
     var cachedExemptionCount: Int
         get() = regularPrefs.getInt(KEY_EXEMPTION_COUNT, 0)
         set(value) = regularPrefs.edit().putInt(KEY_EXEMPTION_COUNT, value).apply()
+
+    // ── AI-prefetched data (cached JSON for AI advisor context) ──
+    var cachedCAMarksJson: String?
+        get() = regularPrefs.getString(KEY_CACHED_CA_MARKS, null)
+        set(value) = regularPrefs.edit().putString(KEY_CACHED_CA_MARKS, value).apply()
+
+    var cachedResultsJson: String?
+        get() = regularPrefs.getString(KEY_CACHED_RESULTS, null)
+        set(value) = regularPrefs.edit().putString(KEY_CACHED_RESULTS, value).apply()
+
+    var cachedSubjectAttendanceJson: String?
+        get() = regularPrefs.getString(KEY_CACHED_SUBJECT_ATTENDANCE, null)
+        set(value) = regularPrefs.edit().putString(KEY_CACHED_SUBJECT_ATTENDANCE, value).apply()
+
+    var cachedCircularsSummary: String?
+        get() = regularPrefs.getString(KEY_CACHED_CIRCULARS, null)
+        set(value) = regularPrefs.edit().putString(KEY_CACHED_CIRCULARS, value).apply()
 
     var lastUpdatedTime: Long
         get() = regularPrefs.getLong(KEY_LAST_UPDATED, 0L)
@@ -215,6 +236,11 @@ class SecurePreferences(context: Context) {
         private const val KEY_CACHED_CURRENT_SEM = "cached_current_sem"
         private const val KEY_CACHED_SECTION = "cached_section"
         private const val KEY_CACHED_DEPARTMENT = "cached_department"
+        private const val KEY_CACHED_CA_MARKS = "cached_ca_marks_json"
+        private const val KEY_CACHED_RESULTS = "cached_results_json"
+        private const val KEY_CACHED_SUBJECT_ATTENDANCE = "cached_subject_attendance_json"
+        private const val KEY_CACHED_CIRCULARS = "cached_circulars_summary"
+        private const val KEY_CHESS_BOARD_THEME = "chess_board_theme"
 
         @Volatile
         private var instance: SecurePreferences? = null

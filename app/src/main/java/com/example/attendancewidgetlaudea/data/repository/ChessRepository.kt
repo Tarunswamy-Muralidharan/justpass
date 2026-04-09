@@ -91,19 +91,23 @@ class ChessRepository {
     }
 
     suspend fun recordGameResult(playerId: String, result: String) {
+        if (result !in listOf("win", "loss", "draw")) return
         try {
-            val doc = profileCollection.document(playerId).get().await()
-            val wins = doc.getLong("wins")?.toInt() ?: 0
-            val losses = doc.getLong("losses")?.toInt() ?: 0
-            val draws = doc.getLong("draws")?.toInt() ?: 0
-            val games = doc.getLong("gamesPlayed")?.toInt() ?: 0
-            val updates = when (result) {
-                "win" -> mapOf("wins" to wins + 1, "gamesPlayed" to games + 1)
-                "loss" -> mapOf("losses" to losses + 1, "gamesPlayed" to games + 1)
-                "draw" -> mapOf("draws" to draws + 1, "gamesPlayed" to games + 1)
-                else -> return
-            }
-            profileCollection.document(playerId).update(updates).await()
+            val docRef = profileCollection.document(playerId)
+            FirebaseFirestore.getInstance().runTransaction { txn ->
+                val snap = txn.get(docRef)
+                val wins = snap.getLong("wins")?.toInt() ?: 0
+                val losses = snap.getLong("losses")?.toInt() ?: 0
+                val draws = snap.getLong("draws")?.toInt() ?: 0
+                val games = snap.getLong("gamesPlayed")?.toInt() ?: 0
+                val updates = when (result) {
+                    "win" -> mapOf("wins" to wins + 1, "gamesPlayed" to games + 1)
+                    "loss" -> mapOf("losses" to losses + 1, "gamesPlayed" to games + 1)
+                    "draw" -> mapOf("draws" to draws + 1, "gamesPlayed" to games + 1)
+                    else -> return@runTransaction
+                }
+                txn.update(docRef, updates)
+            }.await()
         } catch (e: Exception) {
             Log.e(TAG, "Record result error: ${e.message}")
         }
@@ -140,12 +144,12 @@ class ChessRepository {
 
     suspend fun getLeaderboard(limit: Int = 20): List<ChessProfile> {
         return try {
+            // Fetch all profiles and filter/sort client-side to avoid Firestore composite index issues
             val docs = profileCollection
-                .whereGreaterThan("gamesPlayed", 0)
-                .orderBy("wins", Query.Direction.DESCENDING)
-                .limit(limit.toLong())
                 .get().await()
             docs.documents.mapNotNull { doc ->
+                val gamesPlayed = doc.getLong("gamesPlayed")?.toInt() ?: 0
+                if (gamesPlayed == 0) return@mapNotNull null
                 ChessProfile(
                     id = doc.id,
                     displayName = doc.getString("displayName") ?: "",
@@ -154,10 +158,10 @@ class ChessRepository {
                     wins = doc.getLong("wins")?.toInt() ?: 0,
                     losses = doc.getLong("losses")?.toInt() ?: 0,
                     draws = doc.getLong("draws")?.toInt() ?: 0,
-                    gamesPlayed = doc.getLong("gamesPlayed")?.toInt() ?: 0,
+                    gamesPlayed = gamesPlayed,
                     lastOnline = doc.getLong("lastOnline") ?: 0L
                 )
-            }.sortedByDescending { it.rating }
+            }.sortedByDescending { it.rating }.take(limit)
         } catch (e: Exception) {
             Log.e(TAG, "Leaderboard error: ${e.message}")
             emptyList()
@@ -314,6 +318,34 @@ class ChessRepository {
             doc.id
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send challenge: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Check if there's an existing pending challenge from fromId to toId.
+     * Used for mutual challenge prevention — first challenge wins.
+     */
+    suspend fun checkExistingChallenge(fromId: String, toId: String): ChessChallenge? {
+        return try {
+            val docs = challengeCollection
+                .whereEqualTo("fromId", fromId)
+                .whereEqualTo("toId", toId)
+                .whereEqualTo("status", "pending")
+                .get().await()
+            val doc = docs.documents.firstOrNull() ?: return null
+            ChessChallenge(
+                id = doc.id,
+                fromId = doc.getString("fromId") ?: "",
+                fromName = doc.getString("fromName") ?: "",
+                toId = doc.getString("toId") ?: "",
+                toName = doc.getString("toName") ?: "",
+                status = "pending",
+                timestamp = doc.getLong("timestamp") ?: 0L,
+                timeControl = doc.getString("timeControl") ?: "rapid_10"
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Check existing challenge error: ${e.message}")
             null
         }
     }
@@ -484,12 +516,33 @@ class ChessRepository {
     /**
      * Process game result for both players in a challenge.
      * fromColor tells us which color the challenger (fromId) played.
+     * Uses atomic claim to prevent double-counting when both players process simultaneously.
      */
     suspend fun processGameResult(challenge: ChessChallenge) {
         if (challenge.lichessGameId.isBlank() || challenge.resultChecked) return
 
+        // Atomically claim this challenge — only one device processes it
+        val claimed = try {
+            val docRef = challengeCollection.document(challenge.id)
+            FirebaseFirestore.getInstance().runTransaction { txn ->
+                val snap = txn.get(docRef)
+                if (snap.getBoolean("resultChecked") == true) return@runTransaction false
+                txn.update(docRef, "resultChecked", true)
+                true
+            }.await()
+        } catch (_: Exception) { false }
+
+        if (!claimed) {
+            Log.d(TAG, "Challenge ${challenge.id} already processed by another device")
+            return
+        }
+
         val result = checkLichessGameResult(challenge.lichessGameId) ?: return
-        if (result == "ongoing") return // Game not finished yet
+        if (result == "ongoing") {
+            // Unclaim — game not finished yet
+            try { challengeCollection.document(challenge.id).update("resultChecked", false).await() } catch (_: Exception) {}
+            return
+        }
 
         val fromColor = challenge.fromColor.ifBlank { "white" }
         val toColor = if (fromColor == "white") "black" else "white"
@@ -512,16 +565,11 @@ class ChessRepository {
             }
         }
 
-        // Mark as checked so we don't double-count
-        try {
-            challengeCollection.document(challenge.id).update("resultChecked", true).await()
-        } catch (_: Exception) {}
-
         Log.d(TAG, "Processed result for ${challenge.lichessGameId}: $result (from=$fromColor)")
     }
 
     /** Get recent accepted challenges for a player (to check results) */
-    suspend fun getRecentGames(playerId: String, limit: Int = 5): List<ChessChallenge> {
+    suspend fun getRecentGames(playerId: String, limit: Int = 10): List<ChessChallenge> {
         return try {
             // Only fromId query uses composite index (fromId+status+timestamp)
             // toId query skips orderBy to avoid needing a second composite index
@@ -560,7 +608,7 @@ class ChessRepository {
 
     suspend fun cleanupExpiredChallenges() {
         try {
-            val cutoff = System.currentTimeMillis() - 120_000L
+            val cutoff = System.currentTimeMillis() - 20_000L
             val expired = challengeCollection
                 .whereEqualTo("status", "pending")
                 .whereLessThan("timestamp", cutoff)

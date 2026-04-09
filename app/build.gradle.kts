@@ -123,6 +123,12 @@ dependencies {
     // ML Kit Text Recognition (OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
 
+    // PdfiumAndroid — direct text extraction from PDFs (no OCR needed)
+    implementation("com.github.arteaprogramar:Android-Pdfium:3.0.0")
+
+    // LiteRT-LM — Google's on-device LLM inference (GPU/NPU acceleration)
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.0")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

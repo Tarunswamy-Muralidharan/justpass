@@ -681,6 +681,114 @@ class AttendanceRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Prefetch data from all tiles and cache as compact strings for AI advisor.
+     * Called after successful attendance refresh. Runs silently — failures are ignored.
+     */
+    suspend fun prefetchForAI() {
+        val gson = com.google.gson.Gson()
+
+        // CA Marks → compact summary "DBMS: 38/50, OS: 29/50, ..."
+        try {
+            val caResult = fetchCAMarks()
+            if (caResult is Result.Success) {
+                val summary = caResult.data.joinToString("; ") { course ->
+                    // Read individual components (CT1, CT2, Assignment, etc.)
+                    val componentMarks = course.testDetails.components.mapNotNull { comp ->
+                        val marks = comp.marks
+                        if (marks != null && !marks.actual.isNotEntered()) {
+                            "${comp.name}: ${marks.actual.getSecuredDisplay()}/${marks.actual.getMaxAsDouble().toInt()}"
+                        } else if (comp.hasSubComponent && comp.subComponents != null) {
+                            // Check sub-components
+                            val subs = comp.subComponents.mapNotNull { sub ->
+                                val subMarks = sub.marks
+                                if (subMarks != null && !subMarks.actual.isNotEntered()) {
+                                    "${sub.name}: ${subMarks.actual.getSecuredDisplay()}/${subMarks.actual.getMaxAsDouble().toInt()}"
+                                } else null
+                            }
+                            if (subs.isNotEmpty()) "${comp.name}(${subs.joinToString(", ")})" else null
+                        } else null
+                    }
+                    val total = course.testDetails.total
+                    val totalStr = if (!total.isNotEntered()) " Total: ${total.getSecuredDisplay()}/${total.getMaxAsDouble().toInt()}" else ""
+                    if (componentMarks.isNotEmpty()) {
+                        "${course.courseTitle}: ${componentMarks.joinToString(", ")}$totalStr"
+                    } else {
+                        "${course.courseTitle}: Not entered yet"
+                    }
+                }
+                securePrefs.cachedCAMarksJson = summary
+                android.util.Log.d("AttendanceRepo", "AI prefetch: CA marks cached (${caResult.data.size} subjects)")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "AI prefetch CA marks failed: ${e.message}")
+        }
+
+        // Results → compact "Sem 4: DBMS=A(9), OS=B+(8), ... SGPA=8.2"
+        try {
+            val resultData = fetchResult()
+            if (resultData is Result.Success) {
+                val entries = gson.fromJson(resultData.data, Array<com.example.attendancewidgetlaudea.data.model.GradeEntry>::class.java)
+                if (entries != null && entries.isNotEmpty()) {
+                    val bySem = entries.groupBy { it.semester }
+                    val summary = bySem.entries.sortedBy { it.key }.joinToString(" | ") { (sem, grades) ->
+                        val gradeStr = grades.take(6).joinToString(", ") { "${it.courseCode}=${it.letterGrade ?: "?"}" }
+                        val sgpa = grades.filter { it.isPassed() }.let { passed ->
+                            if (passed.isNotEmpty()) {
+                                val totalCredits = passed.sumOf { it.getCreditsValue() }
+                                val totalPoints = passed.sumOf { it.gradePoint * it.getCreditsValue() }
+                                if (totalCredits > 0) "%.2f".format(totalPoints.toDouble() / totalCredits) else "?"
+                            } else "?"
+                        }
+                        "Sem $sem: $gradeStr SGPA=$sgpa"
+                    }
+                    securePrefs.cachedResultsJson = summary
+                    android.util.Log.d("AttendanceRepo", "AI prefetch: Results cached (${entries.size} entries)")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "AI prefetch results failed: ${e.message}")
+        }
+
+        // Subject attendance → compact "DBMS: 45/52 (86.5%), OS: 38/50 (76.0%), ..."
+        try {
+            val presentResult = fetchPresentDays()
+            val absentResult = fetchAbsentDays()
+            if (presentResult is Result.Success && absentResult is Result.Success) {
+                // Flatten sessions to get per-subject counts
+                val presentSessions = presentResult.data.flatMap { it.sessions }
+                val absentSessions = absentResult.data.flatMap { it.sessions }
+                val presentBySubject = presentSessions.groupBy { it.courseTitle }
+                val absentBySubject = absentSessions.groupBy { it.courseTitle }
+                val allSubjects = (presentBySubject.keys + absentBySubject.keys).distinct()
+                val summary = allSubjects.joinToString("; ") { subject ->
+                    val present = presentBySubject[subject]?.size ?: 0
+                    val absent = absentBySubject[subject]?.size ?: 0
+                    val total = present + absent
+                    val pct = if (total > 0) "%.1f".format(present.toDouble() / total * 100) else "0"
+                    "$subject: $present/$total ($pct%)"
+                }
+                securePrefs.cachedSubjectAttendanceJson = summary
+                android.util.Log.d("AttendanceRepo", "AI prefetch: Subject attendance cached (${allSubjects.size} subjects)")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "AI prefetch subject attendance failed: ${e.message}")
+        }
+
+        // Circulars → latest 3 titles
+        try {
+            val circResult = fetchCirculars()
+            if (circResult is Result.Success) {
+                val circulars = circResult.data.records
+                val summary = circulars.take(3).joinToString("; ") { it.title ?: "Untitled" }
+                securePrefs.cachedCircularsSummary = summary
+                android.util.Log.d("AttendanceRepo", "AI prefetch: Circulars cached (${circulars.size} total)")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "AI prefetch circulars failed: ${e.message}")
+        }
+    }
+
     companion object {
         @Volatile
         private var instance: AttendanceRepository? = null

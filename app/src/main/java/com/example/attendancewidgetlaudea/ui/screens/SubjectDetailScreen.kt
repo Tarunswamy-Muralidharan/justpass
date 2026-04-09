@@ -16,6 +16,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.attendancewidgetlaudea.data.model.AbsentDay
@@ -27,6 +28,7 @@ import com.example.attendancewidgetlaudea.data.repository.AttendanceRepository
 import com.example.attendancewidgetlaudea.data.repository.Result
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShape
+import com.example.attendancewidgetlaudea.ui.components.RoseFourLoader
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 
 import io.github.fletchmckee.liquid.LiquidState
@@ -213,10 +215,13 @@ fun SubjectDetailScreen(
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back",
                     tint = MaterialTheme.colorScheme.onSurface) }
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(courseCode, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                    Text(courseTitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    Text(courseCode, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(courseTitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Text("${String.format("%.1f", percentage)}%", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = barColor)
+                Text("${String.format("%.1f", percentage)}%", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = barColor,
+                    maxLines = 1)
             }
         }
 
@@ -264,7 +269,7 @@ fun SubjectDetailScreen(
         // Day-by-day list
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                RoseFourLoader(modifier = Modifier.size(48.dp))
             }
         } else if (errorMessage != null) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -278,7 +283,7 @@ fun SubjectDetailScreen(
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 130.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 160.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 // Group by date

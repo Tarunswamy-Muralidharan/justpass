@@ -33,6 +33,7 @@ import com.example.attendancewidgetlaudea.data.model.Circular
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShape
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
+import com.example.attendancewidgetlaudea.ui.components.RoseFourLoader
 import com.example.attendancewidgetlaudea.ui.viewmodel.CircularViewModel
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
@@ -107,9 +108,8 @@ fun CircularsScreen(
         Box(modifier = Modifier.fillMaxSize()) {
             when {
                 uiState.isLoading && uiState.circulars.isEmpty() -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
-                        color = MaterialTheme.colorScheme.primary
+                    RoseFourLoader(
+                        modifier = Modifier.size(48.dp).align(Alignment.Center)
                     )
                 }
                 uiState.errorMessage != null && uiState.circulars.isEmpty() -> {
@@ -141,7 +141,7 @@ fun CircularsScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
                             start = 16.dp, end = 16.dp,
-                            top = 8.dp, bottom = 130.dp
+                            top = 8.dp, bottom = 160.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
@@ -229,7 +229,8 @@ private fun CircularCard(
                     Text(
                         text = formatCircularDate(date),
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
                     )
                 }
             }
@@ -294,7 +295,7 @@ private fun PdfViewerScreen(
                         modifier = Modifier.align(Alignment.Center),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        RoseFourLoader(modifier = Modifier.size(48.dp))
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             "Loading PDF...",
@@ -324,7 +325,7 @@ private fun PdfViewerScreen(
                             ),
                         contentPadding = PaddingValues(
                             start = 8.dp, end = 8.dp,
-                            top = 8.dp, bottom = 130.dp
+                            top = 8.dp, bottom = 160.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {

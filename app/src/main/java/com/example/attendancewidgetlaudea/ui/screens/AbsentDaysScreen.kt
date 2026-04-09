@@ -22,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.attendancewidgetlaudea.data.model.AbsentDay
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.components.LiquidGlassScaffold
+import com.example.attendancewidgetlaudea.ui.components.RoseFourLoader
 import com.example.attendancewidgetlaudea.ui.viewmodel.AbsentDaysViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -46,7 +47,7 @@ fun AbsentDaysScreen(viewModel: AbsentDaysViewModel = viewModel(), onBack: () ->
 
         Box(modifier = Modifier.fillMaxSize()) {
             when {
-                uiState.isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                uiState.isLoading -> RoseFourLoader(modifier = Modifier.size(48.dp).align(Alignment.Center))
                 uiState.errorMessage != null -> {
                     Column(modifier = Modifier.align(Alignment.Center).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(uiState.errorMessage!!, color = MaterialTheme.colorScheme.error)
@@ -58,7 +59,7 @@ fun AbsentDaysScreen(viewModel: AbsentDaysViewModel = viewModel(), onBack: () ->
                 else -> {
                     val flatItems = remember(uiState.absentDays) { buildFlatList(uiState.absentDays) }
                     LazyColumn(modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 130.dp)) {
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 160.dp)) {
                         items(items = flatItems, key = { it.stableKey }, contentType = { it.type }) { item ->
                             when (item) {
                                 is FlatItem.DateHeader -> DateHeaderRow(item)

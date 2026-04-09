@@ -27,12 +27,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.EventSeat
-import androidx.compose.material.icons.filled.FlightTakeoff
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -71,6 +72,15 @@ import com.example.attendancewidgetlaudea.ui.viewmodel.DashboardViewModel
 import io.github.fletchmckee.liquid.LiquidState
 import com.example.attendancewidgetlaudea.data.analytics.Analytics
 import kotlinx.coroutines.launch
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -95,6 +105,7 @@ fun DashboardScreen(
     onExamSeatClick: () -> Unit = {},
     onSyllabusClick: () -> Unit = {},
     onChessClick: () -> Unit = {},
+    onLiteRtClick: () -> Unit = {},
     onProfileClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -146,6 +157,9 @@ fun DashboardScreen(
         }
     }
 
+    var showAiBubble by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
     PullToRefreshBox(
         isRefreshing = uiState.isRefreshing,
         onRefresh = {
@@ -160,7 +174,7 @@ fun DashboardScreen(
     Column(
         modifier = Modifier.fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 130.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 160.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Header — liquid glass with light sweep on refresh
@@ -405,53 +419,53 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                            modifier = Modifier.weight(1f, fill = false).padding(horizontal = 4.dp, vertical = 6.dp)) {
                             Text(uiState.attendanceData.presentWithExemptionCount.toString(),
-                                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
-                            Text("Present", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676), maxLines = 1)
+                            Text("Present", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                         }
                         GlassListSurface(
                             shape = RoundedCornerShape(12.dp),
                             tintColor = Color(0xFFFF5252).copy(alpha = 0.12f),
-                            modifier = Modifier.clickable { onAbsentDaysClick() }
+                            modifier = Modifier.weight(1f, fill = false).clickable { onAbsentDaysClick() }
                         ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
                             ) {
                                 Text(uiState.attendanceData.absentCount.toString(),
-                                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5252))
-                                Text("Absent", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Color(0xFFFF5252).copy(alpha = 0.85f))
+                                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5252), maxLines = 1)
+                                Text("Absent", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Color(0xFFFF5252).copy(alpha = 0.85f), maxLines = 1)
                             }
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                            modifier = Modifier.weight(1f, fill = false).padding(horizontal = 4.dp, vertical = 6.dp)) {
                             Text(uiState.attendanceData.enteredTillDate.toString(),
-                                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                            Text("Total", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                            Text("Total", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                         }
                         if (uiState.attendanceData.exemptionCount > 0) {
                             GlassListSurface(
                                 shape = RoundedCornerShape(12.dp),
                                 tintColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.10f),
-                                modifier = Modifier.clickable { onExemptionsClick() }
+                                modifier = Modifier.weight(1f, fill = false).clickable { onExemptionsClick() }
                             ) {
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
                                 ) {
                                     Text(uiState.attendanceData.exemptionCount.toString(),
-                                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
-                                    Text("Exempt", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f))
+                                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary, maxLines = 1)
+                                    Text("Exempt", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f), maxLines = 1)
                                 }
                             }
                         }
                         if (uiState.attendanceData.notEnteredTillDate > 0) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                                modifier = Modifier.weight(1f, fill = false).padding(horizontal = 4.dp, vertical = 6.dp)) {
                                 Text(uiState.attendanceData.notEnteredTillDate.toString(),
-                                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("Pending", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                Text("Pending", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             }
                         }
                     }
@@ -476,7 +490,7 @@ fun DashboardScreen(
             val present = uiState.attendanceData.presentWithExemptionCount
             val total = uiState.attendanceData.enteredTillDate
             val currentPct = uiState.attendanceData.attendanceWithExemption
-            val leaveHours = if (days > 0) viewModel.calculateLeaveHours(leaveStartDate, days) else 0
+            val leaveHours = if (days > 0) viewModel.calculateLeaveHours(leaveStartDate, days, uiState.holidays) else 0
             val newTotal = total + leaveHours
             val newPercentage = if (days > 0 && newTotal > 0) (present.toDouble() / newTotal) * 100.0 else currentPct
             val drop = currentPct - newPercentage
@@ -493,10 +507,15 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("What if I take leave?", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        Text("Bunkometer", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-                        Icon(Icons.Default.FlightTakeoff, contentDescription = "Leave",
+                        Icon(Icons.Default.Speed, contentDescription = "Bunkometer",
                             tint = Color(0xFFFF9800), modifier = Modifier.size(22.dp))
+                    }
+                    if (days == 0) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("See how bunking affects your attendance", fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                     }
                     if (days > 0) {
                         Spacer(modifier = Modifier.height(6.dp))
@@ -505,95 +524,271 @@ fun DashboardScreen(
                             fontSize = 15.sp, fontWeight = FontWeight.Bold,
                             color = if (newPercentage < attendanceTarget) Color(0xFFFF5252) else MaterialTheme.colorScheme.primary
                         )
-                    } else {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("Tap to calculate", fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                     }
                 }
             }
 
             // Fullscreen leave calculator popup
             if (showLeavePopup) {
+                var pickerMode by remember { mutableIntStateOf(0) } // 0 = slider, 1 = calendar
+                val selectedDates = remember { mutableStateListOf<java.time.LocalDate>() }
+                var calendarMonth by remember { mutableStateOf(java.time.YearMonth.now()) }
+
+                // Calculate values based on mode
+                val effectiveDays: Int
+                val effectiveHours: Int
+                val effectiveNewPct: Double
+                val effectiveDrop: Double
+                val effectiveMissedDays: List<java.time.LocalDate>
+
+                if (pickerMode == 0) {
+                    effectiveDays = days
+                    effectiveHours = leaveHours
+                    effectiveNewPct = newPercentage
+                    effectiveDrop = drop
+                    effectiveMissedDays = if (days > 0) viewModel.getWorkingDaysInLeaveRange(leaveStartDate, days, uiState.holidays) else emptyList()
+                } else {
+                    val workingSelected = selectedDates.filter {
+                        it.dayOfWeek != java.time.DayOfWeek.SUNDAY && it !in uiState.holidays
+                    }
+                    effectiveDays = workingSelected.size
+                    effectiveHours = viewModel.calculateHoursForDates(workingSelected.toSet())
+                    val calNewTotal = total + effectiveHours
+                    effectiveNewPct = if (effectiveDays > 0 && calNewTotal > 0) (present.toDouble() / calNewTotal) * 100.0 else currentPct
+                    effectiveDrop = currentPct - effectiveNewPct
+                    effectiveMissedDays = workingSelected.sorted()
+                }
+
                 AlertDialog(
                     onDismissRequest = { showLeavePopup = false },
                     title = {
-                        Text("What if I take leave?", fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Speed, contentDescription = null,
+                                tint = Color(0xFFFF9800), modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Bunkometer", fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface)
+                        }
                     },
                     text = {
                         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                            // Date picker row
+                            // Mode toggle: Slider vs Calendar
                             Row(
                                 modifier = Modifier.fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                                    .clickable { showDatePicker = true }
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
                             ) {
-                                Column {
-                                    Text("Starting from", fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(leaveStartDate.format(dateFormatter),
-                                        fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                                listOf("Consecutive" to 0, "Pick Days" to 1).forEach { (label, mode) ->
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (pickerMode == mode) MaterialTheme.colorScheme.primary else Color.Transparent)
+                                            .clickable { pickerMode = mode }
+                                            .padding(vertical = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                            color = if (pickerMode == mode) Color.White
+                                            else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            if (pickerMode == 0) {
+                                // ── Slider mode ──
+                                // Date picker row
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                        .clickable { showDatePicker = true }
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text("Starting from", fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(leaveStartDate.format(dateFormatter),
+                                            fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary)
+                                    }
+                                    Text("Change", fontSize = 12.sp, fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary)
                                 }
-                                Text("Change", fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.primary)
-                            }
 
-                            Spacer(modifier = Modifier.height(16.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
 
-                            // Big day count
-                            Text(
-                                "${days} day${if (days > 1) "s" else ""}",
-                                fontSize = 48.sp, fontWeight = FontWeight.Black,
-                                color = MaterialTheme.colorScheme.primary,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            // Bigger slider
-                            Slider(
-                                value = leaveDays,
-                                onValueChange = { leaveDays = it; if (it.toInt() > 0) Analytics.logSliderUsed("leave_calculator", it.toInt()) },
-                                valueRange = 0f..30f,
-                                steps = 29,
-                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MaterialTheme.colorScheme.primary,
-                                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                                    inactiveTrackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                Slider(
+                                    value = leaveDays,
+                                    onValueChange = { leaveDays = it; if (it.toInt() > 0) Analytics.logSliderUsed("leave_calculator", it.toInt()) },
+                                    valueRange = 0f..30f,
+                                    steps = 29,
+                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = MaterialTheme.colorScheme.primary,
+                                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                                        inactiveTrackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                    )
                                 )
-                            )
+                            } else {
+                                // ── Calendar pick mode ──
+                                // Month navigation
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    IconButton(onClick = { calendarMonth = calendarMonth.minusMonths(1) }) {
+                                        Text("◀", fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                    Text(
+                                        "${calendarMonth.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)} ${calendarMonth.year}",
+                                        fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    IconButton(onClick = { calendarMonth = calendarMonth.plusMonths(1) }) {
+                                        Text("▶", fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
 
-                            if (days == 0) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text("Slide to see how your attendance changes",
-                                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth())
+                                // Day headers
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    listOf("M", "T", "W", "T", "F", "S", "S").forEach { d ->
+                                        Text(d, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.weight(1f))
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                // Calendar grid
+                                val firstDay = calendarMonth.atDay(1)
+                                val startDow = (firstDay.dayOfWeek.value - 1) // Mon=0
+                                val daysInMonth = calendarMonth.lengthOfMonth()
+                                val today = java.time.LocalDate.now()
+                                val weeks = (startDow + daysInMonth + 6) / 7
+
+                                for (week in 0 until weeks) {
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        for (col in 0..6) {
+                                            val dayNum = week * 7 + col - startDow + 1
+                                            if (dayNum < 1 || dayNum > daysInMonth) {
+                                                Spacer(modifier = Modifier.weight(1f))
+                                            } else {
+                                                val date = calendarMonth.atDay(dayNum)
+                                                val isSelected = date in selectedDates
+                                                val isSunday = date.dayOfWeek == java.time.DayOfWeek.SUNDAY
+                                                val isHoliday = date in uiState.holidays
+                                                val isPast = date.isBefore(today)
+                                                val isDisabled = isSunday || isHoliday || isPast
+
+                                                val dayHours = if (!isDisabled) viewModel.getHoursForDate(date) else 0
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .aspectRatio(1f)
+                                                        .padding(2.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(
+                                                            when {
+                                                                isSelected -> MaterialTheme.colorScheme.primary
+                                                                isHoliday -> Color(0xFF8E24AA).copy(alpha = 0.15f)
+                                                                else -> Color.Transparent
+                                                            }
+                                                        )
+                                                        .then(
+                                                            if (!isDisabled) Modifier.clickable {
+                                                                if (isSelected) selectedDates.remove(date)
+                                                                else selectedDates.add(date)
+                                                            } else Modifier
+                                                        ),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                        Text(
+                                                            "$dayNum",
+                                                            fontSize = 12.sp,
+                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                            color = when {
+                                                                isSelected -> Color.White
+                                                                isDisabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                                                else -> MaterialTheme.colorScheme.onSurface
+                                                            }
+                                                        )
+                                                        if (isSelected) {
+                                                            Text(
+                                                                "${dayHours}h",
+                                                                fontSize = 8.sp,
+                                                                color = Color.White.copy(alpha = 0.8f)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Legend
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(Modifier.size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Selected", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFF8E24AA).copy(alpha = 0.4f)))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Holiday", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+
+                                if (selectedDates.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    TextButton(
+                                        onClick = { selectedDates.clear() },
+                                        contentPadding = PaddingValues(horizontal = 8.dp)
+                                    ) { Text("Clear all", fontSize = 12.sp) }
+                                }
                             }
 
-                            if (days > 0) {
-                                Spacer(modifier = Modifier.height(20.dp))
+                            // ── Results (shared by both modes) ──
+                            if (effectiveDays > 0) {
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Big day count
+                                Text(
+                                    "$effectiveDays day${if (effectiveDays > 1) "s" else ""}",
+                                    fontSize = 36.sp, fontWeight = FontWeight.Black,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    maxLines = 1
+                                )
+
+                                Spacer(modifier = Modifier.height(12.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceEvenly
                                 ) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text("${String.format("%.1f", newPercentage)}%",
+                                        Text("${String.format("%.1f", effectiveNewPct)}%",
                                             fontSize = 28.sp, fontWeight = FontWeight.Bold,
-                                            color = if (newPercentage < attendanceTarget) Color(0xFFFF5252) else Color(0xFF00E676))
+                                            color = if (effectiveNewPct < attendanceTarget) Color(0xFFFF5252) else Color(0xFF00E676))
                                         Text("New attendance", fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text("-${String.format("%.1f", drop)}%",
+                                        Text("-${String.format("%.1f", effectiveDrop)}%",
                                             fontSize = 28.sp, fontWeight = FontWeight.Bold,
                                             color = Color(0xFFFF8A80))
                                         Text("Drop", fontSize = 12.sp,
@@ -605,16 +800,15 @@ fun DashboardScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("$leaveHours",
+                                    Text("$effectiveHours",
                                         fontSize = 28.sp, fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface)
                                     Text("Hours missed", fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
 
-                                // Show which actual working days will be missed
-                                val missedDays = viewModel.getWorkingDaysInLeaveRange(leaveStartDate, days)
-                                if (missedDays.isNotEmpty()) {
+                                // Show missed days
+                                if (effectiveMissedDays.isNotEmpty()) {
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Column(
                                         modifier = Modifier.fillMaxWidth()
@@ -622,44 +816,53 @@ fun DashboardScreen(
                                             .background(Color(0xFFFF5252).copy(alpha = 0.10f))
                                             .padding(10.dp)
                                     ) {
-                                        Text("Days you'll actually miss:",
+                                        Text("Days you'll miss:",
                                             fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                                             color = Color(0xFFFF5252).copy(alpha = 0.9f))
                                         Spacer(modifier = Modifier.height(4.dp))
-                                        missedDays.forEach { date ->
+                                        effectiveMissedDays.forEach { date ->
                                             val dayName = date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)
-                                            Text("• ${date.dayOfMonth} ${date.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)} ($dayName)",
+                                            val hrs = viewModel.getHoursForDate(date)
+                                            Text("• ${date.dayOfMonth} ${date.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)} ($dayName) — $hrs hrs",
                                                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                                         }
                                     }
                                 }
 
-                                // Show holidays that are crossed (skipped)
-                                val crossedHolidays = viewModel.getHolidaysInLeaveRange(leaveStartDate, days)
-                                if (crossedHolidays.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Column(
-                                        modifier = Modifier.fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(Color(0xFF8E24AA).copy(alpha = 0.12f))
-                                            .padding(10.dp)
-                                    ) {
-                                        Text("Holidays crossed — no attendance impact",
-                                            fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFF8E24AA).copy(alpha = 0.9f))
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        crossedHolidays.forEach { (date, name) ->
-                                            Text("• ${date.dayOfMonth} ${date.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)} — $name (skipped)",
-                                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                // Holidays in range (slider mode only)
+                                if (pickerMode == 0) {
+                                    val crossedHolidays = viewModel.getHolidaysInLeaveRange(leaveStartDate, days, uiState.holidays)
+                                    if (crossedHolidays.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth()
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(Color(0xFF8E24AA).copy(alpha = 0.12f))
+                                                .padding(10.dp)
+                                        ) {
+                                            Text("Holidays — NOT counted above",
+                                                fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                                                color = Color(0xFF00E676))
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            crossedHolidays.forEach { (date, name) ->
+                                                Text("• ${date.dayOfMonth} ${date.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)} — $name (0 hrs)",
+                                                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                            }
                                         }
                                     }
-                                } else if (uiState.holidays.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text("Holidays & Sundays are automatically skipped",
-                                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.fillMaxWidth())
                                 }
+                            } else if (pickerMode == 0) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Slide to see how your attendance changes",
+                                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth())
+                            } else {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Tap dates on the calendar to select days to bunk",
+                                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth())
                             }
                         }
                     },
@@ -841,13 +1044,6 @@ fun DashboardScreen(
         DashboardTile("Syllabus", "R2021 subject-wise syllabus", Icons.Default.MenuBook, Color(0xFF7C4DFF),
             Modifier.fillMaxWidth()) { Analytics.logTileClicked("syllabus"); onSyllabusClick() }
 
-        uiState.errorMessage?.let { error ->
-            Spacer(modifier = Modifier.height(8.dp))
-            GlassListCard(modifier = Modifier.fillMaxWidth(), tintColor = MaterialTheme.colorScheme.error.copy(alpha = 0.08f)) {
-                Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp), textAlign = TextAlign.Center, fontSize = 12.sp)
-            }
-        }
-
         Spacer(modifier = Modifier.height(16.dp))
 
         if (uiState.attendanceData.lastUpdated > 0) {
@@ -856,6 +1052,83 @@ fun DashboardScreen(
         }
     }
     } // PullToRefreshBox
+
+    // ── Floating AI Assistant FAB ──
+    val firstName = displayName.split(" ").firstOrNull() ?: "there"
+    val exampleQuestions = remember { listOf(
+        "Can I bunk tomorrow?",
+        "Show my CA marks",
+        "What's my lowest attendance?",
+        "How many classes can I skip?"
+    ) }
+
+    Column(
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(end = 16.dp, bottom = 160.dp)
+            .navigationBarsPadding(),
+        horizontalAlignment = Alignment.End
+    ) {
+        AnimatedVisibility(
+            visible = showAiBubble,
+            enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
+                    slideInVertically(spring(stiffness = Spring.StiffnessMedium)) { it / 2 } +
+                    scaleIn(spring(stiffness = Spring.StiffnessMedium), initialScale = 0.8f),
+            exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { it / 3 } +
+                    scaleOut(tween(150), targetScale = 0.8f)
+        ) {
+            GlassListCard(
+                modifier = Modifier.widthIn(max = 260.dp).padding(bottom = 10.dp),
+                shape = RoundedCornerShape(16.dp),
+                tintColor = Color(0xFFD6E4F0).copy(alpha = 0.75f)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        "Hi $firstName! I'm your JustPass AI advisor \uD83C\uDF93",
+                        fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    exampleQuestions.forEach { question ->
+                        Surface(
+                            onClick = { showAiBubble = false; onLiteRtClick() },
+                            shape = RoundedCornerShape(20.dp),
+                            color = Color(0xFFE3F2FD),
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        ) {
+                            Text(
+                                question, fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // FAB circle
+        FloatingActionButton(
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (showAiBubble) {
+                    showAiBubble = false
+                    onLiteRtClick()
+                } else {
+                    showAiBubble = true
+                }
+            },
+            containerColor = Color(0xFF4285F4),
+            contentColor = Color.White,
+            shape = CircleShape,
+            modifier = Modifier.size(52.dp)
+        ) {
+            Icon(Icons.Default.School, "AI Advisor", Modifier.size(24.dp))
+        }
+    }
+    } // Box
 }
 
 @Composable

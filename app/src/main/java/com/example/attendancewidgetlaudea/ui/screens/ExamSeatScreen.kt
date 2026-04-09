@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,6 +34,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.attendancewidgetlaudea.R
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
+import com.example.attendancewidgetlaudea.ui.components.RoseFourLoader
 import com.example.attendancewidgetlaudea.ui.viewmodel.ExamSeatViewModel
 import io.github.fletchmckee.liquid.LiquidState
 
@@ -50,6 +52,12 @@ fun ExamSeatScreen(
         if (sharedFileUri != null) {
             viewModel.processFileUri(sharedFileUri)
         }
+    }
+
+    // Auto-fetch seats + timetable from Apps Script when screen opens
+    LaunchedEffect(Unit) {
+        viewModel.autoFetchSeats()
+        viewModel.fetchExamTimetable()
     }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -162,10 +170,7 @@ fun ExamSeatScreen(
                         modifier = Modifier.fillMaxWidth().padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(48.dp),
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        RoseFourLoader(modifier = Modifier.size(48.dp))
                         Spacer(modifier = Modifier.height(16.dp))
                         Text("Reading Excel file...", fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -225,6 +230,178 @@ fun ExamSeatScreen(
                 }
             }
 
+            // --- Auto-fetched exam seats from Apps Script ---
+            if (uiState.autoFetchSeats.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Auto-detected Seats", fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 4.dp))
+                Text("From your college email", fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                uiState.autoFetchSeats.forEach { seat ->
+                    GlassListCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = GlassCardShapeSmall,
+                        tintColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            if (seat.date.isNotBlank()) {
+                                Text(seat.date, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                                    textAlign = TextAlign.Center)
+                            }
+                            if (seat.examName.isNotBlank()) {
+                                Text(seat.examName, fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center)
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(seat.hall, fontSize = 28.sp, fontWeight = FontWeight.Black,
+                                        color = MaterialTheme.colorScheme.primary)
+                                    Text("Hall", fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(seat.seatNumber, fontSize = 28.sp, fontWeight = FontWeight.Black,
+                                        color = Color(0xFF00E676))
+                                    Text("Seat", fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            if (uiState.autoFetchLoading) {
+                Spacer(modifier = Modifier.height(12.dp))
+                GlassListCard(modifier = Modifier.fillMaxWidth(), shape = GlassCardShapeSmall) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RoseFourLoader(modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Checking for auto-detected seats...", fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            if (uiState.autoFetchError != null && uiState.autoFetchSeats.isEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(uiState.autoFetchError!!, fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+            }
+
+            // --- Exam Timetable Section ---
+            if (uiState.timetableEntries.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    if (uiState.timetableExamType.isNotBlank()) "${uiState.timetableExamType} Schedule"
+                    else "Exam Schedule",
+                    fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Group entries by date
+                val grouped = uiState.timetableEntries.groupBy { it.date }
+                grouped.forEach { (date, entries) ->
+                    val day = entries.firstOrNull()?.day ?: ""
+                    GlassListCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = GlassCardShapeSmall
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+                            // Date header
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(date, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary)
+                                if (day.isNotBlank()) {
+                                    Text(day, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            entries.forEach { entry ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    // Session badge
+                                    Box(
+                                        modifier = Modifier
+                                            .background(
+                                                if (entry.session.startsWith("FN")) Color(0xFFFF9800).copy(alpha = 0.15f)
+                                                else Color(0xFF8E24AA).copy(alpha = 0.15f),
+                                                RoundedCornerShape(6.dp)
+                                            )
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(entry.session, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                                            color = if (entry.session.startsWith("FN")) Color(0xFFFF9800)
+                                            else Color(0xFF8E24AA))
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(entry.courseName, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface, maxLines = 2)
+                                        Row {
+                                            Text(entry.courseCode, fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            if (entry.timing.isNotBlank()) {
+                                                Text(" \u00B7 ${entry.timing}", fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            if (uiState.timetableLoading) {
+                Spacer(modifier = Modifier.height(12.dp))
+                GlassListCard(modifier = Modifier.fillMaxWidth(), shape = GlassCardShapeSmall) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RoseFourLoader(modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Loading exam timetable...", fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
             // --- How to use guide ---
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -261,7 +438,7 @@ fun ExamSeatScreen(
                 arrowToFraction = Offset(0.40f, 0.43f)
             )
 
-            Spacer(modifier = Modifier.height(100.dp)) // bottom padding for nav bar
+            Spacer(modifier = Modifier.height(160.dp)) // bottom padding for nav bar
         }
     }
 }

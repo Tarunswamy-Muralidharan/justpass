@@ -60,3 +60,6 @@
 
 # AWT classes (referenced by Apache POI/graphbuilder but not available on Android)
 -dontwarn java.awt.**
+
+# LiteRT-LM (Google on-device LLM inference)
+-keep class com.google.ai.edge.litertlm.** { *; }

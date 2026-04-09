@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.attendancewidgetlaudea.data.local.SecurePreferences
+import com.example.attendancewidgetlaudea.data.model.BoardTheme
 import com.example.attendancewidgetlaudea.data.model.ChessChallenge
 import com.example.attendancewidgetlaudea.data.model.ChessProfile
 import com.example.attendancewidgetlaudea.data.model.FriendRequest
@@ -46,6 +47,10 @@ data class ChessUiState(
     val showHistory: Boolean = false,
     val showFriends: Boolean = false,
     val friendProfiles: List<ChessProfile> = emptyList(),
+    val challengeCountdown: Int? = null,  // countdown for incoming challenge (receiver sees)
+    val senderCountdown: Int? = null,     // countdown for sent challenge (sender sees)
+    val boardTheme: BoardTheme = BoardTheme.CHESS_COM,
+    val showThemePicker: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -63,8 +68,24 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     private var friendReqListener: ListenerRegistration? = null
     private var sentChallengeListener: ListenerRegistration? = null
     private var heartbeatJob: Job? = null
+    private var countdownJob: Job? = null
+    private var senderCountdownJob: Job? = null
     private var friendIds: Set<String> = emptySet()
     private var myPlayerId: String = ""
+
+    init {
+        val saved = try { BoardTheme.valueOf(securePrefs.chessBoardTheme) } catch (_: Exception) { BoardTheme.CHESS_COM }
+        _uiState.value = _uiState.value.copy(boardTheme = saved)
+    }
+
+    fun toggleThemePicker() {
+        _uiState.value = _uiState.value.copy(showThemePicker = !_uiState.value.showThemePicker)
+    }
+
+    fun setBoardTheme(theme: BoardTheme) {
+        securePrefs.chessBoardTheme = theme.name
+        _uiState.value = _uiState.value.copy(boardTheme = theme, showThemePicker = false)
+    }
 
     fun goOnline() {
         val rollNumber = securePrefs.rollNumber ?: return
@@ -94,7 +115,47 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             incomingListener = repo.listenIncomingChallenges(myPlayerId) { challenge ->
-                _uiState.value = _uiState.value.copy(pendingChallenge = challenge)
+                // Check if there's already a pending challenge we sent to this person
+                // (mutual challenge prevention — first one wins)
+                if (_uiState.value.sentChallengeId != null && _uiState.value.sentChallengeName == challenge.fromName) {
+                    // We already challenged them — ignore their challenge, ours was first
+                    // Actually we need to check timestamps: whoever sent first wins
+                    viewModelScope.launch {
+                        repo.declineChallenge(challenge.id) // auto-decline theirs
+                    }
+                    return@listenIncomingChallenges
+                }
+
+                val elapsed = System.currentTimeMillis() - challenge.timestamp
+                val remaining = ((15_000L - elapsed) / 1000).toInt().coerceIn(0, 15)
+                if (remaining <= 0) return@listenIncomingChallenges // already expired
+
+                _uiState.value = _uiState.value.copy(
+                    pendingChallenge = challenge,
+                    challengeCountdown = remaining
+                )
+
+                // Show notification if app is in background
+                showChallengeNotification(challenge.fromName)
+
+                // Start receiver countdown
+                countdownJob?.cancel()
+                countdownJob = viewModelScope.launch {
+                    var timeLeft = remaining
+                    while (timeLeft > 0 && isActive) {
+                        delay(1000L)
+                        timeLeft--
+                        _uiState.value = _uiState.value.copy(challengeCountdown = timeLeft)
+                    }
+                    // Auto-decline when countdown reaches 0
+                    if (_uiState.value.pendingChallenge?.id == challenge.id) {
+                        repo.declineChallenge(challenge.id)
+                        _uiState.value = _uiState.value.copy(
+                            pendingChallenge = null,
+                            challengeCountdown = null
+                        )
+                    }
+                }
             }
 
             friendReqListener = repo.listenFriendRequests(myPlayerId) { requests ->
@@ -262,37 +323,62 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         if (_uiState.value.sentChallengeId != null) return
 
         viewModelScope.launch {
+            // Mutual challenge prevention: check if they already challenged us
+            val existingChallenge = repo.checkExistingChallenge(player.id, myPlayerId)
+            if (existingChallenge != null) {
+                // They already sent us a challenge — auto-show it instead
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = "${player.displayName} already challenged you!"
+                )
+                return@launch
+            }
+
             val challengeId = repo.sendChallenge(profile.id, profile.visibleName, player.id, player.displayName, timeControl)
             if (challengeId != null) {
                 _uiState.value = _uiState.value.copy(
-                    sentChallengeId = challengeId, sentChallengeName = player.displayName
+                    sentChallengeId = challengeId, sentChallengeName = player.displayName,
+                    senderCountdown = 15
                 )
                 sentChallengeListener = repo.listenChallengeStatus(challengeId) { challenge ->
                     when (challenge.status) {
                         "accepted" -> {
+                            senderCountdownJob?.cancel()
                             _uiState.value = _uiState.value.copy(
-                                acceptedChallenge = challenge, sentChallengeId = null, sentChallengeName = null
+                                acceptedChallenge = challenge, sentChallengeId = null,
+                                sentChallengeName = null, senderCountdown = null
                             )
                         }
                         "declined" -> {
+                            senderCountdownJob?.cancel()
                             _uiState.value = _uiState.value.copy(
                                 sentChallengeId = null, sentChallengeName = null,
+                                senderCountdown = null,
                                 errorMessage = "${challenge.toName} declined"
                             )
                             sentChallengeListener?.remove()
                         }
                     }
                 }
-                // Auto-expire sent challenge after 90 seconds if no response
-                viewModelScope.launch {
-                    delay(90_000L)
+                // Start sender countdown (15 seconds)
+                senderCountdownJob?.cancel()
+                senderCountdownJob = viewModelScope.launch {
+                    var timeLeft = 15
+                    while (timeLeft > 0 && isActive) {
+                        delay(1000L)
+                        timeLeft--
+                        if (_uiState.value.sentChallengeId == challengeId) {
+                            _uiState.value = _uiState.value.copy(senderCountdown = timeLeft)
+                        }
+                    }
+                    // Auto-expire when countdown reaches 0
                     if (_uiState.value.sentChallengeId == challengeId) {
                         _uiState.value = _uiState.value.copy(
                             sentChallengeId = null, sentChallengeName = null,
+                            senderCountdown = null,
                             errorMessage = "${player.displayName} didn't respond"
                         )
                         sentChallengeListener?.remove()
-                        repo.declineChallenge(challengeId) // clean up in Firestore
+                        repo.declineChallenge(challengeId)
                     }
                 }
             }
@@ -301,12 +387,14 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     fun acceptChallenge() {
         val challenge = _uiState.value.pendingChallenge ?: return
+        countdownJob?.cancel()
         viewModelScope.launch {
             val urls = repo.acceptChallenge(challenge.id, challenge.timeControl)
             if (urls != null) {
                 _uiState.value = _uiState.value.copy(
                     acceptedChallenge = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first),
-                    pendingChallenge = null
+                    pendingChallenge = null,
+                    challengeCountdown = null
                 )
             }
         }
@@ -314,9 +402,10 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     fun declineChallenge() {
         val challenge = _uiState.value.pendingChallenge ?: return
+        countdownJob?.cancel()
         viewModelScope.launch {
             repo.declineChallenge(challenge.id)
-            _uiState.value = _uiState.value.copy(pendingChallenge = null)
+            _uiState.value = _uiState.value.copy(pendingChallenge = null, challengeCountdown = null)
         }
     }
 
@@ -330,8 +419,16 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun cancelSentChallenge() {
+        val challengeId = _uiState.value.sentChallengeId
         sentChallengeListener?.remove()
-        _uiState.value = _uiState.value.copy(sentChallengeId = null, sentChallengeName = null)
+        senderCountdownJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            sentChallengeId = null, sentChallengeName = null, senderCountdown = null
+        )
+        // Clean up in Firestore
+        if (challengeId != null) {
+            viewModelScope.launch { repo.declineChallenge(challengeId) }
+        }
     }
 
     fun clearError() {
@@ -345,12 +442,39 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val recentGames = repo.getRecentGames(profile.id)
             val unchecked = recentGames.filter { !it.resultChecked && it.lichessGameId.isNotBlank() }
+            var anyProcessed = false
             for (game in unchecked) {
                 val result = repo.checkLichessGameResult(game.lichessGameId)
                 if (result != null && result != "ongoing") {
+                    // processGameResult uses atomic claim — safe for both players to call
                     repo.processGameResult(game)
+                    anyProcessed = true
 
-                    // Save to local history
+                    // Save to local history (each device saves their own view)
+                    val myColor = if (game.fromId == profile.id) game.fromColor.ifBlank { "white" }
+                                  else if (game.fromColor == "white") "black" else "white"
+                    val opponentName = if (game.fromId == profile.id) game.toName else game.fromName
+                    val myResult = when {
+                        result == "draw" -> "draw"
+                        result == "aborted" -> "aborted"
+                        result == myColor -> "win"
+                        else -> "loss"
+                    }
+                    // Avoid duplicate local history entries
+                    val existingIds = _uiState.value.matchHistory.map { it.lichessGameId }.toSet()
+                    if (game.lichessGameId !in existingIds) {
+                        saveMatchToHistory(opponentName, myResult, game.lichessGameId)
+                    }
+                }
+            }
+            // Also check for games that were already processed by the other player
+            // but we haven't saved to local history yet
+            val checked = recentGames.filter { it.resultChecked && it.lichessGameId.isNotBlank() }
+            val existingIds = _uiState.value.matchHistory.map { it.lichessGameId }.toSet()
+            for (game in checked) {
+                if (game.lichessGameId in existingIds) continue
+                val result = repo.checkLichessGameResult(game.lichessGameId)
+                if (result != null && result != "ongoing") {
                     val myColor = if (game.fromId == profile.id) game.fromColor.ifBlank { "white" }
                                   else if (game.fromColor == "white") "black" else "white"
                     val opponentName = if (game.fromId == profile.id) game.toName else game.fromName
@@ -361,14 +485,18 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                         else -> "loss"
                     }
                     saveMatchToHistory(opponentName, myResult, game.lichessGameId)
+                    anyProcessed = true
                 }
             }
-            // Refresh profile
-            if (unchecked.isNotEmpty()) {
+            // Refresh profile + leaderboard after processing
+            if (anyProcessed || unchecked.isNotEmpty()) {
                 val refreshed = repo.getOrCreateProfile(profile.id, profile.displayName, "")
                 if (refreshed != null) {
                     _uiState.value = _uiState.value.copy(myProfile = refreshed)
                 }
+                // Always refresh leaderboard cache so it's fresh when opened
+                val board = repo.getLeaderboard()
+                _uiState.value = _uiState.value.copy(leaderboard = board)
             }
         }
     }
@@ -379,6 +507,54 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         friendReqListener?.remove()
         sentChallengeListener?.remove()
         heartbeatJob?.cancel()
+        countdownJob?.cancel()
+        senderCountdownJob?.cancel()
+    }
+
+    private fun showChallengeNotification(fromName: String) {
+        val app = getApplication<Application>()
+        // Only show notification if app is in background
+        val am = app.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val isInForeground = am.runningAppProcesses?.any { proc ->
+            proc.processName == app.packageName &&
+            proc.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+        } ?: false
+
+        if (isInForeground) return
+
+        val notificationManager = app.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                "chess_challenge_channel",
+                "Chess Challenges",
+                android.app.NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifications for incoming chess challenges"
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val intent = android.content.Intent(app, com.example.attendancewidgetlaudea.MainActivity::class.java).apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("navigate_to", "chess")
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            app, 2003, intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = androidx.core.app.NotificationCompat.Builder(app, "chess_challenge_channel")
+            .setSmallIcon(com.example.attendancewidgetlaudea.R.drawable.ic_launcher_foreground)
+            .setContentTitle("Chess Challenge!")
+            .setContentText("$fromName wants to play chess with you!")
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setTimeoutAfter(15_000L) // auto-dismiss after 15s
+            .build()
+
+        notificationManager.notify(2003, notification)
     }
 
     override fun onCleared() {

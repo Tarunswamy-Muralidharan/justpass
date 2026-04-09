@@ -2,6 +2,9 @@ package com.example.attendancewidgetlaudea.ui.screens
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.widget.Toast
@@ -23,6 +26,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
@@ -107,29 +112,68 @@ fun CgpaCalculatorScreen(
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
         if (mimeType == "application/pdf") {
-            // PDF: render each page to bitmap and OCR
+            // PDF: Try direct text extraction first (PdfiumAndroid), fall back to OCR
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
                     val fd = context.contentResolver.openFileDescriptor(uri, "r") ?: throw Exception("Can't open PDF")
-                    val renderer = PdfRenderer(fd)
-                    val allText = StringBuilder()
-                    for (i in 0 until renderer.pageCount) {
-                        val page = renderer.openPage(i)
-                        val bmp = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
-                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        page.close()
-                        val image = InputImage.fromBitmap(bmp, 0)
-                        val result = com.google.android.gms.tasks.Tasks.await(recognizer.process(image))
-                        allText.appendLine(result.text)
-                        bmp.recycle()
+
+                    // ── Tier 1: Direct text extraction via PdfiumAndroid ──
+                    var parsed = emptyList<Pair<String, String>>()
+                    try {
+                        val pdfium = arte.programar.pdfium.Pdfium()
+                        pdfium.newDocument(fd)
+                        val pageCount = pdfium.getPageCount()
+                        val allText = StringBuilder()
+                        for (i in 0 until pageCount) {
+                            pdfium.openPage(i)
+                            val text = pdfium.extractText(i)
+                            if (!text.isNullOrBlank()) allText.appendLine(text)
+                        }
+                        pdfium.closeDocument()
+                        val extractedText = allText.toString()
+                        android.util.Log.d("PDF_TEXT", "PdfiumAndroid extracted ${extractedText.length} chars")
+                        if (extractedText.length > 20) {
+                            android.util.Log.d("PDF_TEXT", "Preview: ${extractedText.take(500)}")
+                            parsed = parseGradesFromOcr(extractedText)
+                            if (parsed.isNotEmpty()) {
+                                android.util.Log.d("PDF_TEXT", "Tier 1 (text extract): Found ${parsed.size} grades")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("PDF_TEXT", "PdfiumAndroid failed: ${e.message}")
                     }
-                    renderer.close()
+
+                    // ── Tier 2: Fall back to OCR if text extraction found nothing ──
+                    if (parsed.isEmpty()) {
+                        android.util.Log.d("PDF_TEXT", "Tier 2: Falling back to ML Kit OCR")
+                        val fd2 = context.contentResolver.openFileDescriptor(uri, "r") ?: throw Exception("Can't reopen PDF")
+                        val renderer = PdfRenderer(fd2)
+                        val allOcrText = StringBuilder()
+                        for (i in 0 until renderer.pageCount) {
+                            val page = renderer.openPage(i)
+                            val bmp = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
+                            page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            page.close()
+                            // Preprocess: grayscale + contrast + threshold for colored backgrounds
+                            val processed = preprocessForOcr(bmp)
+                            bmp.recycle()
+                            val image = InputImage.fromBitmap(processed, 0)
+                            val result = com.google.android.gms.tasks.Tasks.await(recognizer.process(image))
+                            allOcrText.appendLine(result.text)
+                            processed.recycle()
+                        }
+                        renderer.close()
+                        fd2.close()
+                        parsed = parseGradesFromOcr(allOcrText.toString())
+                    }
+
                     fd.close()
-                    val parsed = parseGradesFromOcr(allText.toString())
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         if (parsed.isNotEmpty()) {
-                            viewModel.applyOcrGrades(parsed)
-                            Toast.makeText(context, "Found ${parsed.size} grades from PDF", Toast.LENGTH_SHORT).show()
+                            val semesters = viewModel.applyOcrGrades(parsed)
+                            val semText = if (semesters.size > 1) " across Sem ${semesters.sorted().joinToString(", ")}" else ""
+                            val tier = if (parsed.isNotEmpty()) "" else " (OCR)"
+                            Toast.makeText(context, "Found ${parsed.size} grades$semText", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(context, "No grades detected in PDF. Try a clearer file.", Toast.LENGTH_LONG).show()
                         }
@@ -162,9 +206,13 @@ fun CgpaCalculatorScreen(
                     val scaled = Bitmap.createScaledBitmap(original, original.width * 2, original.height * 2, true)
                     original.recycle()
 
-                    val image = InputImage.fromBitmap(scaled, 0)
-                    val visionText = com.google.android.gms.tasks.Tasks.await(recognizer.process(image))
+                    // Preprocess: grayscale + contrast + threshold for colored backgrounds
+                    val processed = preprocessForOcr(scaled)
                     scaled.recycle()
+
+                    val image = InputImage.fromBitmap(processed, 0)
+                    val visionText = com.google.android.gms.tasks.Tasks.await(recognizer.process(image))
+                    processed.recycle()
 
                     android.util.Log.d("OCR_DEBUG", "Full text:\n${visionText.text}")
                     for (block in visionText.textBlocks) {
@@ -180,13 +228,14 @@ fun CgpaCalculatorScreen(
 
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         if (parsed.isNotEmpty()) {
-                            viewModel.applyOcrGrades(parsed)
+                            val semesters = viewModel.applyOcrGrades(parsed)
+                            val semText = if (semesters.size > 1) " across Sem ${semesters.sorted().joinToString(", ")}" else ""
                             val passCount = visionText.text.uppercase().lines().count { it.trim() == "PASS" }
                             val total = if (passCount > 0) passCount else parsed.size
                             if (parsed.size < total) {
-                                Toast.makeText(context, "Found ${parsed.size}/$total grades. Check remaining manually.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Found ${parsed.size}/$total grades$semText. Check remaining manually.", Toast.LENGTH_LONG).show()
                             } else {
-                                Toast.makeText(context, "Found ${parsed.size} grades", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Found ${parsed.size} grades$semText", Toast.LENGTH_SHORT).show()
                             }
                         } else {
                             Toast.makeText(context, "No grades detected. Try a clearer, closer photo.", Toast.LENGTH_LONG).show()
@@ -203,11 +252,22 @@ fun CgpaCalculatorScreen(
         }
     }
 
+    var gpaMode by remember { mutableIntStateOf(0) } // 0 = Calculator, 1 = Results
+
+    if (gpaMode == 1) {
+        // ── Embedded Results view ──
+        ResultScreen(
+            cardState = io.github.fletchmckee.liquid.rememberLiquidState(),
+            onBack = { gpaMode = 0 }
+        )
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 130.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 160.dp)
             .verticalScroll(rememberScrollState())
     ) {
         // Header
@@ -221,6 +281,33 @@ fun CgpaCalculatorScreen(
                 }
                 Text("GPA Calculator", fontSize = 20.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Results tile — tap to view semester results
+        GlassListCard(
+            modifier = Modifier.fillMaxWidth()
+                .clickable { gpaMode = 1 },
+            shape = GlassCardShapeSmall,
+            tintColor = Color(0xFF4CAF50).copy(alpha = 0.08f)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.School, null, Modifier.size(22.dp),
+                    tint = Color(0xFF4CAF50))
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Semester Results", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface)
+                    Text("View grades from SIS", fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 
@@ -919,8 +1006,78 @@ private fun parseGradesSpatial(visionText: Text): List<Pair<String, String>> {
 
 /** Robust OCR grade parser for Anna University grade sheets.
  *  Handles any layout ML Kit produces: row-by-row, column-by-column, mixed blocks.
+ *  Supports multi-semester PDFs by splitting on semester headers and parsing each section.
  *  Uses fuzzy matching for OCR errors and combines multiple data sources. */
+/** Preprocess bitmap for better OCR on colored backgrounds (teal headers, light green cells).
+ *  Converts to grayscale, boosts contrast, then applies adaptive thresholding to produce
+ *  clean black text on white background. */
+private fun preprocessForOcr(src: Bitmap): Bitmap {
+    val width = src.width
+    val height = src.height
+
+    // Step 1: Convert to high-contrast grayscale
+    val grayscale = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(grayscale)
+    val paint = Paint()
+    // Increase contrast: multiply by 1.8, shift by -80
+    val contrast = 1.8f
+    val shift = -80f
+    val cm = ColorMatrix(floatArrayOf(
+        0.299f * contrast, 0.587f * contrast, 0.114f * contrast, 0f, shift,
+        0.299f * contrast, 0.587f * contrast, 0.114f * contrast, 0f, shift,
+        0.299f * contrast, 0.587f * contrast, 0.114f * contrast, 0f, shift,
+        0f, 0f, 0f, 1f, 0f
+    ))
+    paint.colorFilter = ColorMatrixColorFilter(cm)
+    canvas.drawBitmap(src, 0f, 0f, paint)
+
+    // Step 2: Adaptive thresholding — pixels darker than threshold become black, rest white
+    val pixels = IntArray(width * height)
+    grayscale.getPixels(pixels, 0, width, 0, 0, width, height)
+    val threshold = 140 // Tuned for teal/green backgrounds with dark text
+    for (i in pixels.indices) {
+        val gray = pixels[i] and 0xFF // Blue channel (all channels same after grayscale)
+        pixels[i] = if (gray < threshold) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+    }
+    grayscale.setPixels(pixels, 0, width, 0, 0, width, height)
+    return grayscale
+}
+
 private fun parseGradesFromOcr(text: String): List<Pair<String, String>> {
+    val upper = text.uppercase()
+
+    // Detect multi-semester documents by looking for semester headers
+    val semesterHeaderRegex = Regex("SEMESTER\\s*[-:]?\\s*[IVXL]+|SEM\\s*[-:]?\\s*\\d+|EXAMINATION\\s*[-:]?\\s*[A-Z]+\\s*\\d{4}", RegexOption.IGNORE_CASE)
+    val headers = semesterHeaderRegex.findAll(upper).toList()
+
+    // If multiple semester headers found, split and parse each section independently
+    if (headers.size >= 2) {
+        android.util.Log.d("OCR_PARSE", "Multi-semester PDF detected: ${headers.size} sections")
+        val allGrades = mutableListOf<Pair<String, String>>()
+        val seenCodes = mutableSetOf<String>()
+        for (i in headers.indices) {
+            val start = headers[i].range.first
+            val end = if (i + 1 < headers.size) headers[i + 1].range.first else upper.length
+            val section = upper.substring(start, end)
+            android.util.Log.d("OCR_PARSE", "Parsing section ${i + 1}: ${headers[i].value}")
+            val sectionGrades = parseGradesFromOcrSection(section)
+            for (grade in sectionGrades) {
+                if (grade.first !in seenCodes) {
+                    allGrades.add(grade)
+                    seenCodes.add(grade.first)
+                }
+            }
+        }
+        android.util.Log.d("OCR_PARSE", "Multi-semester total: ${allGrades.size} grades across ${headers.size} semesters")
+        if (allGrades.isNotEmpty()) return allGrades
+    }
+
+    // Single semester or no headers — parse as one block
+    return parseGradesFromOcrSection(upper)
+}
+
+/** Parse a single section (one semester) of OCR text for grades. */
+private fun parseGradesFromOcrSection(text: String): List<Pair<String, String>> {
     val upper = text.uppercase()
     val lines = upper.lines().map { it.trim() }.filter { it.isNotEmpty() }
 
@@ -1035,24 +1192,25 @@ private fun parseGradesFromOcr(text: String): List<Pair<String, String>> {
         }
     }
 
-    // ====== Strategy 3: Letter grades after GRADE header ======
-    val gradeHeaderIdx = lines.indexOfFirst { it == "GRADE" }
-    if (gradeHeaderIdx >= 0) {
-        val letterResults = mutableListOf<String>()
-        for (i in (gradeHeaderIdx + 1) until lines.size) {
-            if (isNoiseLine(lines[i])) continue
-            val fg = fuzzyLetterGrade(lines[i].replace(Regex("\\s+"), ""))
-            if (fg != null) {
-                letterResults.add(fg)
-            } else if (lines[i].contains("GRADE") || lines[i].contains("POINT") || lines[i].contains("RESULT")) {
-                break // hit next column header
-            }
-        }
-        android.util.Log.d("OCR_PARSE", "Strategy 3 (post-GRADE): ${letterResults.size} grades: $letterResults")
-        if (letterResults.size >= allCodes.size / 2) {
-            val result = allCodes.take(letterResults.size).zip(letterResults)
-            return result
-        }
+    // ====== Strategy 3: All letter grades near GRADE headers (multi-semester) ======
+    // Collect ALL standalone letter grades that appear after any "GRADE" header in the document
+    val letterResults3 = mutableListOf<String>()
+    var foundGradeHeader = false
+    for (i in lines.indices) {
+        val line = lines[i]
+        if (line.uppercase().trim() == "GRADE") { foundGradeHeader = true; continue }
+        if (!foundGradeHeader) continue
+        if (isNoiseLine(line)) continue
+        // Skip semester numbers, dates, headers, noise
+        if (line.matches(Regex("^\\d{1,2}$")) && line.toIntOrNull()?.let { it in 1..8 } == true) continue
+        val fg = fuzzyLetterGrade(line.replace(Regex("\\s+"), ""))
+        if (fg != null) letterResults3.add(fg)
+    }
+    android.util.Log.d("OCR_PARSE", "Strategy 3 (post-GRADE multi): ${letterResults3.size} grades: $letterResults3")
+    // Only use if we got enough grades (at least 80% of codes)
+    if (letterResults3.size >= allCodes.size * 4 / 5) {
+        val result = allCodes.take(letterResults3.size).zip(letterResults3)
+        return result
     }
 
     // ====== Strategy 4: Column matching — fuzzy GP runs with gap tolerance ======
@@ -1104,6 +1262,25 @@ private fun parseGradesFromOcr(text: String): List<Pair<String, String>> {
     if (allGps.size >= allCodes.size) {
         val result = allCodes.zip(allGps.takeLast(allCodes.size))
         android.util.Log.d("OCR_PARSE", "Strategy 6 (all GPs): ${result.size}")
+        return result
+    }
+
+    // ====== Strategy 7: All standalone letter grades in document order ======
+    // For multi-semester PDFs where grades appear as standalone lines (O, A+, A, B+, etc.)
+    val allLetterGrades = mutableListOf<String>()
+    for (line in lines) {
+        if (isNoiseLine(line)) continue
+        val stripped = line.replace(Regex("\\s+"), "").uppercase()
+        // Only match lines that are PURELY a grade (not part of other text)
+        if (stripped.length <= 2) {
+            val fg = fuzzyLetterGrade(stripped)
+            if (fg != null) allLetterGrades.add(fg)
+        }
+    }
+    android.util.Log.d("OCR_PARSE", "Strategy 7 (all standalone grades): ${allLetterGrades.size} — $allLetterGrades")
+    if (allLetterGrades.size >= allCodes.size / 2) {
+        // If more grades than codes, take the first N (they appear in order)
+        val result = allCodes.zip(allLetterGrades.take(allCodes.size))
         return result
     }
 

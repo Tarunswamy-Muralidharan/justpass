@@ -23,6 +23,7 @@ import com.example.attendancewidgetlaudea.data.model.SessionInfo
 import com.example.attendancewidgetlaudea.ui.components.GlassCardShapeSmall
 import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.components.GlassListSurface
+import com.example.attendancewidgetlaudea.ui.components.RoseFourLoader
 
 import com.example.attendancewidgetlaudea.ui.viewmodel.TimetableViewModel
 import io.github.fletchmckee.liquid.LiquidState
@@ -76,7 +77,7 @@ fun TimetableScreen(cardState: LiquidState, viewModel: TimetableViewModel = view
 
         Box(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             when {
-                uiState.isLoading && uiState.days.isEmpty() -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                uiState.isLoading && uiState.days.isEmpty() -> RoseFourLoader(modifier = Modifier.size(48.dp).align(Alignment.Center))
                 uiState.errorMessage != null && uiState.days.isEmpty() -> {
                     Column(modifier = Modifier.align(Alignment.Center).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(uiState.errorMessage ?: "Unknown error", color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
@@ -101,7 +102,7 @@ fun TimetableScreen(cardState: LiquidState, viewModel: TimetableViewModel = view
 @Composable
 private fun DaySchedule(day: DayTimetable, isToday: Boolean) {
     val currentSessionIndex = if (isToday) getCurrentSessionIndex(day) else -1
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 12.dp, bottom = 130.dp),
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 12.dp, bottom = 160.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(day.sessions) { session -> SessionCard(session, isToday && session.sessionNumber == currentSessionIndex) }
         if (day.sessions.isEmpty()) {
@@ -152,7 +153,8 @@ private fun SessionCard(session: SessionInfo, isCurrentSession: Boolean) {
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(session.courseCode, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Text(session.courseCode, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (isCurrentSession) {
                         Spacer(modifier = Modifier.width(8.dp))
                         GlassListSurface(shape = RoundedCornerShape(4.dp), tintColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)) {
