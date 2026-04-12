@@ -4281,3 +4281,470 @@ Fixed to `Pdfium()` (no args), and discovered `openPage(i)` must be called befor
 
 **Lesson Learned:**
 Always verify third-party library APIs by inspecting the actual JAR/AAR rather than trusting documentation or AI-generated code snippets.
+
+**Files Modified:**
+- `CgpaCalculatorScreen.kt` — Fixed Pdfium constructor call and API usage
+
+---
+
+### Challenge 71: OCR Image Preprocessing — Grayscale + Contrast + Thresholding
+**Problem:**
+ML Kit OCR struggled with Anna University grade sheets that have teal colored table headers, light green cell backgrounds, and small text. The colored backgrounds caused low contrast between text and background, leading to missed grades.
+
+**Solution:**
+Added `preprocessForOcr(Bitmap)` function that transforms images before ML Kit processing:
+1. **Grayscale conversion** using luminance weights (0.299R + 0.587G + 0.114B)
+2. **Contrast boost** (1.8x multiplier, -80 shift) — makes dark text darker, light backgrounds lighter
+3. **Adaptive thresholding** (threshold=140) — everything below becomes pure black, above becomes pure white
+
+This turns teal headers and green cells into clean black-on-white, dramatically improving ML Kit's detection accuracy. Applied to both PDF OCR fallback path and direct image import path.
+
+**Files Modified:**
+- `CgpaCalculatorScreen.kt` — Added `preprocessForOcr()`, applied to PDF and image OCR paths
+
+---
+
+### Challenge 72: Bunkometer Showing Default 6 Hours — Timetable Session Counts Not Loading on Init
+**Problem:**
+Both the slider and calendar picker in the Bunkometer showed 6 hours for every day instead of the actual per-day session counts from the timetable. The previous version worked correctly.
+
+**Root Cause:**
+`loadTimetableSessionCounts()` was only called inside `refreshAttendance()` success block, which requires network. On app init with cached data, it never ran — `sessionsPerDay` stayed at the default `[6,6,6,6,6,6]`.
+
+**Solution:**
+Added `loadCachedSessionCounts()` that runs immediately during `loadInitialData()`:
+- Reads cached timetable JSON (no network needed)
+- Uses cached subject attendance + CA marks to identify registered courses
+- Matches course titles to timetable entries to detect honours courses
+- Excludes unregistered honours from session counts
+- Students WITH honours get their honours sessions counted; students WITHOUT don't
+
+This gives correct per-day hours instantly. After refresh succeeds, `loadTimetableSessionCounts()` overwrites with the more accurate API-based honours filtering.
+
+**Files Modified:**
+- `DashboardViewModel.kt` — Added `loadCachedSessionCounts()`, called from `loadInitialData()`
+
+---
+
+### Challenge 73: Semester Results Embedded in GPA Calculator
+**Problem:**
+The Semester Results screen and GPA Calculator were separate screens accessed from different places. Users had to navigate away from the GPA calculator to check their actual results.
+
+**Solution:**
+Added a "Semester Results" tile at the top of the GPA Calculator screen. Tapping it switches to the embedded `ResultScreen` (reusing the existing composable). Back button returns to the calculator view. Uses `gpaMode` state toggle (0=Calculator, 1=Results).
+
+**Files Modified:**
+- `CgpaCalculatorScreen.kt` — Added Results tile + mode toggle, embedded ResultScreen
+
+---
+
+### Challenge 74: Chess Lobby — "Leaderboard" Text Truncation
+**Problem:**
+On the Moto G54 (smaller screen width), the chess lobby's second action row has three equal-weight cards: "Leaderboard", "Name", and "Info". The word "Leaderboard" was being cut off, displaying as "Leaderboar" with the "d" invisible. This was discovered during a systematic UI audit of all 14 screens on a physical device.
+
+**Root Cause:**
+The `Text` composable had `maxLines = 1` but no `overflow` handling, and `fontSize = 12.sp` was too large for the available width when three `weight(1f)` cards share the row with `spacedBy(6.dp)`.
+
+**Solution:**
+- Reduced `fontSize` from `12.sp` to `11.sp` for the "Leaderboard" text
+- Added `overflow = TextOverflow.Ellipsis` as a safety net for extreme font scaling
+- The 1sp reduction was enough to fit "Leaderboard" fully on the Moto G54's 360dp width
+
+**Key Insight:**
+Always test UI on physical devices with smaller screens — emulators often have wider viewports that hide truncation issues. The `maxLines = 1` pattern should always be paired with `overflow = TextOverflow.Ellipsis`.
+
+**Files Modified:**
+- `ChessScreen.kt` — Line 394: font size 12sp→11sp, added overflow ellipsis
+
+---
+
+### Challenge 75: GlobalScope Anti-Pattern in ChessViewModel
+**Problem:**
+The `ChessViewModel` used `GlobalScope.launch(Dispatchers.IO)` in two places — `goOffline()` and `onCleared()` — to delete the player's presence document from Firestore. The comment said "so the delete completes even if ViewModel is destroyed", but `GlobalScope` creates orphaned coroutines that:
+1. Have no lifecycle awareness — they can't be cancelled
+2. Can leak resources if the app process is killed mid-operation
+3. Are flagged by Android lint and considered an anti-pattern
+
+**Why GlobalScope Was Used (And Why It's Wrong):**
+The developer's intent was correct — Firestore cleanup must survive ViewModel destruction. But `GlobalScope` is the nuclear option. The coroutine lives until the process dies, can't be tracked, and can cause crashes if it touches destroyed resources.
+
+**Solution:**
+Replaced both usages with `viewModelScope.launch(Dispatchers.IO + NonCancellable)`:
+- `viewModelScope` — provides structured concurrency (the coroutine is tracked)
+- `NonCancellable` — ensures the delete completes even when the scope is cancelled during `onCleared()`
+- `Dispatchers.IO` — keeps the Firestore network call off the main thread
+- This is the officially recommended pattern from Google's coroutines documentation
+
+**Key Insight:**
+`NonCancellable` is the correct escape hatch when you need a coroutine to survive cancellation. It's like `GlobalScope` but within structured concurrency — you get the "don't cancel me" behavior without losing lifecycle tracking. The combination `viewModelScope.launch(Dispatchers.IO + NonCancellable)` is the idiomatic way to do cleanup work in `onCleared()`.
+
+**Files Modified:**
+- `ChessViewModel.kt` — Replaced `GlobalScope` import with `NonCancellable`, changed both launch calls at lines ~200 and ~564
+
+---
+
+### Challenge 76: Firestore Rules Audit — Test Mode vs Production Verification
+**Problem:**
+Before scaling chess to 1500 daily users, needed to verify Firestore security rules weren't still in test mode (which allows anyone to read/write everything). An automated audit flagged "test mode" rules, but investigation revealed the audit was reading stale documentation, not the actual deployed rules.
+
+**Investigation Process:**
+1. Searched for `firestore.rules` file — none found in repo (rules managed via Firebase Console)
+2. Found `allow read, write: if request.time < timestamp.date(2026, 5, 1)` — but only in `CHESS_SYSTEM.md` documentation, not in deployed rules
+3. Memory file `project_firestore_production.md` indicated production rules were deployed April 3
+4. Used Firebase CLI + REST API to verify: `firebase projects:list` confirmed authentication
+5. Queried `https://firebaserules.googleapis.com/v1/projects/attendacewidget/rulesets?pageSize=1` to get the latest ruleset ID
+6. Fetched the full ruleset content via REST API — confirmed production rules deployed at `2026-04-03T16:06:43Z`
+
+**Actual Production Rules:**
+```
+chess_online/{playerId}      → read, write: allowed (presence heartbeat)
+chess_challenges/{id}        → read, create, update: allowed; delete: BLOCKED
+chess_profiles/{id}          → read, create, update: allowed; delete: BLOCKED
+chess_friends/{id}           → read, create, update, delete: allowed
+/{document=**}               → DENIED (catch-all blocks everything else)
+```
+No Firebase Auth is used (app uses WebView Keycloak SSO), so rules can't validate `request.auth`. Delete is blocked on profiles and challenges to prevent malicious data wipes.
+
+**Solution:**
+Updated `CHESS_SYSTEM.md` to reflect the current production rules, removing the stale "test mode" section.
+
+**Key Insight:**
+Always verify live infrastructure state against the actual source of truth (Firebase REST API), not against documentation or code comments which can become stale. The REST API endpoint `firebaserules.googleapis.com/v1/projects/{projectId}/rulesets` is the authoritative source for deployed rules.
+
+**Files Modified:**
+- `CHESS_SYSTEM.md` — Updated security section from stale test mode docs to actual production rules
+
+---
+
+### Challenge 77: AdMob Integration — Complete Banner Ad System
+**Problem:**
+The app has ~1500 daily active users but no monetization. Decision was made to add small AdMob banner ads on secondary screens only, keeping the dashboard, timetable, and other core screens ad-free.
+
+**Implementation Steps:**
+
+1. **AdMob Account Setup:**
+   - Created AdMob account at admob.google.com
+   - Registered app "JustPass" with package name `com.example.attendancewidgetlaudea`
+   - App shows "Requires review" since it's not on a store — ads still serve but with limited fill rate
+   - Created Banner ad unit: `ca-app-pub-4936276228225156/4108831863`
+   - App ID: `ca-app-pub-4936276228225156~9342992412`
+   - Partner bidding left unchecked (designed for apps with 50K+ DAU and mediation platforms)
+   - eCPM floor set to "Google optimized" with "All prices" to maximize fill rate
+
+2. **SDK Integration:**
+   - Added `com.google.android.gms:play-services-ads:23.6.0` dependency
+   - Added `com.google.android.gms.ads.APPLICATION_ID` meta-data in `AndroidManifest.xml`
+   - Called `MobileAds.initialize(this)` in `MainActivity.onCreate()`
+   - Registered test device ID via `RequestConfiguration.Builder().setTestDeviceIds()` — the device ID is logged by AdMob on first run (look for "Use RequestConfiguration.Builder().setTestDeviceIds" in logcat)
+
+3. **Manifest Merger Conflict:**
+   - AdMob (`play-services-ads-lite`) and Firebase Analytics (`play-services-measurement-api`) both declare `android.adservices.AD_SERVICES_CONFIG` with different `@xml` resources
+   - Error: `Attribute property#android.adservices.AD_SERVICES_CONFIG@resource value=(@xml/gma_ad_services_config) ... is also present at ... value=(@xml/ga_ad_services_config)`
+   - Fix: Added `<property android:name="android.adservices.AD_SERVICES_CONFIG" android:resource="@xml/gma_ad_services_config" tools:replace="android:resource" />` to the manifest
+
+4. **Reusable AdBanner Composable:**
+   - Created `ui/components/AdBanner.kt` — a `@Composable` function wrapping `AndroidView` with Google's `AdView`
+   - Uses `AdSize.BANNER` (320x50dp) — the standard mobile banner size
+   - Ad unit ID stored as a private constant for easy swapping between test and production
+   - The `AndroidView` pattern is required because AdMob's `AdView` is a traditional Android View, not a Compose component
+
+5. **Ad Placement Strategy (7 secondary screens):**
+   - Banner placed inline below the header (GlassListCard) on each screen
+   - Uses `Modifier.padding(horizontal = 16.dp, vertical = 4.dp)` to match the screen's content padding
+   - When no ad loads, `AdView` takes zero height — no blank gaps
+   - Screens with ads: SubjectAttendance, SubjectDetail, Exemptions, Result, AcademicCalendar, Circulars, CgpaCalculator
+   - Screens deliberately ad-free: Dashboard, Timetable, Profile, Login, CA Marks, Chess
+
+6. **ProGuard Rules:**
+   - Added `-keep class com.google.android.gms.ads.** { *; }` to prevent R8/ProGuard from stripping AdMob classes in release builds
+
+**Obstacles Encountered:**
+
+**Obstacle 1: Ads Not Loading — Error Code 0 (Internal Error)**
+- Symptom: `Ad failed to load : 0`, logcat showed `Dynamic lookup for intent failed for action: com.google.android.gms.ads.service.CACHE/START`
+- Red herring: Initially suspected Google Play Services was outdated on Moto G54 — user confirmed it was up to date
+- Actual cause: **AdGuard DNS** was enabled on the device, blocking all requests to `pagead2.googlesyndication.com` and Google ad service intents
+
+**Obstacle 2: Test Ad Unit ID vs Real Ad Unit ID Confusion**
+- Google's test ad unit ID (`ca-app-pub-3940256099942544/6300978111`) requires the device to be registered as a test device AND no ad blockers
+- The `setTestDeviceIds()` configuration only makes real ads show "Test Ad" labels — it doesn't force Google's sample test ads
+- With AdGuard off, Google's test ad unit ID worked immediately, showing "Nice job! This is a 320x50 test ad."
+- Real ad unit returned error code 3 (NO_FILL) — expected for newly created ad units, takes a few hours to start serving
+
+**Obstacle 3: New Ad Unit Activation Delay**
+- Newly created AdMob ad units don't start serving immediately
+- Error code 3 (NO_FILL) = request reaches Google's servers but no ad inventory available yet
+- Normal activation time: 1-24 hours for new accounts/units
+- Not a code issue — the integration is correct, Google just needs time to index the new unit
+
+**Key Insights:**
+- Ad blockers (AdGuard, Pi-hole, etc.) will prevent ads from loading — this is expected and affects a portion of users. The `AdView` gracefully handles this by taking zero height.
+- Always test with both ad blocker ON and OFF to verify graceful degradation
+- `MobileAds.initialize()` should be called once in `onCreate()`, not per-screen
+- The manifest merger conflict between Firebase Analytics and AdMob is a common gotcha — document it for other developers
+- Banner ads are the least intrusive but lowest-paying format. At 1500 DAU in India with banner eCPM of $0.10-0.30, expect ~$2-8/month (150-600 rupees)
+- Publishing on Amazon Appstore (free, no $25 fee like Google Play) lifts AdMob's ad serving limits for non-store apps
+
+**Files Created:**
+- `ui/components/AdBanner.kt` — Reusable AdMob banner composable
+
+**Files Modified:**
+- `app/build.gradle.kts` — Added play-services-ads dependency
+- `AndroidManifest.xml` — Added AdMob App ID meta-data + ad_services conflict resolution
+- `MainActivity.kt` — MobileAds initialization + test device registration
+- `proguard-rules.pro` — AdMob keep rules
+- `SubjectAttendanceScreen.kt` — Added AdBanner after header
+- `SubjectDetailScreen.kt` — Added AdBanner after header
+- `ExemptionsScreen.kt` — Added AdBanner after header
+- `ResultScreen.kt` — Added AdBanner after header
+- `AcademicCalendarScreen.kt` — Added AdBanner after header
+- `CircularsScreen.kt` — Added AdBanner after header
+- `CgpaCalculatorScreen.kt` — Added AdBanner after header
+
+---
+
+### Challenge 78: Interstitial Ad — Full-Screen Ad After Bunkometer
+**Problem:**
+Banner ads pay very low eCPM in India ($0.10-0.30). Interstitial (full-screen) ads pay 5-10x more ($0.50-2.00 eCPM) and could roughly double total ad revenue. Needed a natural, non-annoying placement.
+
+**Placement Decision:**
+Chose to show the interstitial after the user taps "Done" on the Bunkometer dialog. This is a natural transition point — the user has finished interacting with the Bunkometer and is returning to the dashboard. It's not interrupting a workflow.
+
+**Implementation — InterstitialAdManager Singleton:**
+Created `ui/components/InterstitialAdManager.kt` as a singleton object that:
+1. **Preloads** the interstitial at app startup (inside `MobileAds.initialize()` callback)
+2. **Shows** the ad when triggered — if the ad isn't loaded yet, silently skips (no crash, no blank screen)
+3. **Auto-reloads** the next interstitial after each show or failure
+4. Uses `FullScreenContentCallback` to handle dismiss/failure and trigger reload
+
+**Key Design Decisions:**
+- Singleton pattern ensures only one interstitial is loaded at a time (Google best practice)
+- `preload()` guards against double-loading with `isLoading` flag
+- If ad isn't ready when triggered, `onDismissed()` callback fires immediately so the app flow isn't blocked
+- Preload happens in the `MobileAds.initialize()` callback, not in `onCreate()`, to ensure the SDK is ready
+
+**Ad Unit Creation:**
+Used Playwright browser automation to create the interstitial ad unit directly in the AdMob dashboard:
+- Navigated to admob.google.com → Apps → JustPass → Ad units → Add ad unit → Interstitial
+- Named it "Bunkometer Interstitial"
+- Ad Unit ID: `ca-app-pub-4936276228225156/3208220090`
+
+**Files Created:**
+- `ui/components/InterstitialAdManager.kt` — Singleton interstitial manager (preload, show, auto-reload)
+
+**Files Modified:**
+- `MainActivity.kt` — Added `InterstitialAdManager.preload()` in MobileAds init callback
+- `DashboardScreen.kt` — Bunkometer "Done" button triggers `InterstitialAdManager.show(activity)`
+
+---
+
+### Challenge 79: Chess Analysis Closing Midway — Game-End Detection Bug
+**Problem:**
+When a user opened a completed chess game for analysis/replay from the match history, the in-app Lichess WebView would close after ~1.5 seconds. The user reported "it closes midway" during analysis.
+
+**Root Cause:**
+The `LichessGameScreen` composable injects JavaScript that polls the Lichess DOM every 2 seconds for game-over indicators (text containing "win", "lose", "mate", "resign", etc.). When opening a **completed** game for analysis, the result is already in the DOM — so the poll immediately detects "game over" on the first tick.
+
+The detection flow:
+1. JS `pollGameEnd` finds `.result-wrap .status` element with "win"/"mate"/etc. text
+2. Calls `JustPass.onGameEnd(result)` via JavascriptInterface
+3. Sets `gameEnded` state variable
+4. `LaunchedEffect(gameEnded)` triggers → `delay(1500)` → `onClose(gameEnded)`
+5. WebView closes after 1.5 seconds — user sees the board briefly then it's gone
+
+**Solution:**
+Added `isLiveGame` flag that distinguishes live games from replays/analysis:
+```kotlin
+val isLiveGame = remember(url) { !url.contains("#") && !url.contains("/analysis") }
+```
+- Live game URL: `https://lichess.org/GAMEID` → `isLiveGame = true`
+- Analysis URL: `https://lichess.org/GAMEID#analysis` → `isLiveGame = false`
+- Replay URL (from history): `https://lichess.org/GAMEID` with result already in DOM
+
+Two changes:
+1. `pollGameEnd` JS only injected when `isLiveGame` is true — no polling for replays
+2. `LaunchedEffect` auto-close only fires when `isLiveGame && gameEnded != null`
+
+Result: analysis/replay pages stay open until the user manually presses back.
+
+**Key Insight:**
+When injecting JavaScript into third-party web pages (Lichess), always consider that the same page structure appears in different contexts (live game vs. completed game). The game-end detection was correct for live games but broke for replays because the same DOM elements exist in both states.
+
+**Files Modified:**
+- `ChessScreen.kt` — Added `isLiveGame` flag, conditional pollGameEnd injection, conditional auto-close
+
+---
+
+### Challenge 80: Exam Timetable Feature Removal
+**Problem:**
+The exam seat finder screen had two modes: Excel import for seating, and PDF import for exam timetable parsing. The timetable extraction feature was complex (PdfiumAndroid text extraction + ML Kit OCR fallback + regex-heavy parsing) and the user decided to remove it entirely, keeping only the seat finder.
+
+**What Was Removed:**
+- `ExamSeatScreen.kt` — Removed ~90 lines of timetable UI (grouped date cards, session badges, loading state)
+- `ExamSeatViewModel.kt` — Removed ~280 lines:
+  - `processPdfTimetable()` — Two-tier PDF processing (PdfiumAndroid + OCR)
+  - `ocrPdfPages()` — ML Kit OCR with 2x upscale bitmap rendering
+  - `detectExamType()` — Exam type detection from filename/text (CAT-I, CAT-II, End Semester, etc.)
+  - `parseExamTimetableText()` — Complex regex parser for dates, sessions, course codes, branch names
+- Removed `ExamTimetableEntry` from UI state
+- Removed unused imports: `Bitmap`, `PdfRenderer`, `InputImage`, `TextRecognition`, `TextRecognizerOptions`, `tasks.await`
+- `AndroidManifest.xml` — Removed `application/pdf` MIME type from intent filter (app no longer accepts shared PDFs for exam timetable)
+- Updated guide step description from "Excel for seating, PDF for timetable" to "Excel file for seating"
+
+**Key Insight:**
+Feature removal is as important as feature addition. The timetable parser was 280+ lines of complex regex code that handled edge cases in OCR output — maintaining it long-term would be a burden. Removing it simplified the codebase and the user experience.
+
+**Files Modified:**
+- `ExamSeatScreen.kt` — Removed timetable UI section + loading state
+- `ExamSeatViewModel.kt` — Removed 4 methods + unused imports + timetable state fields
+- `AndroidManifest.xml` — Removed PDF MIME type from share intent filter
+
+---
+
+### Challenge 81: Per-Screen Ad Analytics — Custom Event Tracking
+**Problem:**
+AdMob only reports total impressions per ad unit — it doesn't tell you which screen generated the most ad views. With one banner ad unit shared across 7 screens + 1 interstitial, there was no way to know which screens were most valuable for ad revenue.
+
+**Solution:**
+Added custom Firebase Analytics events for ad tracking:
+1. `ad_impression` — logged when an ad successfully loads on a screen, with `screen_name` and `ad_type` (banner/interstitial)
+2. `ad_click` — logged when a user clicks an ad, with `screen_name` and `ad_type`
+
+**Implementation:**
+- Added `logAdImpression()` and `logAdClick()` to `Analytics.kt`
+- Updated `AdBanner` composable to accept a `screenName` parameter
+- Added `AdListener` to the `AdView` — `onAdLoaded()` logs impression, `onAdClicked()` logs click
+- Updated all 8 AdBanner call sites with their screen name: SubjectAttendance, SubjectDetail, Exemptions, Result, AcademicCalendar, Circulars, CgpaCalculator, ChessGame
+- `InterstitialAdManager.show()` logs "Bunkometer" interstitial impression before showing
+
+**Where to See the Data:**
+Google Analytics → Reports → Engagement → Events → `ad_impression` → breakdown by `screen_name`
+
+This lets you answer: "Which screens generate the most ad revenue?" and optimize placement accordingly.
+
+**Files Modified:**
+- `Analytics.kt` — Added `logAdImpression()` and `logAdClick()`
+- `AdBanner.kt` — Added `screenName` parameter + AdListener for impression/click tracking
+- `InterstitialAdManager.kt` — Added impression logging
+- All 8 screen files updated with screen name parameter
+
+---
+
+### Challenge 82: Force Update System — Firebase Remote Config
+**Problem:**
+Some users were stuck on old app versions (v2.0.1) with no way to force them to update. The existing `UpdateChecker` only shows a dismissable notification — users can ignore it indefinitely.
+
+**Solution — Firebase Remote Config:**
+Added server-side version control using Firebase Remote Config:
+1. App fetches `min_version_code` parameter from Remote Config on every launch
+2. Compares it against the app's `versionCode` (from `PackageInfo`)
+3. If `currentVersionCode < minVersionCode`, shows a **non-dismissable** `AlertDialog`:
+   - Title: "Update Required"
+   - Message: "A new version of JustPass is available. Please update to continue using the app."
+   - Single button: "Update Now" → opens GitHub releases page
+   - `dismissOnBackPress = false`, `dismissOnClickOutside = false` — can't escape it
+   - `return` after the dialog prevents any app content from rendering
+
+**Remote Config Setup:**
+- Added `com.google.firebase:firebase-config` dependency (uses Firebase BOM for version management)
+- `minimumFetchIntervalInSeconds = 3600` — checks at most once per hour (avoids quota limits)
+- Default value: `min_version_code = 1` (no force update until you change it in Firebase Console)
+- Wrapped in try-catch — if Remote Config fails (no internet, etc.), app works normally
+
+**How to Use:**
+1. Firebase Console → Remote Config → Add parameter `min_version_code` = 1
+2. When you release v2.1 (versionCode 6), change it to `6`
+3. All older app versions immediately get the force-update wall
+4. No app update needed to change the threshold — it's server-controlled
+
+**Why Remote Config Over Other Approaches:**
+- **vs. Client-side check**: Can't force users on old versions that don't have the check code
+- **vs. GitHub file check**: Would need to parse JSON/YAML, handle network errors — Remote Config does this with retry/caching built in
+- **vs. Custom server**: Overkill for a version number — Remote Config is free and already integrated via Firebase
+
+**Limitation:**
+Users currently on v2.0.1 won't have this code — they can only be reached by sharing the new APK via WhatsApp. But all future users will have the force-update system.
+
+**Files Modified:**
+- `app/build.gradle.kts` — Added firebase-config dependency
+- `MainActivity.kt` — Added Remote Config fetch + force-update dialog with non-dismissable properties
+
+---
+
+### Challenge 83: Target CGPA Calculator — Reverse Grade Calculation
+**Problem:**
+Students know their target CGPA but have no idea what marks they need in upcoming semester exams to achieve it. They'd have to manually reverse-calculate the weighted average formula, account for CA marks already scored, and convert total marks to grades — tedious and error-prone.
+
+**Solution — Dashboard Target CGPA Card:**
+Built a persistent card on the dashboard that reverse-engineers the CGPA formula:
+
+1. **User sets target CGPA** (e.g., 9.0) via an input dialog — persisted in SecurePreferences
+2. **Fetches previous results** from Results API → calculates current CGPA and total weighted sum
+3. **Fetches current CA marks** from CA Marks API → knows what's already scored per subject
+4. **Reverse calculation:**
+   - `requiredThisSemWeighted = (targetCGPA × totalAllCredits) - previousWeightedSum`
+   - `requiredSGPA = requiredThisSemWeighted / currentSemCredits`
+   - Per subject: minimum total marks for the required grade → subtract CA marks → ESE marks needed
+5. **Shows per-subject breakdown** in a detail dialog: CA scored, ESE marks needed, grade badge, feasibility
+
+**Grading Scale (R2025 Absolute — used as best estimate):**
+| Marks | Grade | GP |
+|-------|-------|----|
+| 91-100 | O | 10 |
+| 81-90 | A+ | 9 |
+| 71-80 | A | 8 |
+| 61-70 | B+ | 7 |
+| 56-60 | B | 6 |
+| 50-55 | C | 5 |
+
+**Evaluation split:** Theory courses = CA (40 marks) + ESE (60 marks, paper out of 100 scaled to 60). Pass requires: ESE ≥ 45% AND total ≥ 50%.
+
+**UI Design — Three states:**
+- **No target set:** Compact GlassListCard prompt — "Set a goal to track what you need"
+- **Target set:** LiquidGlassCard with target CGPA (large text), current CGPA, required SGPA, summary message (e.g., "Need A+ in 3, A in 2 subjects")
+- **Tap to expand:** AlertDialog with per-subject cards showing CA scored, ESE needed, grade badge with color coding (blue=achievable, red=impossible, green=already secured, orange=difficult)
+
+**Key Design Decisions:**
+- Card placed below attendance card, above Bunkometer — most important info first
+- Target CGPA persisted so it shows every time the app opens as a constant reminder
+- Uses absolute grading as estimate since relative grading depends on class curve (noted with disclaimer)
+- Subject credits default to 3 if not found in results data
+- Minimum ESE pass mark (45/100) enforced in calculations
+
+**Files Modified:**
+- `data/local/SecurePreferences.kt` — Added `targetCgpa: Float` field
+- `data/model/CgpaData.kt` — Added `TargetSubjectResult`, `TargetCgpaResult`, `calculateTargetCgpa()`, grade conversion helpers (`totalMarksToGradePoint`, `gradePointToMinMarks`, `gradePointToLetter`)
+- `ui/viewmodel/DashboardViewModel.kt` — Added `loadTargetCgpa()`, `updateTargetCgpa()` with Results + CA marks fetching
+- `ui/screens/DashboardScreen.kt` — Added `TargetCgpaCard` composable with setup dialog + detail dialog
+
+**Reference:** Grading scheme extracted from `C:\Users\tmswa\Desktop\PSGiTech_R2025_Syllabus\CSE_R25.pdf` (Section 8.3.2, Table 6)
+
+---
+
+### Challenge 84: Ad Monetization Strategy — AdMob vs InMobi vs App Stores
+**Problem:**
+The app has ~1.4k users distributed via WhatsApp (sideloaded APKs). Need to monetize with ads, but AdMob requires apps to be listed in a supported app store for full ad serving. Google Play Store costs ₹2,100 ($25). Is there a free alternative?
+
+**Investigation:**
+1. **InMobi** — Considered as AdMob replacement (no store needed, better India eCPM ₹15-40 vs AdMob ₹10-30, lower $50 payout threshold). Code was fully migrated (SDK swap across 6 files), but **rejected after research**: mixed reviews on delayed payments (90-120 days reported), low priority support for small publishers, focus on big publishers.
+2. **Samsung Galaxy Store** — Free developer account, officially supported by AdMob. Portal was buggy (looped on "Corporate Commercial Distribution Seller" notice).
+3. **OPPO App Market** — Free, AdMob-supported, but primarily Chinese-focused with clunky English portal.
+4. **VIVO App Store** — Free, AdMob-supported, but developer portal is Chinese-language only.
+5. **Google Play Store** — ₹2,100 one-time fee. Most reliable, best AdMob integration (same Google ecosystem), largest reach in India, fastest review (1-3 days for first app).
+
+**Key Discovery:**
+AdMob officially supports 6 app stores: Google Play, Apple App Store, Amazon Appstore, OPPO App Market, Samsung Galaxy Store, VIVO App Store, and Xiaomi GetApps. Apps not in any supported store get **limited ad serving**. The store listing is purely for AdMob policy compliance — ad revenue comes from all users regardless of install source.
+
+**Final Decision:** Keep AdMob + publish on Google Play Store (or Samsung Galaxy Store as free fallback). InMobi code was fully reverted back to AdMob.
+
+**Code Changes:** All InMobi changes were reverted — no net code change. The 6 files (build.gradle.kts, AndroidManifest.xml, AdBanner.kt, InterstitialAdManager.kt, MainActivity.kt, proguard-rules.pro) remain unchanged with original AdMob integration.
+
+**Play Store Listing Prepared:**
+- App title: "JustPass - Attendance Tracker" (29 chars)
+- Short description: "Track attendance, plan bunks, check results & never miss 75% again. For PSGi."
+- Category: Education
+- Content rating: PEGI 3 / Everyone (has ads, no violence/gambling/UGC)
+- Full description (~2,750 chars) written with feature highlights
+
+**Lesson Learned:**
+For small developers distributing via WhatsApp in India, the ₹2,100 Google Play Store fee is the best investment. Free alternatives (Samsung/OPPO/VIVO) exist but have friction. InMobi looks attractive on paper but payment reliability concerns make it risky for small publishers.
