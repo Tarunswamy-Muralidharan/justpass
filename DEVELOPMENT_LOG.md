@@ -4781,3 +4781,227 @@ Created `AdConfig.kt` — a singleton that fetches the `ads_enabled` boolean fro
 
 **Key Insight:**
 Firebase Remote Config acts as a server-side feature flag. Since the Firebase SDK is baked into every APK binary, it phones home on every launch regardless of install source. This means even users who never update from v2.1 will start seeing ads the moment the flag is flipped — no app store update required.
+
+---
+
+### Challenge 86: Keycloak Realm Change — Server-Side Breaking Change Detection & Auto-Recovery
+
+**Date:** 2026-04-14
+
+**Problem:** App suddenly stopped loading attendance, CA marks, and all SIS data. Server was up (200 on base URL) but all API calls failed. Logcat showed `Direct Keycloak login failed: HTTP 404` — the token endpoint was returning 404.
+
+**Root Cause:** PSG iTech changed their Keycloak configuration:
+- Old realm: `itech` → New realm: `psgitech`
+- Client ID was already `ies_sis` (had been changed earlier from `sis_web`)
+- The `/realms/itech/protocol/openid-connect/token` endpoint no longer existed
+
+**Discovery Process:**
+1. Checked logcat: `CA marks direct response: 500`, `Direct Keycloak login failed: HTTP 404`
+2. Tested endpoint directly: `curl -s -o /dev/null -w "%{http_code}" "https://accounts.psgitech.ac.in/realms/itech"` → 404
+3. Found the browser's config endpoint: `https://laudea.psgitech.ac.in/sis/auth/config?callback=parseKeycloakInfo`
+4. Config returned: `{"realm":"psgitech","auth-server-url":"https://accounts.psgitech.ac.in/","clientId":"ies_sis"}`
+
+**Solution — Auto-Detection System:**
+Instead of just updating the hardcoded realm, built a dynamic auto-detection system:
+1. Created `KeycloakConfig` data class with `realm`, `authUrl`, `clientId`, and computed `tokenUrl`
+2. `fetchKeycloakConfig()` hits `/sis/auth/config` (same endpoint the browser uses) and parses the JSONP response
+3. `getSisConfig()` and `getMeetingsConfig()` fetch once per session, cache in memory, fall back to hardcoded defaults if unreachable
+4. All token endpoints (login, refresh, meetings) now use dynamic config instead of hardcoded URLs
+
+**Critical Bug Found During Implementation:**
+The `tokenUrl` getter had `"${authUrl.trimEnd('/')}/realms/$realm/..."` but the initial implementation was `"${authUrl.trimEnd('/')}realms/$realm/..."` (missing `/`), which produced `accounts.psgitech.ac.inrealms/psgitech/...` — an unresolvable hostname. Fixed by adding the slash.
+
+**Files Modified:**
+- `WebViewAuthenticator.kt` — Added `KeycloakConfig`, `fetchKeycloakConfig()`, `getSisConfig()`, `getMeetingsConfig()`, migrated all 3 token methods (login, refresh, meetings) to use dynamic config
+- `AuthApi.kt` — Updated hardcoded realm from `itech` to `psgitech` (Retrofit fallback)
+
+**Key Insight:** The browser's `/auth/config` endpoint is the single source of truth for Keycloak configuration. By auto-detecting from it, the app survives server-side changes without needing an update. This is the third time the server config changed — first `sis_web` → `ies_sis`, then `itech` → `psgitech`.
+
+---
+
+### Challenge 87: Target CGPA Complete Overhaul — Local Calculator, Per-Subject Breakdown, IAT Analysis
+
+**Date:** 2026-04-14
+
+**Problem:** The existing target CGPA feature had multiple issues:
+1. Credits were wrong (defaulting to 3 for all subjects)
+2. Current CGPA showed 0 (results API empty/slow)
+3. "ESE" label was confusing
+4. Subject names truncated
+5. Used server results API instead of local GPA calculator data
+6. When IAT-2 hadn't been taken yet, it treated CA as final → showed "Cannot achieve this grade" for everything
+7. No CA-2/IAT-2 minimum calculation
+
+**Solution — Multi-Phase Overhaul:**
+
+**Phase 1: UI Redesign**
+- Removed separate Target CGPA card tile
+- Added narrow CGPA tile between header and attendance box
+- Shows "CGPA 6.81 → Target 8.5" with Audi-style sequential chevron indicator (amber arrows sweep left to right)
+- Dropdown selector (6.0-10.0 in 0.5 steps) replaces text input
+- New user states: "Set Target CGPA" / "Update grades in GPA Calculator first"
+
+**Phase 2: Local GPA Calculator Integration**
+- Reads previous semester grades from `laudea_prefs/cgpa_grades` (same SharedPreferences as GPA Calculator)
+- Uses curriculum data (`getCurriculum(dept, reg)`) for accurate credits per subject
+- Displays the full calculator CGPA (matching the tile) as "Current CGPA"
+- If no semesters filled: prompts user to update GPA Calculator
+- If partial: shows accuracy note ("Update all 5 sems for more accuracy")
+
+**Phase 3: CA Component Analysis**
+- Discovered 3 course types with different marking schemes:
+  - Theory: CA(40) = IAT-1(20 scaled) + IAT-2(20 scaled), Sem Exam(60)
+  - Theory+Lab: CA(50) = IAT-1(25 scaled) + IA LAB(25 scaled), Sem Exam(50)
+  - Lab only: CA(60) = INTERNAL(60 scaled), Sem Exam(40)
+- Sub-components: IAT has TEST (out of 65, scaled to 60) + ASSIGNMENT (out of 40)
+- When IAT-2 pending: uses best-possible CA (IAT-1 + max IAT-2) for feasibility check
+- Calculates minimum TEST marks needed (assuming full assignment), with 33/65 minimum pass threshold
+
+**Phase 4: 0-Credit Audit Courses**
+- "STATE, NATION BUILDING AND POLITICS IN INDIA" not in CSBS curriculum — it's a 0-credit audit course
+- Audit courses detected by keyword matching, excluded from CGPA calculation
+- Displayed separately with "Just score above 33/65 in each test" message
+
+**Phase 5: Even when SGPA > 10 (not achievable), still shows per-subject breakdown**
+- Uses best-case O grade for all subjects
+- Shows "Would need SGPA 10.21 (max 10.0). Showing best case (all O)."
+
+**Data Model Changes:**
+- `CaComponentData` — new data class for per-component breakdown (ca1/ca2 scored/max, test sub-component info, component names)
+- `TargetSubjectResult` — added `ca2Needed`, `ca2Max`, `ca2Name`, `hasCa2Pending`, `hasCa1Pending`, `ca1Needed`, `ca1Max`
+- `calculateTargetCgpaFromLocal()` — new function accepting pre-computed previousCredits/weightedSum instead of GradeEntry list
+- `DashboardUiState` — added `calculatorCgpa`, `hasGpaData`
+
+**Files Modified:**
+- `CgpaData.kt` — New `CaComponentData`, `calculateTargetCgpaFromLocal()`, updated `TargetSubjectResult`, updated calculation logic for pending IATs
+- `DashboardViewModel.kt` — `loadCalculatorCgpa()`, rewrote `loadTargetCgpa()` to use local GPA data, curriculum credit lookup, audit course detection
+- `DashboardScreen.kt` — CGPA tile with chevron indicator, dropdown dialog, redesigned detail dialog with IAT-2/sem exam breakdown
+- `SecurePreferences.kt` — Added `cachedPresentDaysJson`, `cachedAbsentDaysJson`, `cachedCourseMarksFullJson`
+
+---
+
+### Challenge 88: iOS-Style Slot Machine Attendance Animation
+
+**Date:** 2026-04-14
+
+**Problem:** The attendance percentage number appeared instantly with no visual feedback on refresh. Wanted a slot machine / iOS alarm picker style animation.
+
+**Solution:**
+- `SlotMachineNumber` composable: each digit is a separate "reel" that scrolls vertically
+- 3 digits visible at once (previous, current, next) with 3D depth effect (0.85x scale + fade for non-center digits)
+- Each reel scrolls 2-3 full rotations before settling on target digit
+- Staggered timing: each subsequent digit starts later (1400ms + 180ms × index + random 0-300ms)
+- `EaseOutQuart` easing for natural deceleration (fast spin → slow settle)
+- Triggers on value change (pull-to-refresh)
+
+**Files Modified:**
+- `DashboardScreen.kt` — `SlotMachineNumber` composable, replaced static `Text` with animated version
+
+---
+
+### Challenge 89: 100% Attendance Fireworks Easter Egg
+
+**Date:** 2026-04-14
+
+**Problem:** Wanted a celebration for students with perfect attendance.
+
+**Solution:**
+- `FireworksOverlay` composable: 60 colored particles burst from center-top of screen
+- Particles follow projectile motion (velocity + gravity) with fade-out
+- 8 random colors (red, green, blue, yellow, purple, orange, cyan, amber)
+- Triggers when `attendanceWithExemption >= 100.0` and `enteredTillDate > 0`
+- Auto-dismisses after 2.5 seconds
+- Canvas-based drawing for performance
+
+**Files Modified:**
+- `DashboardScreen.kt` — `FireworksOverlay` composable, `LaunchedEffect` trigger
+
+---
+
+### Challenge 90: Performance Optimization — Parallel API Fetching & Disk Caching
+
+**Date:** 2026-04-14
+
+**Problem:** App felt extremely slow. Server response times were 15-20 seconds per API call. Sequential fetching meant 60+ seconds to load everything. Subject attendance screen never loaded because it made 4 sequential API calls.
+
+**Benchmarking:**
+- Built isolated speed test app (`SISSpeedTest`) to compare approaches
+- Tested on-device over 10 rounds with cache-busting:
+  - HttpURLConnection sequential: **41,489ms average**
+  - OkHttp sequential (keep-alive): **45,743ms average** (10% SLOWER — not worth migrating)
+  - OkHttp parallel: **10,052ms average** (75% FASTER)
+- Conclusion: Connection pooling doesn't help (server processing time dominates), but parallelism is massive
+
+**Changes Made:**
+
+1. **Parallel API prefetching** — `prefetchForAI()` now uses `coroutineScope { async {} }` to fire all 5 API calls simultaneously. Total time = slowest single call (~20s) instead of sum of all (~60s).
+
+2. **Disk-persisted caches** — Full JSON for CA marks, present days, and absent days saved to SharedPreferences on every successful fetch. Restored on app startup. Screens load instantly from cache.
+
+3. **In-memory cache layer** — `cachedCourseMarks`, `cachedPresentDays`, `cachedAbsentDays` in AttendanceRepository. Prevents duplicate network calls when multiple screens need the same data.
+
+4. **Subject attendance stale-while-revalidate** — `SubjectAttendanceViewModel` loads from cache instantly on init, then fetches fresh data in background. No more blank loading screen.
+
+5. **Target CGPA deferred loading** — `loadTargetCgpa()` runs after main refresh completes (token is warm) AND uses cached CA marks, avoiding a duplicate 14-second fetch.
+
+**Decision NOT to migrate to OkHttp:**
+The 4-tier token refresh system (cached token → refresh token → Keycloak password grant → WebView fallback) is battle-tested and works for 1700+ users. The benchmark proved OkHttp sequential is actually slower on Android. The real win (parallelism) was achieved without touching the auth flow.
+
+**Files Modified:**
+- `AttendanceRepository.kt` — Parallel `prefetchForAI()`, in-memory + disk caches, `persistPresentDays()`, `persistAbsentDays()`
+- `SecurePreferences.kt` — Added `cachedPresentDaysJson`, `cachedAbsentDaysJson`, `cachedCourseMarksFullJson` keys
+- `SubjectAttendanceViewModel.kt` — `loadFromCache()`, stale-while-revalidate pattern
+- `DashboardViewModel.kt` — Deferred `loadTargetCgpa()`, cache-first CA marks loading
+
+---
+
+### Challenge 91: Exam Seat Finder Improvements
+
+**Date:** 2026-04-14
+
+**Problem:** Multiple UX issues with exam seat finder:
+1. Arrow overlays on instruction images were distracting
+2. Circle highlights were redundant
+3. No way to verify parsed data against original Excel
+4. Old import data persisted when importing new file
+5. No timestamp showing when data was imported
+
+**Solution:**
+1. Removed arrow lines and arrowheads from `GuideStep` composable
+2. Removed circle highlights from instruction images (clean screenshots only)
+3. "View File" button opens the Excel file in external app (with in-app table fallback)
+4. New import completely replaces old data
+5. Import timestamp displayed below seat info ("Imported: 14 Apr 2026, 5:30 PM")
+
+**Files Modified:**
+- `ExamSeatScreen.kt` — Removed arrows/circles, added View File with Intent.ACTION_VIEW, import timestamp display
+- `ExamSeatViewModel.kt` — Added `importTimestamp`, `fileUri`, `showRawData`, `allRows` to state, `toggleRawData()`, `parseAllRows()`
+
+---
+
+### Challenge 92: AI Chat Advisor — Greeting & Marks-Needed Intents
+
+**Date:** 2026-04-14
+
+**Problem:** AI advisor didn't respond to greetings (hi, hey) and couldn't answer "how much should I get in internals" questions.
+
+**Solution:**
+1. **Greeting intent** — Regex matches "hi", "hey", "hello", "sup", "good morning/evening", etc. Responds warmly with student name and capability overview.
+2. **Marks-needed intent** — Triggers on "marks needed", "how much should I get", "target marks", "internals" etc. Injects target CGPA + CA marks data as context for the LLM.
+3. Updated system prompt to include rules for greeting behavior and marks calculation.
+
+**Files Modified:**
+- `LiteRtViewModel.kt` — Added `MARKS_NEEDED` to `QueryIntent`, updated `detectIntent()` with greeting regex and marks keywords, added `buildMarksNeededContext()`, updated system prompt
+
+---
+
+### Challenge 93: Exemptions Tile Always Visible
+
+**Date:** 2026-04-14
+
+**Problem:** Exemptions tile was hidden when count was 0. Users couldn't find where to view exemptions.
+
+**Solution:** Exemptions tile now always shows in the stats row (even when 0), positioned right after Present. Made clickable with glass surface styling matching the Absent tile. Order: Present → Exempt → Absent → Total → Pending.
+
+**Files Modified:**
+- `DashboardScreen.kt` — Removed `if (exemptionCount > 0)` condition, reordered stats row
