@@ -1,5 +1,6 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
+import com.example.attendancewidgetlaudea.ui.components.AdBanner
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
@@ -391,8 +392,8 @@ fun ChessScreen(
                 ) {
                     Icon(Icons.Default.EmojiEvents, null, Modifier.size(18.dp), tint = Color(0xFFFFC107))
                     Spacer(Modifier.width(6.dp))
-                    Text("Leaderboard", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        color = Color.White, maxLines = 1)
+                    Text("Leaderboard", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             // Edit Name
@@ -963,15 +964,17 @@ private fun LichessGameScreen(
 ) {
     var showExitConfirm by remember { mutableStateOf(false) }
 
+    // Don't auto-close for analysis/replay — only for live games
+    val isLiveGame = remember(url) { !url.contains("#") && !url.contains("/analysis") }
     var gameEnded by remember { mutableStateOf<String?>(null) }
 
     BackHandler {
         if (gameEnded != null) onClose(gameEnded) else showExitConfirm = true
     }
 
-    // Auto-close when game ends
+    // Auto-close when game ends (live games only)
     LaunchedEffect(gameEnded) {
-        if (gameEnded != null) {
+        if (gameEnded != null && isLiveGame) {
             kotlinx.coroutines.delay(1500) // let user see the final position
             onClose(gameEnded)
         }
@@ -1035,7 +1038,7 @@ private fun LichessGameScreen(
 
         // WebView takes remaining space — no overlays on top of it
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
             factory = { ctx ->
                 WebView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(
@@ -1107,7 +1110,7 @@ private fun LichessGameScreen(
                             super.onPageFinished(view, pageUrl)
                             view?.evaluateJavascript(hideJs, null)
                             view?.evaluateJavascript(themeJs, null)
-                            view?.evaluateJavascript(pollGameEnd, null)
+                            if (isLiveGame) view?.evaluateJavascript(pollGameEnd, null)
                             if (!pageReady) {
                                 pageReady = true
                                 view?.postDelayed({ isLoading = false }, 400)
@@ -1134,6 +1137,7 @@ private fun LichessGameScreen(
             }
         )
 
+        AdBanner(modifier = Modifier.padding(vertical = 4.dp), screenName = "ChessGame")
     }
 }
 

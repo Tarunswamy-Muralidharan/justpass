@@ -4748,3 +4748,36 @@ AdMob officially supports 6 app stores: Google Play, Apple App Store, Amazon App
 
 **Lesson Learned:**
 For small developers distributing via WhatsApp in India, the ₹2,100 Google Play Store fee is the best investment. Free alternatives (Samsung/OPPO/VIVO) exist but have friction. InMobi looks attractive on paper but payment reliability concerns make it risky for small publishers.
+
+---
+
+### Challenge 85: Release Keystore + Firebase Remote Config Ad Toggle
+**Problem:**
+Preparing for dual-channel distribution (GitHub APK + Google Play Store). Two issues needed solving:
+1. **Signing key conflict** — Android identifies app updates by package name + signing key. If GitHub APKs use a debug keystore and Play Store uses Play App Signing (different key), users can't seamlessly migrate between channels without uninstalling (losing data).
+2. **Remote ad activation** — Need to enable ads for ALL users (including those who already downloaded from GitHub and won't update) without pushing a new APK version.
+
+**Solution — Signing:**
+Generated a dedicated release keystore (`release-keystore.jks`) with RSA 2048-bit key, validity 10,000 days. Updated `keystore.properties` to point to it. The same keystore will be uploaded to Play Console during Play App Signing setup ("Use existing key" option), ensuring both GitHub and Play Store APKs share the same signing identity. Both files are `.gitignore`d.
+
+**Solution — Ad Toggle:**
+Created `AdConfig.kt` — a singleton that fetches the `ads_enabled` boolean from Firebase Remote Config on every app launch (1-hour cache, defaults to `false`). Modified `AdBanner.kt` to early-return if disabled, and `InterstitialAdManager.kt` to skip preload/show if disabled. Initialized in `MainActivity.onCreate()` before `MobileAds.initialize()`.
+
+**How it works at runtime:**
+1. App launches → `AdConfig.init()` fetches Remote Config from Firebase
+2. If `ads_enabled = false` (default) → `AdBanner` renders nothing, interstitials skip
+3. When AdMob account is approved → flip `ads_enabled = true` in Firebase Console
+4. All users (GitHub, Play Store, WhatsApp-shared) see ads on next launch — zero code change needed
+
+**Files Created:**
+- `ui/components/AdConfig.kt` — Remote Config singleton (fetch + expose `adsEnabled` flag)
+
+**Files Modified:**
+- `ui/components/AdBanner.kt` — Added `if (!AdConfig.adsEnabled) return` guard
+- `ui/components/InterstitialAdManager.kt` — Added guards in `preload()` and `show()`
+- `MainActivity.kt` — Added `AdConfig.init()` call on startup
+- `ui/screens/DashboardScreen.kt` — Added `@OptIn(ExperimentalMaterial3Api::class)` to `TargetCgpaDialogs` (pre-existing build fix)
+- `keystore.properties` — Updated with real keystore path and credentials
+
+**Key Insight:**
+Firebase Remote Config acts as a server-side feature flag. Since the Firebase SDK is baked into every APK binary, it phones home on every launch regardless of install source. This means even users who never update from v2.1 will start seeing ads the moment the flag is flipped — no app store update required.

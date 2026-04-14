@@ -13,7 +13,7 @@ import com.example.attendancewidgetlaudea.data.repository.ChessRepository
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -195,9 +195,9 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     fun goOffline() {
         cleanup()
-        // Use GlobalScope + Dispatchers.IO so the delete completes even if ViewModel is destroyed
+        // NonCancellable so the delete completes even if scope is cancelled
         if (myPlayerId.isNotBlank()) {
-            GlobalScope.launch(Dispatchers.IO) {
+            viewModelScope.launch(Dispatchers.IO + NonCancellable) {
                 try {
                     FirebaseFirestore.getInstance()
                         .collection("chess_online")
@@ -559,9 +559,9 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
-        // GlobalScope so delete completes even after ViewModel destruction
+        // NonCancellable so delete completes even after ViewModel destruction
         if (myPlayerId.isNotBlank()) {
-            GlobalScope.launch(Dispatchers.IO) {
+            viewModelScope.launch(Dispatchers.IO + NonCancellable) {
                 try {
                     FirebaseFirestore.getInstance()
                         .collection("chess_online")

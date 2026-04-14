@@ -6,11 +6,20 @@ import androidx.lifecycle.viewModelScope
 import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.data.model.AttendanceData
 import com.example.attendancewidgetlaudea.data.model.CalendarEventType
+import com.example.attendancewidgetlaudea.data.model.CourseMarks
 import com.example.attendancewidgetlaudea.data.model.DayTimetable
+import com.example.attendancewidgetlaudea.data.model.GradeEntry
 import com.example.attendancewidgetlaudea.data.model.RegistrationResponse
+import com.example.attendancewidgetlaudea.data.model.TargetCgpaResult
 import com.example.attendancewidgetlaudea.data.model.TimetableResponse
+import com.example.attendancewidgetlaudea.data.model.calculateTargetCgpa
+import com.example.attendancewidgetlaudea.data.model.detectDepartment
 import com.example.attendancewidgetlaudea.data.model.extractRegisteredCourseCodes
+import com.example.attendancewidgetlaudea.data.model.getCurriculum
+import com.example.attendancewidgetlaudea.data.model.getRegulationForBatch
+import com.example.attendancewidgetlaudea.data.model.LetterGrade
 import com.example.attendancewidgetlaudea.data.model.toDayTimetables
+import com.google.gson.reflect.TypeToken
 import com.example.attendancewidgetlaudea.data.repository.AttendanceRepository
 import com.example.attendancewidgetlaudea.data.repository.Result
 import com.google.gson.Gson
@@ -36,7 +45,12 @@ data class DashboardUiState(
     // Per-day non-honours session counts (Mon=0 .. Sat=5)
     val sessionsPerDay: List<Int> = listOf(6, 6, 6, 6, 6, 6),
     // Holiday dates with names from calendar
-    val holidays: Map<LocalDate, String> = emptyMap()
+    val holidays: Map<LocalDate, String> = emptyMap(),
+    // Target CGPA calculation
+    val targetCgpaResult: TargetCgpaResult? = null,
+    // CGPA from GPA calculator (null = not calculated yet)
+    val calculatorCgpa: Double? = null,
+    val hasGpaData: Boolean = false
 )
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -53,10 +67,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         private const val API_KEY = "AIzaSyBNlYH01_9Hc5S1J9vuFmu2nUqBZJNAXxs"
     }
 
+    private val localPrefs = application.getSharedPreferences("laudea_prefs", android.content.Context.MODE_PRIVATE)
+
     init {
         loadInitialData()
         startBackgroundRefresh()
         loadHolidayDates()
+        loadCalculatorCgpa()
+        loadTargetCgpa()
     }
 
     /**
@@ -353,6 +371,156 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             date = date.plusDays(1)
         }
         return result
+    }
+
+    /** Update target CGPA and recalculate */
+    /**
+     * Read CGPA from the GPA calculator's saved grades.
+     * Uses the same SharedPreferences + curriculum data as CgpaViewModel.
+     */
+    private fun loadCalculatorCgpa() {
+        try {
+            val json = localPrefs.getString("cgpa_grades", null)
+            if (json.isNullOrEmpty()) {
+                _uiState.value = _uiState.value.copy(calculatorCgpa = null, hasGpaData = false)
+                return
+            }
+            val root = org.json.JSONObject(json)
+            if (root.length() == 0) {
+                _uiState.value = _uiState.value.copy(calculatorCgpa = null, hasGpaData = false)
+                return
+            }
+
+            // Get department + batch year to look up curriculum credits
+            val deptName = securePrefs.cachedDepartment ?: securePrefs.programmeName
+            val dept = detectDepartment(deptName)
+            val batchYear = securePrefs.batchYear.let { if (it > 0) it else 2023 }
+            val reg = getRegulationForBatch(batchYear)
+            val curriculum = if (dept != null) getCurriculum(dept, reg) else null
+
+            var totalWeighted = 0.0
+            var totalCredits = 0.0
+
+            for (semKey in root.keys()) {
+                val sem = semKey.toIntOrNull() ?: continue
+                val semObj = root.getJSONObject(semKey)
+                val semSubjects = curriculum?.get(sem) ?: continue
+
+                for (idxKey in semObj.keys()) {
+                    val idx = idxKey.toIntOrNull() ?: continue
+                    if (idx >= semSubjects.size) continue
+                    val gradeLabel = semObj.getString(idxKey)
+                    val grade = LetterGrade.entries.find { it.label == gradeLabel } ?: continue
+                    val credits = semSubjects[idx].credits
+                    if (credits > 0) {
+                        totalWeighted += credits * grade.gradePoint
+                        totalCredits += credits
+                    }
+                }
+            }
+
+            if (totalCredits > 0) {
+                val cgpa = totalWeighted.toDouble() / totalCredits
+                _uiState.value = _uiState.value.copy(calculatorCgpa = cgpa, hasGpaData = true)
+            } else {
+                _uiState.value = _uiState.value.copy(calculatorCgpa = null, hasGpaData = false)
+            }
+        } catch (_: Exception) {
+            _uiState.value = _uiState.value.copy(calculatorCgpa = null, hasGpaData = false)
+        }
+    }
+
+    fun updateTargetCgpa(target: Float) {
+        securePrefs.targetCgpa = target
+        loadTargetCgpa()
+    }
+
+    /** Load results + CA marks and calculate what's needed for target CGPA */
+    fun loadTargetCgpa() {
+        val target = securePrefs.targetCgpa.toDouble()
+        if (target <= 0) {
+            _uiState.value = _uiState.value.copy(targetCgpaResult = null)
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                // Fetch results (past grades)
+                val resultData = repository.fetchResult()
+                val grades: List<GradeEntry> = if (resultData is Result.Success) {
+                    try {
+                        val listType = object : TypeToken<List<GradeEntry>>() {}.type
+                        gson.fromJson(resultData.data, listType) ?: emptyList()
+                    } catch (_: Exception) { emptyList() }
+                } else emptyList()
+
+                // Fetch current CA marks
+                val caResult = repository.fetchCAMarks()
+                val caMarks: List<CourseMarks> = if (caResult is Result.Success) caResult.data else emptyList()
+
+                val currentSem = securePrefs.cachedCurrentSem
+                if (currentSem <= 0 || (grades.isEmpty() && caMarks.isEmpty())) return@launch
+
+                // Build CA marks map: courseCode → (scored, max)
+                val caMap = mutableMapOf<String, Pair<Double, Double>>()
+                for (course in caMarks) {
+                    val scored = course.testDetails.total.getSecuredAsDouble() ?: continue
+                    val max = course.testDetails.total.getMaxAsDouble()
+                    if (max > 0) caMap[course.courseCode] = Pair(scored, max)
+                }
+
+                // Build current semester subjects map: courseCode → (title, credits)
+                // Use CA marks subjects as the source of current semester subjects
+                // Also try to get credits from curriculum data or past grades
+                val subjectsMap = mutableMapOf<String, Pair<String, Int>>()
+                for (course in caMarks) {
+                    // Default credits = 3 (most common); try to find from curriculum later
+                    subjectsMap[course.courseCode] = Pair(course.courseTitle, 3)
+                }
+
+                // Try to get credits from grades if same course appeared in a previous attempt
+                // or from the current semester grades if available
+                for (grade in grades) {
+                    if (grade.courseCode != null && grade.courseCode in subjectsMap) {
+                        val credits = grade.getCreditsValue()
+                        if (credits > 0) {
+                            subjectsMap[grade.courseCode] = Pair(
+                                subjectsMap[grade.courseCode]!!.first,
+                                credits
+                            )
+                        }
+                    }
+                }
+
+                // Also add subjects from current semester grades that may not be in CA marks
+                val currentSemGrades = grades.filter { it.semester == currentSem }
+                for (grade in currentSemGrades) {
+                    if (grade.courseCode != null && grade.courseCode !in subjectsMap) {
+                        val credits = grade.getCreditsValue()
+                        if (credits > 0) {
+                            subjectsMap[grade.courseCode] = Pair(
+                                grade.courseTitle ?: grade.courseCode,
+                                credits
+                            )
+                        }
+                    }
+                }
+
+                if (subjectsMap.isEmpty()) return@launch
+
+                val result = calculateTargetCgpa(
+                    targetCgpa = target,
+                    previousGrades = grades,
+                    currentSemester = currentSem,
+                    currentCAMarks = caMap,
+                    currentSemSubjects = subjectsMap
+                )
+
+                _uiState.value = _uiState.value.copy(targetCgpaResult = result)
+            } catch (e: Exception) {
+                android.util.Log.e("DashboardVM", "Target CGPA calc failed", e)
+            }
+        }
     }
 
     fun getWorkingDaysInLeaveRange(startDate: LocalDate, numDays: Int, holidays: Map<LocalDate, String> = _uiState.value.holidays): List<LocalDate> {

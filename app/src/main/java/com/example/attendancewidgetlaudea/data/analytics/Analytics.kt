@@ -167,6 +167,20 @@ object Analytics {
         })
     }
 
+    fun logAdImpression(screenName: String, adType: String) {
+        firebaseAnalytics?.logEvent("ad_impression", Bundle().apply {
+            putString("screen_name", screenName)
+            putString("ad_type", adType)
+        })
+    }
+
+    fun logAdClick(screenName: String, adType: String) {
+        firebaseAnalytics?.logEvent("ad_click", Bundle().apply {
+            putString("screen_name", screenName)
+            putString("ad_type", adType)
+        })
+    }
+
     fun logInstallSource() {
         val source = try {
             appContext?.let { ctx ->

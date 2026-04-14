@@ -59,6 +59,10 @@ import com.example.attendancewidgetlaudea.ui.screens.ChessScreen
 import com.example.attendancewidgetlaudea.ui.screens.ExamSeatScreen
 import com.example.attendancewidgetlaudea.ui.screens.SyllabusScreen
 import com.example.attendancewidgetlaudea.ui.theme.AttendanceWidgetLaudeaTheme
+import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.RequestConfiguration
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig
+import com.google.firebase.remoteconfig.remoteConfigSettings
 import com.example.attendancewidgetlaudea.worker.AttendanceRefreshWorker
 import com.example.attendancewidgetlaudea.worker.CircularNotificationWorker
 import com.example.attendancewidgetlaudea.worker.HolidayNotificationWorker
@@ -70,6 +74,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         Analytics.init(this)
+        com.example.attendancewidgetlaudea.ui.components.AdConfig.init()
+        MobileAds.setRequestConfiguration(
+            RequestConfiguration.Builder()
+                .setTestDeviceIds(listOf("7A84F9727359E7E95B313BCCA0FC5DA8"))
+                .build()
+        )
+        MobileAds.initialize(this) {
+            com.example.attendancewidgetlaudea.ui.components.InterstitialAdManager.preload(this)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -115,7 +128,7 @@ fun AttendanceApp() {
     // Handle navigate_to from notification intents and shared file intents
     val activity = context as? ComponentActivity
     val navigateTo = remember { activity?.intent?.getStringExtra("navigate_to") }
-    val sharedExcelUri = remember {
+    val sharedFileUri = remember {
         activity?.intent?.let { intent ->
             when (intent.action) {
                 Intent.ACTION_SEND -> intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
@@ -125,7 +138,7 @@ fun AttendanceApp() {
         }
     }
     val initialScreen = if (!isLoggedIn) Screen.Login
-        else if (sharedExcelUri != null) Screen.ExamSeat
+        else if (sharedFileUri != null) Screen.ExamSeat
         else when (navigateTo) {
             "calendar" -> Screen.AcademicCalendar
             "circulars" -> Screen.Circulars
@@ -170,6 +183,52 @@ fun AttendanceApp() {
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
         val currentVersion = packageInfo.versionName ?: "1.0"
         updateInfo = UpdateChecker.checkForUpdate(currentVersion)
+    }
+
+    // Force update check via Firebase Remote Config
+    var forceUpdate by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        try {
+            val remoteConfig = FirebaseRemoteConfig.getInstance()
+            remoteConfig.setConfigSettingsAsync(remoteConfigSettings { minimumFetchIntervalInSeconds = 3600 })
+            remoteConfig.setDefaultsAsync(mapOf("min_version_code" to 1L))
+            remoteConfig.fetchAndActivate().addOnCompleteListener {
+                val minVersion = remoteConfig.getLong("min_version_code")
+                val currentCode = try {
+                    context.packageManager.getPackageInfo(context.packageName, 0).let {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) it.longVersionCode
+                        else @Suppress("DEPRECATION") it.versionCode.toLong()
+                    }
+                } catch (_: Exception) { Long.MAX_VALUE }
+                if (currentCode < minVersion) forceUpdate = true
+            }
+        } catch (_: Exception) {}
+    }
+
+    if (forceUpdate) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Update Required", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = Color.White) },
+            text = { Text("A new version of JustPass is available. Please update to continue using the app.",
+                color = Color.White.copy(alpha = 0.8f)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        updateInfo?.let { info ->
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.downloadUrl)))
+                        } ?: run {
+                            context.startActivity(Intent(Intent.ACTION_VIEW,
+                                Uri.parse("https://github.com/Tarunswamy-Muralidharan/-AttendanceWidgetLaudea/releases/latest")))
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+                ) { Text("Update Now", color = Color.White) }
+            },
+            containerColor = Color(0xFF1E2A3A),
+            properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+        )
+        return
     }
 
     var showBatteryDialog by remember { mutableStateOf(false) }
@@ -435,7 +494,7 @@ fun AttendanceApp() {
                                 currentScreen = Screen.Dashboard
                                 selectedTabIndex = 0
                             },
-                            sharedFileUri = sharedExcelUri
+                            sharedFileUri = sharedFileUri
                         )
                         "tab_0" -> DashboardScreen(
                             cardState = cardState,

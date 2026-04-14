@@ -112,6 +112,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.firestore)
+    implementation("com.google.firebase:firebase-config")
 
     // Apache POI (Excel parsing)
     implementation(libs.poi)
@@ -128,6 +129,9 @@ dependencies {
 
     // LiteRT-LM — Google's on-device LLM inference (GPU/NPU acceleration)
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.0")
+
+    // Google Mobile Ads (AdMob)
+    implementation("com.google.android.gms:play-services-ads:23.6.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

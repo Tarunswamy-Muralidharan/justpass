@@ -1,5 +1,6 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
+import com.example.attendancewidgetlaudea.ui.components.AdBanner
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ColorMatrix
@@ -283,6 +284,8 @@ fun CgpaCalculatorScreen(
                     modifier = Modifier.weight(1f))
             }
         }
+
+        AdBanner(modifier = Modifier.padding(vertical = 4.dp), screenName = "CgpaCalculator")
 
         Spacer(modifier = Modifier.height(8.dp))
 

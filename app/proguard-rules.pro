@@ -63,3 +63,6 @@
 
 # LiteRT-LM (Google on-device LLM inference)
 -keep class com.google.ai.edge.litertlm.** { *; }
+
+# Google Mobile Ads (AdMob)
+-keep class com.google.android.gms.ads.** { *; }

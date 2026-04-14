@@ -1,5 +1,6 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
+import com.example.attendancewidgetlaudea.ui.components.AdBanner
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -103,6 +104,8 @@ fun CircularsScreen(
                 }
             }
         }
+
+        AdBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), screenName = "Circulars")
 
         // Content
         Box(modifier = Modifier.fillMaxSize()) {

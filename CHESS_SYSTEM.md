@@ -220,33 +220,19 @@ All listeners are cleaned up in `DisposableEffect` when leaving the screen, and 
 
 ## Security Considerations
 
-### Current: Test Mode (temporary)
+### Production Rules (deployed 2026-04-03)
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if request.time < timestamp.date(2026, 5, 1);
-    }
-  }
-}
-```
-
-### Recommended Production Rules (TODO before release)
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // Anyone can read online players and profiles
     match /chess_online/{doc} { allow read, write: if true; }
-    match /chess_profiles/{doc} { allow read: if true; allow write: if true; }
-    // Challenges: only participants can read/write
-    match /chess_challenges/{doc} { allow read, write: if true; }
-    // Friends: only participants can read/write
+    match /chess_profiles/{doc} { allow read, create, update: if true; }
+    match /chess_challenges/{doc} { allow read, create, update: if true; }
     match /chess_friends/{doc} { allow read, write: if true; }
   }
 }
 ```
+Note: No Firebase Auth — app uses WebView Keycloak SSO. Delete blocked on profiles and challenges.
 
 ### Privacy
 - Roll numbers are hashed (one-way) for player IDs

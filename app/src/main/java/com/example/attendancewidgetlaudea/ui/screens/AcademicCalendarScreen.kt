@@ -1,5 +1,6 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
+import com.example.attendancewidgetlaudea.ui.components.AdBanner
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -109,6 +110,8 @@ fun AcademicCalendarScreen(
                 }
             }
         }
+
+        AdBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), screenName = "AcademicCalendar")
 
         if (uiState.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

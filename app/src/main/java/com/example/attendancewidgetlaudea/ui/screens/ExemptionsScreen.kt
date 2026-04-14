@@ -1,5 +1,6 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
+import com.example.attendancewidgetlaudea.ui.components.AdBanner
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -55,6 +56,8 @@ fun ExemptionsScreen(
                 }
             }
         }
+
+        AdBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), screenName = "Exemptions")
 
         Box(modifier = Modifier.fillMaxSize()) {
             when {

@@ -8,7 +8,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.data.model.ExamSeatData
-import com.example.attendancewidgetlaudea.data.model.ExamTimetableEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,23 +21,12 @@ import org.apache.poi.ss.usermodel.Sheet
 import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.ByteArrayInputStream
-import java.net.URL
-import java.net.URLEncoder
 import java.util.Calendar
 
 data class ExamSeatUiState(
     val isSearching: Boolean = false,
     val examSeat: ExamSeatData? = null,
-    val errorMessage: String? = null,
-    // Auto-fetch from Apps Script
-    val autoFetchLoading: Boolean = false,
-    val autoFetchSeats: List<ExamSeatData> = emptyList(),
-    val autoFetchError: String? = null,
-    // Exam timetable from Apps Script
-    val timetableLoading: Boolean = false,
-    val timetableEntries: List<ExamTimetableEntry> = emptyList(),
-    val timetableExamType: String = "",
-    val timetableError: String? = null
+    val errorMessage: String? = null
 )
 
 class ExamSeatViewModel(application: Application) : AndroidViewModel(application) {
@@ -50,9 +38,6 @@ class ExamSeatViewModel(application: Application) : AndroidViewModel(application
 
     companion object {
         private const val TAG = "ExamSeatVM"
-
-        // Apps Script web app URL (deployed Apr 6, 2026)
-        private const val APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzj9CMHPK6AhJLnSpBG-TFI0AsJlvBZYnpY5HIORahqO6BP-iXMU0wgTe086u66hNYMZg/exec"
 
         private val HALL_HEADERS = listOf("hall", "room", "venue", "hall no", "hall name", "room no")
         private val SEAT_HEADERS = listOf("seat", "seat no", "seat number", "seat no.", "s.no", "bench")
@@ -69,6 +54,20 @@ class ExamSeatViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun processFileUri(uri: Uri) {
+        val contentResolver = getApplication<Application>().contentResolver
+        val mimeType = contentResolver.getType(uri) ?: ""
+        val fileName = contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0) cursor.getString(nameIndex) else null
+            } else null
+        } ?: uri.lastPathSegment ?: ""
+        Log.d(TAG, "File: $fileName, mimeType: $mimeType")
+
+        processExcelSeat(uri, fileName, mimeType)
+    }
+
+    private fun processExcelSeat(uri: Uri, fileName: String, mimeType: String) {
         val rollNumber = securePrefs.rollNumber
         if (rollNumber.isNullOrBlank()) {
             _uiState.value = _uiState.value.copy(errorMessage = "Roll number not found. Please log in to the app first.")
@@ -81,47 +80,30 @@ class ExamSeatViewModel(application: Application) : AndroidViewModel(application
             try {
                 val result = withContext(Dispatchers.IO) {
                     val contentResolver = getApplication<Application>().contentResolver
-
-                    // Get display filename from content resolver
-                    val fileName = contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                            if (nameIndex >= 0) cursor.getString(nameIndex) else null
-                        } else null
-                    } ?: uri.lastPathSegment ?: ""
-                    Log.d(TAG, "File name: $fileName")
-
                     val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         ?: throw Exception("Could not read file")
 
-                    // Determine file type from URI or content type
-                    val mimeType = contentResolver.getType(uri) ?: ""
                     val isXlsx = mimeType.contains("spreadsheetml") ||
-                            uri.toString().endsWith(".xlsx", ignoreCase = true)
+                            fileName.endsWith(".xlsx", ignoreCase = true)
 
                     val seatResult = parseExcelForSeat(bytes, isXlsx, rollNumber)
 
-                    // Extract exam date and session from filename
                     if (seatResult != null) {
                         val examInfo = parseExamInfoFromFilename(fileName)
-                        seatResult.copy(
-                            examName = examInfo.first,
-                            date = examInfo.second
-                        )
+                        seatResult.copy(examName = examInfo.first, date = examInfo.second)
                     } else seatResult
                 }
 
                 if (result != null) {
                     _uiState.value = _uiState.value.copy(isSearching = false, examSeat = result)
                 } else {
-                    Log.w(TAG, "Roll number '$rollNumber' not found in any sheet of the Excel file")
                     _uiState.value = _uiState.value.copy(
                         isSearching = false,
                         errorMessage = "Your roll number ($rollNumber) was not found in this Excel file"
                     )
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "File processing error: ${e.message}", e)
+                Log.e(TAG, "Excel processing error: ${e.message}", e)
                 _uiState.value = _uiState.value.copy(
                     isSearching = false,
                     errorMessage = "Failed to read file: ${e.message}"
@@ -185,147 +167,6 @@ class ExamSeatViewModel(application: Application) : AndroidViewModel(application
 
         Log.d(TAG, "Parsed exam info — name='$examName', dateTime='$dateTime' from '$fileName'")
         return Pair(examName, dateTime)
-    }
-
-    /**
-     * Auto-fetch exam seats from the Apps Script web app.
-     * Returns all upcoming exam seats for the logged-in student.
-     */
-    fun autoFetchSeats() {
-        if (APPS_SCRIPT_URL.isBlank()) {
-            _uiState.value = _uiState.value.copy(
-                autoFetchError = "Auto-fetch not configured yet"
-            )
-            return
-        }
-
-        val rollNumber = securePrefs.rollNumber
-        if (rollNumber.isNullOrBlank()) {
-            _uiState.value = _uiState.value.copy(
-                autoFetchError = "Roll number not found. Please log in first."
-            )
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(autoFetchLoading = true, autoFetchError = null)
-
-            try {
-                val seats = withContext(Dispatchers.IO) {
-                    val encodedRoll = URLEncoder.encode(rollNumber, "UTF-8")
-                    val url = "$APPS_SCRIPT_URL?action=lookup&roll=$encodedRoll"
-                    val response = URL(url).readText()
-                    parseAppsScriptResponse(response)
-                }
-
-                _uiState.value = _uiState.value.copy(
-                    autoFetchLoading = false,
-                    autoFetchSeats = seats,
-                    autoFetchError = if (seats.isEmpty()) "No exam seats found for your roll number" else null
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Auto-fetch error: ${e.message}", e)
-                _uiState.value = _uiState.value.copy(
-                    autoFetchLoading = false,
-                    autoFetchError = "Could not fetch: ${e.message}"
-                )
-            }
-        }
-    }
-
-    private fun parseAppsScriptResponse(json: String): List<ExamSeatData> {
-        return try {
-            val obj = org.json.JSONObject(json)
-            if (!obj.optBoolean("found", false)) return emptyList()
-
-            val seatsArray = obj.optJSONArray("seats") ?: return emptyList()
-            (0 until seatsArray.length()).map { i ->
-                val seat = seatsArray.getJSONObject(i)
-                val timing = seat.optString("timing", "")
-                val date = seat.optString("date", "")
-                val dateDisplay = buildString {
-                    if (date.isNotBlank()) append(date)
-                    if (timing.isNotBlank()) {
-                        if (isNotBlank()) append(" \u00B7 ") // middle dot
-                        append(timing)
-                    }
-                }
-                ExamSeatData(
-                    hall = seat.optString("hall", "N/A"),
-                    seatNumber = seat.optString("seatNumber", "N/A"),
-                    examName = seat.optString("examName", ""),
-                    date = dateDisplay
-                )
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "JSON parse error: ${e.message}", e)
-            emptyList()
-        }
-    }
-
-    /**
-     * Fetch exam timetable from Apps Script, filtered by student's department.
-     */
-    fun fetchExamTimetable() {
-        if (APPS_SCRIPT_URL.isBlank()) {
-            _uiState.value = _uiState.value.copy(timetableError = "Not configured yet")
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(timetableLoading = true, timetableError = null)
-
-            try {
-                val branch = securePrefs.cachedDepartment ?: ""
-                val entries = withContext(Dispatchers.IO) {
-                    val branchParam = if (branch.isNotBlank()) "&branch=${URLEncoder.encode(branch, "UTF-8")}" else ""
-                    val url = "$APPS_SCRIPT_URL?action=timetable$branchParam"
-                    val response = URL(url).readText()
-                    parseExamTimetableResponse(response)
-                }
-
-                _uiState.value = _uiState.value.copy(
-                    timetableLoading = false,
-                    timetableEntries = entries.first,
-                    timetableExamType = entries.second,
-                    timetableError = if (entries.first.isEmpty()) "No exam timetable available" else null
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Timetable fetch error: ${e.message}", e)
-                _uiState.value = _uiState.value.copy(
-                    timetableLoading = false,
-                    timetableError = "Could not fetch timetable: ${e.message}"
-                )
-            }
-        }
-    }
-
-    private fun parseExamTimetableResponse(json: String): Pair<List<ExamTimetableEntry>, String> {
-        return try {
-            val obj = org.json.JSONObject(json)
-            if (!obj.optBoolean("found", false)) return emptyList<ExamTimetableEntry>() to ""
-
-            val entriesArray = obj.optJSONArray("entries") ?: return emptyList<ExamTimetableEntry>() to ""
-            var examType = ""
-            val entries = (0 until entriesArray.length()).map { i ->
-                val e = entriesArray.getJSONObject(i)
-                if (examType.isBlank()) examType = e.optString("examType", "")
-                ExamTimetableEntry(
-                    date = e.optString("date", ""),
-                    day = e.optString("day", ""),
-                    session = e.optString("session", ""),
-                    timing = e.optString("timing", ""),
-                    courseCode = e.optString("courseCode", ""),
-                    courseName = e.optString("courseName", ""),
-                    branch = e.optString("branch", ""),
-                    examType = e.optString("examType", "")
-                )
-            }
-            entries to examType
-        } catch (e: Exception) {
-            Log.e(TAG, "Timetable JSON parse error: ${e.message}", e)
-            emptyList<ExamTimetableEntry>() to ""
-        }
     }
 
     fun clearState() {
