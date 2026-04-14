@@ -39,13 +39,14 @@ private data class KeycloakConfig(
     val clientId: String
 ) {
     val tokenUrl: String
-        get() = "${authUrl.trimEnd('/')}realms/$realm/protocol/openid-connect/token"
+        get() = "${authUrl.trimEnd('/')}/realms/$realm/protocol/openid-connect/token"
 }
 
 class WebViewAuthenticator(private val context: Context) {
 
     private val gson = Gson()
     private val mainHandler = Handler(Looper.getMainLooper())
+
 
     // Auto-detected Keycloak configs — fetched once per session
     @Volatile private var sisKeycloakConfig: KeycloakConfig? = null
@@ -764,7 +765,6 @@ class WebViewAuthenticator(private val context: Context) {
                     val attendanceData = AttendanceData.fromResponse(response)
                     Result.success(attendanceData)
                 } else if (responseCode == 401) {
-                    // Token expired
                     cachedAuthToken = null
                     null
                 } else if (responseCode in 500..599) {
@@ -774,7 +774,7 @@ class WebViewAuthenticator(private val context: Context) {
                 }
             } catch (e: Exception) {
                 android.util.Log.e("WebViewAuth", "Fast refresh error: ${e.message}")
-                null // Fall back to WebView
+                null
             }
         }
     }

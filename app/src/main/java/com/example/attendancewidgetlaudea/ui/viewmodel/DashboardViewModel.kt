@@ -12,7 +12,8 @@ import com.example.attendancewidgetlaudea.data.model.GradeEntry
 import com.example.attendancewidgetlaudea.data.model.RegistrationResponse
 import com.example.attendancewidgetlaudea.data.model.TargetCgpaResult
 import com.example.attendancewidgetlaudea.data.model.TimetableResponse
-import com.example.attendancewidgetlaudea.data.model.calculateTargetCgpa
+import com.example.attendancewidgetlaudea.data.model.CaComponentData
+import com.example.attendancewidgetlaudea.data.model.calculateTargetCgpaFromLocal
 import com.example.attendancewidgetlaudea.data.model.detectDepartment
 import com.example.attendancewidgetlaudea.data.model.extractRegisteredCourseCodes
 import com.example.attendancewidgetlaudea.data.model.getCurriculum
@@ -74,7 +75,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         startBackgroundRefresh()
         loadHolidayDates()
         loadCalculatorCgpa()
-        loadTargetCgpa()
+        loadTargetCgpa() // uses disk-cached CA marks if available, otherwise waits for refresh
     }
 
     /**
@@ -181,6 +182,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                     // Prefetch all tile data for AI advisor (background, silent)
                     launch { repository.prefetchForAI() }
+                    // Load target CGPA now — token is warm, CA marks fetch will be fast
+                    loadTargetCgpa()
                 }
                 is Result.Error -> {
                     _uiState.value = _uiState.value.copy(
@@ -435,7 +438,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         loadTargetCgpa()
     }
 
-    /** Load results + CA marks and calculate what's needed for target CGPA */
+    /** Load target CGPA using local GPA calculator data + server CA marks */
     fun loadTargetCgpa() {
         val target = securePrefs.targetCgpa.toDouble()
         if (target <= 0) {
@@ -445,76 +448,196 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         viewModelScope.launch {
             try {
-                // Fetch results (past grades)
-                val resultData = repository.fetchResult()
-                val grades: List<GradeEntry> = if (resultData is Result.Success) {
-                    try {
-                        val listType = object : TypeToken<List<GradeEntry>>() {}.type
-                        gson.fromJson(resultData.data, listType) ?: emptyList()
-                    } catch (_: Exception) { emptyList() }
-                } else emptyList()
-
-                // Fetch current CA marks
-                val caResult = repository.fetchCAMarks()
-                val caMarks: List<CourseMarks> = if (caResult is Result.Success) caResult.data else emptyList()
-
                 val currentSem = securePrefs.cachedCurrentSem
-                if (currentSem <= 0 || (grades.isEmpty() && caMarks.isEmpty())) return@launch
+                if (currentSem <= 0) return@launch
 
-                // Build CA marks map: courseCode → (scored, max)
+                // ── Previous semesters: read from GPA calculator (local, not server) ──
+                val deptName = securePrefs.cachedDepartment ?: securePrefs.programmeName
+                val dept = detectDepartment(deptName)
+                val batchYear = securePrefs.batchYear.let { if (it > 0) it else 2023 }
+                val reg = getRegulationForBatch(batchYear)
+                val curriculum = if (dept != null) getCurriculum(dept, reg) else null
+
+                var previousCredits = 0
+                var previousWeightedSum = 0
+                var filledSemCount = 0
+                val currentCgpa: Double
+
+                val gradesJson = localPrefs.getString("cgpa_grades", null)
+                if (gradesJson.isNullOrEmpty() || curriculum == null) {
+                    // No GPA calculator data — can't calculate
+                    _uiState.value = _uiState.value.copy(targetCgpaResult = com.example.attendancewidgetlaudea.data.model.TargetCgpaResult(
+                        targetCgpa = target, currentCgpa = 0.0,
+                        previousCredits = 0, previousWeightedSum = 0,
+                        currentSemCredits = 0, requiredSgpa = 0.0,
+                        subjects = emptyList(), isAchievable = false,
+                        message = "Update your grades in GPA Calculator to use target CGPA"
+                    ))
+                    return@launch
+                }
+
+                val root = org.json.JSONObject(gradesJson)
+                for (semKey in root.keys()) {
+                    val sem = semKey.toIntOrNull() ?: continue
+                    if (sem >= currentSem) continue // only previous semesters
+                    val semObj = root.getJSONObject(semKey)
+                    val semSubjectsLocal = curriculum[sem] ?: continue
+                    var semHasGrades = false
+
+                    for (idxKey in semObj.keys()) {
+                        val idx = idxKey.toIntOrNull() ?: continue
+                        if (idx >= semSubjectsLocal.size) continue
+                        val gradeLabel = semObj.getString(idxKey)
+                        val grade = LetterGrade.entries.find { it.label == gradeLabel } ?: continue
+                        val credits = semSubjectsLocal[idx].credits.toInt()
+                        if (credits > 0 && grade.gradePoint > 0) {
+                            previousCredits += credits
+                            previousWeightedSum += credits * grade.gradePoint
+                            semHasGrades = true
+                        }
+                    }
+                    if (semHasGrades) filledSemCount++
+                }
+
+                // Use the full calculator CGPA for display (matches the tile)
+                currentCgpa = _uiState.value.calculatorCgpa
+                    ?: if (previousCredits > 0) previousWeightedSum.toDouble() / previousCredits else 0.0
+
+                if (filledSemCount == 0) {
+                    _uiState.value = _uiState.value.copy(targetCgpaResult = com.example.attendancewidgetlaudea.data.model.TargetCgpaResult(
+                        targetCgpa = target, currentCgpa = currentCgpa,
+                        previousCredits = previousCredits, previousWeightedSum = previousWeightedSum,
+                        currentSemCredits = 0, requiredSgpa = 0.0,
+                        subjects = emptyList(), isAchievable = false,
+                        message = "Update your grades in GPA Calculator to use target CGPA"
+                    ))
+                    return@launch
+                }
+
+                // ── Current semester CA marks: use cache if available, otherwise fetch ──
+                val caMarks: List<CourseMarks> = repository.cachedCourseMarks ?: run {
+                    val caResult = repository.fetchCAMarks()
+                    if (caResult is Result.Success) caResult.data else emptyList()
+                }
+                if (caMarks.isEmpty()) return@launch
+
+                // Build CA marks map + component breakdown
                 val caMap = mutableMapOf<String, Pair<Double, Double>>()
+                val caCompMap = mutableMapOf<String, CaComponentData>()
                 for (course in caMarks) {
-                    val scored = course.testDetails.total.getSecuredAsDouble() ?: continue
-                    val max = course.testDetails.total.getMaxAsDouble()
-                    if (max > 0) caMap[course.courseCode] = Pair(scored, max)
+                    val components = course.testDetails.components
+                    var ca1Scored: Double? = null
+                    var ca1Max = 20.0
+                    var ca2Scored: Double? = null
+                    var ca2Max = 20.0
+                    var ca2Name = "IAT-2"
+                    var testMax = 65.0
+                    var testScaled = 60.0
+                    var ca2TestMax = 65.0
+                    var ca2TestScaled = 60.0
+
+                    if (components.isNotEmpty()) {
+                        val c1 = components[0]
+                        ca1Scored = c1.marks?.scaled?.getSecuredAsDouble()
+                            ?: c1.marks?.actual?.getSecuredAsDouble()
+                        ca1Max = c1.marks?.scaled?.getMaxAsDouble()
+                            ?: c1.marks?.actual?.getMaxAsDouble() ?: 20.0
+                        val c1Test = c1.subComponents?.firstOrNull { it.name.contains("TEST", true) }
+                        if (c1Test != null) {
+                            testMax = c1Test.marks?.actual?.getMaxAsDouble() ?: 65.0
+                            testScaled = c1Test.marks?.scaled?.getMaxAsDouble() ?: 60.0
+                        }
+                    }
+                    if (components.size >= 2) {
+                        val c2 = components[1]
+                        ca2Name = c2.name
+                        ca2Scored = c2.marks?.scaled?.getSecuredAsDouble()
+                            ?: c2.marks?.actual?.getSecuredAsDouble()
+                        ca2Max = c2.marks?.scaled?.getMaxAsDouble()
+                            ?: c2.marks?.actual?.getMaxAsDouble() ?: 20.0
+                        val c2Test = c2.subComponents?.firstOrNull {
+                            it.name.contains("TEST", true) || it.name.contains("MODEL", true)
+                        }
+                        if (c2Test != null) {
+                            ca2TestMax = c2Test.marks?.actual?.getMaxAsDouble() ?: 65.0
+                            ca2TestScaled = c2Test.marks?.scaled?.getMaxAsDouble() ?: 60.0
+                        }
+                    }
+
+                    caCompMap[course.courseCode] = CaComponentData(
+                        ca1Scored = ca1Scored, ca1Max = ca1Max,
+                        ca2Scored = ca2Scored, ca2Max = ca2Max,
+                        ca2Name = ca2Name,
+                        testMax = testMax, testScaled = testScaled,
+                        ca2TestMax = ca2TestMax, ca2TestScaled = ca2TestScaled
+                    )
+
+                    val totalScored = course.testDetails.total.getSecuredAsDouble()
+                    val totalMax = course.testDetails.total.getMaxAsDouble()
+                    if (totalScored != null && totalMax > 0) {
+                        caMap[course.courseCode] = Pair(totalScored, totalMax)
+                    } else {
+                        val sumScored = (ca1Scored ?: 0.0) + (ca2Scored ?: 0.0)
+                        val sumMax = ca1Max + ca2Max
+                        if (sumMax > 0) caMap[course.courseCode] = Pair(sumScored, sumMax)
+                    }
                 }
 
-                // Build current semester subjects map: courseCode → (title, credits)
-                // Use CA marks subjects as the source of current semester subjects
-                // Also try to get credits from curriculum data or past grades
+                // Build subjects map with credits from curriculum
                 val subjectsMap = mutableMapOf<String, Pair<String, Int>>()
+                val semSubjects = curriculum[currentSem]
+                val auditKeywords = listOf("STATE, NATION", "NATION BUILDING", "CONSTITUTION", "INDIAN POLITY")
+
                 for (course in caMarks) {
-                    // Default credits = 3 (most common); try to find from curriculum later
-                    subjectsMap[course.courseCode] = Pair(course.courseTitle, 3)
-                }
-
-                // Try to get credits from grades if same course appeared in a previous attempt
-                // or from the current semester grades if available
-                for (grade in grades) {
-                    if (grade.courseCode != null && grade.courseCode in subjectsMap) {
-                        val credits = grade.getCreditsValue()
-                        if (credits > 0) {
-                            subjectsMap[grade.courseCode] = Pair(
-                                subjectsMap[grade.courseCode]!!.first,
-                                credits
-                            )
-                        }
+                    val isAudit = auditKeywords.any { course.courseTitle.uppercase().contains(it) }
+                    var credits = 3
+                    if (isAudit) {
+                        credits = 0
+                    } else if (curriculum != null) {
+                        val match = semSubjects?.find { it.code == course.courseCode }
+                            ?: curriculum.values.flatten().find { it.code == course.courseCode }
+                        if (match != null) credits = match.credits.toInt()
                     }
+                    subjectsMap[course.courseCode] = Pair(course.courseTitle, credits)
                 }
 
-                // Also add subjects from current semester grades that may not be in CA marks
-                val currentSemGrades = grades.filter { it.semester == currentSem }
-                for (grade in currentSemGrades) {
-                    if (grade.courseCode != null && grade.courseCode !in subjectsMap) {
-                        val credits = grade.getCreditsValue()
-                        if (credits > 0) {
-                            subjectsMap[grade.courseCode] = Pair(
-                                grade.courseTitle ?: grade.courseCode,
-                                credits
-                            )
-                        }
-                    }
-                }
+                val gradedSubjects = subjectsMap.filter { it.value.second > 0 }
+                if (gradedSubjects.isEmpty()) return@launch
 
-                if (subjectsMap.isEmpty()) return@launch
-
-                val result = calculateTargetCgpa(
+                var result = calculateTargetCgpaFromLocal(
                     targetCgpa = target,
-                    previousGrades = grades,
-                    currentSemester = currentSem,
+                    currentCgpa = currentCgpa,
+                    previousCredits = previousCredits,
+                    previousWeightedSum = previousWeightedSum,
                     currentCAMarks = caMap,
-                    currentSemSubjects = subjectsMap
+                    currentSemSubjects = gradedSubjects,
+                    caComponents = caCompMap
                 )
+
+                // Add accuracy note if not all previous semesters filled
+                val expectedPrevSems = currentSem - 1
+                if (filledSemCount < expectedPrevSems) {
+                    val note = " (Update all $expectedPrevSems sems in GPA Calculator for more accuracy)"
+                    result = result.copy(message = result.message + note)
+                }
+
+                // Add audit/0-credit courses as pass-only entries
+                val auditSubjects = subjectsMap.filter { it.value.second == 0 }
+                if (auditSubjects.isNotEmpty()) {
+                    val auditResults = auditSubjects.map { (code, titleCredits) ->
+                        com.example.attendancewidgetlaudea.data.model.TargetSubjectResult(
+                            courseCode = code, courseTitle = titleCredits.first, credits = 0,
+                            caMarksScored = 0.0, caMarksMax = 0.0,
+                            requiredGradePoint = 5, requiredGrade = "Pass",
+                            requiredTotalMarks = 50, requiredEseMarks = 45,
+                            isPossible = true, isAlreadySecured = false,
+                            ca2Needed = null, ca2Max = 65, ca2Name = "",
+                            hasCa2Pending = false, hasCa1Pending = false,
+                            ca1Needed = null, ca1Max = 65
+                        )
+                    }
+                    result = result.copy(subjects = result.subjects + auditResults)
+                }
 
                 _uiState.value = _uiState.value.copy(targetCgpaResult = result)
             } catch (e: Exception) {

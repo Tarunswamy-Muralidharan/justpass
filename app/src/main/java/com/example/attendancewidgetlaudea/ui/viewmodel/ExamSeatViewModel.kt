@@ -21,12 +21,19 @@ import org.apache.poi.ss.usermodel.Sheet
 import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.ByteArrayInputStream
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 data class ExamSeatUiState(
     val isSearching: Boolean = false,
     val examSeat: ExamSeatData? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val importTimestamp: String? = null,
+    val fileUri: Uri? = null,
+    val showRawData: Boolean = false,
+    val allRows: List<List<String>> = emptyList()
 )
 
 class ExamSeatViewModel(application: Application) : AndroidViewModel(application) {
@@ -75,7 +82,8 @@ class ExamSeatViewModel(application: Application) : AndroidViewModel(application
         }
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isSearching = true, errorMessage = null, examSeat = null)
+            // Clear old data completely when importing a new file
+            _uiState.value = ExamSeatUiState(isSearching = true)
 
             try {
                 val result = withContext(Dispatchers.IO) {
@@ -87,24 +95,38 @@ class ExamSeatViewModel(application: Application) : AndroidViewModel(application
                             fileName.endsWith(".xlsx", ignoreCase = true)
 
                     val seatResult = parseExcelForSeat(bytes, isXlsx, rollNumber)
+                    val allRows = parseAllRows(bytes, isXlsx)
 
-                    if (seatResult != null) {
+                    val finalResult = if (seatResult != null) {
                         val examInfo = parseExamInfoFromFilename(fileName)
                         seatResult.copy(examName = examInfo.first, date = examInfo.second)
                     } else seatResult
+
+                    Pair(finalResult, allRows)
                 }
 
-                if (result != null) {
-                    _uiState.value = _uiState.value.copy(isSearching = false, examSeat = result)
-                } else {
-                    _uiState.value = _uiState.value.copy(
+                val timestamp = SimpleDateFormat("d MMM yyyy, h:mm a", Locale.getDefault()).format(Date())
+
+                if (result.first != null) {
+                    _uiState.value = ExamSeatUiState(
                         isSearching = false,
-                        errorMessage = "Your roll number ($rollNumber) was not found in this Excel file"
+                        examSeat = result.first,
+                        importTimestamp = timestamp,
+                        fileUri = uri,
+                        allRows = result.second
+                    )
+                } else {
+                    _uiState.value = ExamSeatUiState(
+                        isSearching = false,
+                        errorMessage = "Your roll number ($rollNumber) was not found in this Excel file",
+                        importTimestamp = timestamp,
+                        fileUri = uri,
+                        allRows = result.second
                     )
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Excel processing error: ${e.message}", e)
-                _uiState.value = _uiState.value.copy(
+                _uiState.value = ExamSeatUiState(
                     isSearching = false,
                     errorMessage = "Failed to read file: ${e.message}"
                 )
@@ -173,7 +195,38 @@ class ExamSeatViewModel(application: Application) : AndroidViewModel(application
         _uiState.value = ExamSeatUiState()
     }
 
+    fun toggleRawData() {
+        _uiState.value = _uiState.value.copy(showRawData = !_uiState.value.showRawData)
+    }
+
     // --- Excel parsing ---
+
+    private fun parseAllRows(bytes: ByteArray, isXlsx: Boolean): List<List<String>> {
+        return try {
+            val workbook: Workbook = if (isXlsx) {
+                XSSFWorkbook(ByteArrayInputStream(bytes))
+            } else {
+                HSSFWorkbook(ByteArrayInputStream(bytes))
+            }
+            val rows = mutableListOf<List<String>>()
+            val sheet = workbook.getSheetAt(0)
+            for (rowIndex in 0..minOf(100, sheet.lastRowNum)) {
+                val row = sheet.getRow(rowIndex) ?: continue
+                val cells = mutableListOf<String>()
+                for (cellIndex in 0 until row.lastCellNum) {
+                    cells.add(getCellStringValue(row, cellIndex).trim())
+                }
+                if (cells.any { it.isNotBlank() }) {
+                    rows.add(cells)
+                }
+            }
+            workbook.close()
+            rows
+        } catch (e: Exception) {
+            Log.e(TAG, "parseAllRows error: ${e.message}", e)
+            emptyList()
+        }
+    }
 
     private fun parseExcelForSeat(bytes: ByteArray, isXlsx: Boolean, rollNumber: String): ExamSeatData? {
         return try {
