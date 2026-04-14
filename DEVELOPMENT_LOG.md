@@ -5005,3 +5005,135 @@ The 4-tier token refresh system (cached token → refresh token → Keycloak pas
 
 **Files Modified:**
 - `DashboardScreen.kt` — Removed `if (exemptionCount > 0)` condition, reordered stats row
+
+---
+
+### Challenge 94: Fast Login — Eliminating WebView from Login Flow
+
+**Date:** 2026-04-14
+
+**Problem:** First login on fresh install took 40+ seconds and often timed out. The login flow was:
+1. Validate credentials via Keycloak direct POST (~1s)
+2. **Ignore the valid token** and start WebView login (~15-30s)
+3. WebView loads Keycloak page → fills credentials → waits for redirect → fetches attendance
+4. With slow server (20s API responses), total exceeded WebView timeout → "Login failed: Timeout"
+
+**Root Cause:** The original `login()` in `AttendanceRepository` used Keycloak POST only to validate credentials, then always fell through to WebView. This was because the app was originally built with authorization-code flow (WebView redirect). Password grant was added later but only used for token refresh, not initial login.
+
+**Solution:** Made Keycloak direct POST the primary login path:
+```
+1. Keycloak POST → token (1s)
+2. fetchAttendanceDirect() with that token → attendance data (20s)
+3. Save credentials + data → login complete
+4. WebView only as fallback if steps 1-2 fail
+```
+
+**Result:** Login time reduced from 40s+ (with frequent timeouts) to ~21s (always succeeds if server responds within 30s).
+
+**Files Modified:**
+- `AttendanceRepository.kt` — Rewrote `login()` to try direct Keycloak + direct API fetch before WebView fallback
+
+---
+
+### Challenge 95: HTTP Timeout Increase — 10s → 30s
+
+**Date:** 2026-04-14
+
+**Problem:** All 18 `HttpURLConnection` calls in `WebViewAuthenticator` had `connectTimeout = 10000` and `readTimeout = 10000`. The SIS server regularly takes 15-25 seconds to respond. Every API call was timing out, triggering cascading retries through the 4-tier token flow, ultimately falling back to slow WebView.
+
+**Benchmarking evidence:**
+- Server response times measured: Attendance 20s, CA Marks 14s, Absent 8s, Present 5s, Exemptions 16s
+- With 10s timeout: every call fails on first try → token refresh → retry → fails again → WebView fallback
+- With 30s timeout: first try succeeds, no retries needed
+
+**Solution:** Changed all 18 timeout values from 10000ms to 30000ms.
+
+**Impact:** Eliminated unnecessary retry cycles. Calls that previously failed → retried → failed → WebView now succeed on first attempt.
+
+**Files Modified:**
+- `WebViewAuthenticator.kt` — All `connectTimeout` and `readTimeout` values: 10000 → 30000
+
+---
+
+### Challenge 96: Speed Benchmark — OkHttp vs HttpURLConnection
+
+**Date:** 2026-04-14
+
+**Problem:** App felt slower than the LAUDEA website. Hypothesis: OkHttp connection pooling would be faster than HttpURLConnection (TLS handshake reuse).
+
+**Approach:** Created isolated test app (`SISSpeedTest`) at `/c/Users/tmswa/AndroidStudioProjects/SISSpeedTest/` — completely separate from main app. Ran 10-round benchmark with cache-busting on Moto G54.
+
+**On-device results (10-round average):**
+| Method | Average Time |
+|---|---|
+| HttpURLConnection sequential | 41,489ms |
+| OkHttp sequential (keep-alive) | 45,743ms (10% SLOWER) |
+| OkHttp parallel | 10,052ms (75% FASTER) |
+
+**Key finding:** Connection pooling provides zero benefit on Android — server processing time dominates (15-25s per call), not TLS handshake overhead. The real win is **parallelism**, not connection reuse.
+
+**Decision:** Did NOT migrate to OkHttp. The 4-tier token refresh system is battle-tested for 1700+ users. Parallelism was achieved without touching the auth flow.
+
+**Python benchmark (from desktop):**
+| Method | Total |
+|---|---|
+| Sequential new connections | 47s |
+| Keep-alive connection reuse | 15s |
+| Parallel | 3.8s |
+
+Desktop showed keep-alive benefit because of higher network latency from server location. On-device (closer to server), the benefit disappears.
+
+---
+
+### Challenge 97: Parallel Everything — Fire All APIs at Launch
+
+**Date:** 2026-04-14
+
+**Problem:** Even with `prefetchForAI()` running in parallel, it only started after `refreshAttendance()` completed (~20s). So total time was 20s (attendance) + 10s (parallel batch) = 30s.
+
+**Solution:** Fire `prefetchForAI()` at init alongside `refreshAttendance()`, not after it. Each fetch method has its own 4-tier token retry, so they handle auth independently.
+
+**Before:**
+```
+T+0s:  refreshAttendance() starts
+T+20s: attendance loaded → prefetchForAI() starts
+T+30s: all data cached
+```
+
+**After:**
+```
+T+0s:  refreshAttendance() + prefetchForAI() both start
+T+21s: CA marks cached (arrived before attendance!)
+T+25s: attendance loaded
+T+30s: all data cached
+```
+
+**Risk assessment:** Multiple parallel token refreshes could theoretically conflict, but they all share `cachedAuthToken` — first to refresh wins, others use the new token. Tested over multiple app restarts with no issues.
+
+**Files Modified:**
+- `DashboardViewModel.kt` — Moved `prefetchForAI()` to init block alongside other startup calls
+
+---
+
+### Challenge 98: Disk-Persisted Caches for Instant Screen Loads
+
+**Date:** 2026-04-14
+
+**Problem:** In-memory caches (CA marks, present/absent days) were lost on app kill. Subject attendance and CA marks screens showed blank loading state every cold start.
+
+**Solution:** Persist full JSON to SharedPreferences, restore on app startup:
+- `cachedPresentDaysJson` — full present days list as JSON
+- `cachedAbsentDaysJson` — full absent days list as JSON  
+- `cachedCourseMarksFullJson` — full CourseMarks list as JSON
+
+**Stale-while-revalidate pattern:**
+1. App starts → restore from disk → screens show cached data instantly
+2. Background fetch runs → updates cache on success
+3. If fetch fails → keep showing cached data, swallow error silently
+4. If no cached data + fetch fails → show error with retry button
+
+**Files Modified:**
+- `SecurePreferences.kt` — Added 3 new cache keys
+- `AttendanceRepository.kt` — `persistPresentDays()`, `persistAbsentDays()`, disk restore in `init`
+- `SubjectAttendanceViewModel.kt` — `loadFromCache()`, error handling preserves cached data
+- `CAMarksViewModel.kt` — Cache-first init, error handling preserves cached data
