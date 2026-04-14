@@ -8,6 +8,8 @@ import com.example.attendancewidgetlaudea.data.model.SubjectAttendance
 import com.example.attendancewidgetlaudea.data.model.calculateSubjectAttendance
 import com.example.attendancewidgetlaudea.data.repository.AttendanceRepository
 import com.example.attendancewidgetlaudea.data.repository.Result
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,10 +52,21 @@ class SubjectAttendanceViewModel(application: Application) : AndroidViewModel(ap
                 _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             }
 
-            val presentResult = repository.fetchPresentDays()
-            val absentResult = repository.fetchAbsentDays()
-            val exemptionResult = repository.fetchExemptions()
-            val timetableResult = repository.fetchTimetable()
+            // Parallel fetch — all 4 APIs fire simultaneously (~20s vs ~60s sequential)
+            val presentResult: Result<List<com.example.attendancewidgetlaudea.data.model.AbsentDay>>
+            val absentResult: Result<List<com.example.attendancewidgetlaudea.data.model.AbsentDay>>
+            val exemptionResult: Result<List<Exemption>>
+            val timetableResult: Result<com.example.attendancewidgetlaudea.data.model.TimetableResponse>
+            coroutineScope {
+                val p = async { repository.fetchPresentDays() }
+                val a = async { repository.fetchAbsentDays() }
+                val e = async { repository.fetchExemptions() }
+                val t = async { repository.fetchTimetable() }
+                presentResult = p.await()
+                absentResult = a.await()
+                exemptionResult = e.await()
+                timetableResult = t.await()
+            }
 
             if (presentResult is Result.Success && absentResult is Result.Success) {
                 // Only include exemptions if the attendance API actually counts them
@@ -84,14 +97,19 @@ class SubjectAttendanceViewModel(application: Application) : AndroidViewModel(ap
                         }
                     )
                 }
-                _uiState.value = _uiState.value.copy(isLoading = false, subjects = subjects)
+                _uiState.value = _uiState.value.copy(isLoading = false, subjects = subjects, errorMessage = null)
             } else {
-                val error = when {
-                    presentResult is Result.Error -> presentResult.message
-                    absentResult is Result.Error -> absentResult.message
-                    else -> "Could not load subject attendance"
+                // Only show error if we have no cached data
+                if (_uiState.value.subjects.isEmpty()) {
+                    val error = when {
+                        presentResult is Result.Error -> presentResult.message
+                        absentResult is Result.Error -> absentResult.message
+                        else -> "Could not load subject attendance"
+                    }
+                    _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = error)
+                } else {
+                    _uiState.value = _uiState.value.copy(isLoading = false)
                 }
-                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = error)
             }
         }
     }

@@ -136,8 +136,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "POST"
                 connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
                 connection.doOutput = true
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val params = "grant_type=password&client_id=${config.clientId}" +
                     "&scope=openid%20offline_access" +
@@ -189,8 +189,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "POST"
                 connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
                 connection.doOutput = true
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val params = "grant_type=refresh_token&client_id=${config.clientId}" +
                     "&scope=openid%20offline_access" +
@@ -753,8 +753,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val responseCode = connection.responseCode
                 android.util.Log.d("WebViewAuth", "Fast refresh response: $responseCode")
@@ -796,8 +796,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val responseCode = connection.responseCode
                 android.util.Log.d("WebViewAuth", "CA marks direct response: $responseCode")
@@ -834,8 +834,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val responseCode = connection.responseCode
                 android.util.Log.d("WebViewAuth", "Absent days response: $responseCode")
@@ -873,8 +873,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val responseCode = connection.responseCode
                 android.util.Log.d("WebViewAuth", "Present days response: $responseCode")
@@ -911,8 +911,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val responseCode = connection.responseCode
                 android.util.Log.d("WebViewAuth", "Exemptions response: $responseCode")
@@ -949,8 +949,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val responseCode = connection.responseCode
                 android.util.Log.d("WebViewAuth", "Timetable response: $responseCode")
@@ -988,8 +988,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val responseCode = connection.responseCode
                 android.util.Log.d("WebViewAuth", "Results response: $responseCode")
@@ -1026,8 +1026,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val responseCode = connection.responseCode
                 if (responseCode == 200) {
@@ -1062,8 +1062,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val responseCode = connection.responseCode
                 if (responseCode == 200) {
@@ -1098,8 +1098,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 if (connection.responseCode == 200) {
                     val json = connection.inputStream.bufferedReader().use { it.readText() }
@@ -1354,8 +1354,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "*/*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
                 connection.instanceFollowRedirects = true
 
                 val responseCode = connection.responseCode
@@ -1415,8 +1415,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "POST"
                 connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
                 connection.doOutput = true
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val params = "grant_type=password&client_id=${config.clientId}" +
                     "&scope=openid" +
@@ -1469,8 +1469,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
                 connection.setRequestProperty("Content-Type", "application/json")
                 connection.doOutput = true
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val body = """{"filter":{},"skip":$skip,"limit":$limit,"search":"","sort":""}"""
                 connection.outputStream.use { it.write(body.toByteArray()) }
@@ -1510,8 +1510,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val responseCode = connection.responseCode
                 android.util.Log.d("WebViewAuth", "Circular detail response: $responseCode")
@@ -1555,8 +1555,8 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
 
                 val responseCode = connection.responseCode
                 android.util.Log.d("WebViewAuth", "PDF URL response: $responseCode")

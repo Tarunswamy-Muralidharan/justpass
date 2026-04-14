@@ -318,14 +318,17 @@ fun calculateTargetCgpaFromLocal(
 
         // Helper: given needed IAT scaled marks and component structure, calc minimum test actual
         fun calcMinTest(iatScaledNeeded: Double, iatScaledMax: Double, testActMax: Double, testWeight: Double, assignWeight: Double): Int {
-            if (iatScaledNeeded <= 0) return minTestPass
+            val maxTest = testActMax.toInt()
+            val minPass = minTestPass.coerceAtMost(maxTest) // handle small test maxes (e.g. 25)
+            if (iatScaledNeeded <= 0) return minPass
+            if (iatScaledMax <= 0) return minPass
             // Convert IAT scaled needed to IAT actual (out of 100)
             val iatActualNeeded = iatScaledNeeded / iatScaledMax * 100.0
             // Assume full assignment marks: assignment contributes assignWeight out of 100
             val testContribNeeded = (iatActualNeeded - assignWeight).coerceAtLeast(0.0)
             // Convert test contribution (internal weight) to actual marks
             val testActual = if (testWeight > 0) kotlin.math.ceil(testContribNeeded / testWeight * testActMax).toInt() else 0
-            return testActual.coerceIn(minTestPass, testActMax.toInt())
+            return testActual.coerceIn(minPass, maxTest)
         }
 
         if (hasCa2Pending && comp != null) {

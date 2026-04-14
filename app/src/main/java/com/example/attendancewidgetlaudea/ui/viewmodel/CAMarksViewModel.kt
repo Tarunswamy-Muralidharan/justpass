@@ -26,24 +26,33 @@ class CAMarksViewModel(application: Application) : AndroidViewModel(application)
     val uiState: StateFlow<CAMarksUiState> = _uiState.asStateFlow()
 
     init {
+        // Load from cache instantly, then refresh in background
+        repository.cachedCourseMarks?.let {
+            _uiState.value = _uiState.value.copy(courseMarksList = it)
+        }
         fetchCAMarks()
     }
 
     fun fetchCAMarks() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            // Only show loading if no cached data
+            if (_uiState.value.courseMarksList.isEmpty()) {
+                _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            }
 
             when (val result = repository.fetchCAMarks()) {
                 is Result.Success -> {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        courseMarksList = result.data
+                        courseMarksList = result.data,
+                        errorMessage = null
                     )
                 }
                 is Result.Error -> {
+                    // Only show error if we have no cached data to show
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = result.message
+                        errorMessage = if (_uiState.value.courseMarksList.isEmpty()) result.message else null
                     )
                 }
                 is Result.Loading -> {}
