@@ -75,7 +75,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         startBackgroundRefresh()
         loadHolidayDates()
         loadCalculatorCgpa()
-        loadTargetCgpa() // uses disk-cached CA marks if available, otherwise waits for refresh
+        loadTargetCgpa()
+        // Fire prefetch immediately alongside attendance refresh — don't wait
+        viewModelScope.launch { try { repository.prefetchForAI() } catch (_: Exception) {} }
     }
 
     /**
