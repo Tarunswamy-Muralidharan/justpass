@@ -152,6 +152,18 @@ class SecurePreferences(context: Context) {
         get() = regularPrefs.getString(KEY_CACHED_CIRCULARS, null)
         set(value) = regularPrefs.edit().putString(KEY_CACHED_CIRCULARS, value).apply()
 
+    var cachedPresentDaysJson: String?
+        get() = regularPrefs.getString(KEY_CACHED_PRESENT_DAYS, null)
+        set(value) = regularPrefs.edit().putString(KEY_CACHED_PRESENT_DAYS, value).apply()
+
+    var cachedAbsentDaysJson: String?
+        get() = regularPrefs.getString(KEY_CACHED_ABSENT_DAYS, null)
+        set(value) = regularPrefs.edit().putString(KEY_CACHED_ABSENT_DAYS, value).apply()
+
+    var cachedCourseMarksFullJson: String?
+        get() = regularPrefs.getString(KEY_CACHED_COURSE_MARKS_FULL, null)
+        set(value) = regularPrefs.edit().putString(KEY_CACHED_COURSE_MARKS_FULL, value).apply()
+
     var lastUpdatedTime: Long
         get() = regularPrefs.getLong(KEY_LAST_UPDATED, 0L)
         set(value) = regularPrefs.edit().putLong(KEY_LAST_UPDATED, value).apply()
@@ -244,6 +256,9 @@ class SecurePreferences(context: Context) {
         private const val KEY_CACHED_RESULTS = "cached_results_json"
         private const val KEY_CACHED_SUBJECT_ATTENDANCE = "cached_subject_attendance_json"
         private const val KEY_CACHED_CIRCULARS = "cached_circulars_summary"
+        private const val KEY_CACHED_PRESENT_DAYS = "cached_present_days_json"
+        private const val KEY_CACHED_ABSENT_DAYS = "cached_absent_days_json"
+        private const val KEY_CACHED_COURSE_MARKS_FULL = "cached_course_marks_full_json"
         private const val KEY_CHESS_BOARD_THEME = "chess_board_theme"
         private const val KEY_TARGET_CGPA = "target_cgpa"
 

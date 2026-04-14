@@ -1,6 +1,8 @@
 package com.example.attendancewidgetlaudea.data.repository
 
 import android.content.Context
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import com.example.attendancewidgetlaudea.data.local.SecurePreferences
 import com.example.attendancewidgetlaudea.data.model.AbsentDay
 import com.example.attendancewidgetlaudea.data.model.AttendanceData
@@ -25,6 +27,43 @@ class AttendanceRepository(private val context: Context) {
 
     private val securePrefs = SecurePreferences.getInstance(context)
     private val webViewAuthenticator = WebViewAuthenticator(context)
+
+    private val gson = com.google.gson.Gson()
+    private val absentDayListType = object : com.google.gson.reflect.TypeToken<List<AbsentDay>>() {}.type
+    private val courseMarksListType = object : com.google.gson.reflect.TypeToken<List<CourseMarks>>() {}.type
+
+    // In-memory caches — avoid duplicate network calls across screens
+    @Volatile var cachedCourseMarks: List<CourseMarks>? = null
+        private set
+    @Volatile var cachedPresentDays: List<AbsentDay>? = null
+        private set
+    @Volatile var cachedAbsentDays: List<AbsentDay>? = null
+        private set
+
+    init {
+        // Restore cached data from disk on startup — instant load
+        try {
+            securePrefs.cachedPresentDaysJson?.let {
+                cachedPresentDays = gson.fromJson(it, absentDayListType)
+            }
+            securePrefs.cachedAbsentDaysJson?.let {
+                cachedAbsentDays = gson.fromJson(it, absentDayListType)
+            }
+            securePrefs.cachedCourseMarksFullJson?.let {
+                cachedCourseMarks = gson.fromJson(it, courseMarksListType)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun persistPresentDays(data: List<AbsentDay>) {
+        cachedPresentDays = data
+        try { securePrefs.cachedPresentDaysJson = gson.toJson(data) } catch (_: Exception) {}
+    }
+
+    private fun persistAbsentDays(data: List<AbsentDay>) {
+        cachedAbsentDays = data
+        try { securePrefs.cachedAbsentDaysJson = gson.toJson(data) } catch (_: Exception) {}
+    }
 
     suspend fun login(rollNumber: String, password: String): Result<AttendanceData> {
         // FAST CHECK: Validate credentials via direct Keycloak before slow WebView
@@ -170,8 +209,11 @@ class AttendanceRepository(private val context: Context) {
         try {
             val result = webViewAuthenticator.fetchCAMarksDirect(rollNumber)
             if (result != null && result.isSuccess) {
+                val data = result.getOrThrow()
+                cachedCourseMarks = data
+                try { securePrefs.cachedCourseMarksFullJson = gson.toJson(data) } catch (_: Exception) {}
                 android.util.Log.d("AttendanceRepo", "CA marks fast fetch successful")
-                return Result.Success(result.getOrThrow())
+                return Result.Success(data)
             }
         } catch (e: Exception) {
             android.util.Log.e("AttendanceRepo", "CA marks fast fetch error: ${e.message}")
@@ -222,7 +264,9 @@ class AttendanceRepository(private val context: Context) {
         try {
             val result = webViewAuthenticator.fetchAbsentDays(rollNumber)
             if (result != null && result.isSuccess) {
-                return Result.Success(result.getOrThrow())
+                val data = result.getOrThrow()
+                persistAbsentDays(data)
+                return Result.Success(data)
             }
         } catch (e: Exception) {
             android.util.Log.e("AttendanceRepo", "Absent days error: ${e.message}")
@@ -273,7 +317,9 @@ class AttendanceRepository(private val context: Context) {
         try {
             val result = webViewAuthenticator.fetchPresentDays(rollNumber)
             if (result != null && result.isSuccess) {
-                return Result.Success(result.getOrThrow())
+                val data = result.getOrThrow()
+                persistPresentDays(data)
+                return Result.Success(data)
             }
         } catch (e: Exception) {
             android.util.Log.e("AttendanceRepo", "Present days error: ${e.message}")
@@ -685,12 +731,19 @@ class AttendanceRepository(private val context: Context) {
      * Prefetch data from all tiles and cache as compact strings for AI advisor.
      * Called after successful attendance refresh. Runs silently — failures are ignored.
      */
-    suspend fun prefetchForAI() {
+    suspend fun prefetchForAI() = coroutineScope {
         val gson = com.google.gson.Gson()
 
-        // CA Marks → compact summary "DBMS: 38/50, OS: 29/50, ..."
+        // Run all fetches in parallel — server is slow (~15-20s each), parallel cuts total time
+        val caDeferred = async { try { fetchCAMarks() } catch (_: Exception) { null } }
+        val resultDeferred = async { try { fetchResult() } catch (_: Exception) { null } }
+        val absentDeferred = async { try { fetchAbsentDays() } catch (_: Exception) { null } }
+        val presentDeferred = async { try { fetchPresentDays() } catch (_: Exception) { null } }
+        val circDeferred = async { try { fetchCirculars() } catch (_: Exception) { null } }
+
+        // CA Marks → compact summary
         try {
-            val caResult = fetchCAMarks()
+            val caResult = caDeferred.await()
             if (caResult is Result.Success) {
                 val summary = caResult.data.joinToString("; ") { course ->
                     // Read individual components (CT1, CT2, Assignment, etc.)
@@ -726,7 +779,7 @@ class AttendanceRepository(private val context: Context) {
 
         // Results → compact "Sem 4: DBMS=A(9), OS=B+(8), ... SGPA=8.2"
         try {
-            val resultData = fetchResult()
+            val resultData = resultDeferred.await()
             if (resultData is Result.Success) {
                 val entries = gson.fromJson(resultData.data, Array<com.example.attendancewidgetlaudea.data.model.GradeEntry>::class.java)
                 if (entries != null && entries.isNotEmpty()) {
@@ -752,8 +805,8 @@ class AttendanceRepository(private val context: Context) {
 
         // Subject attendance → compact "DBMS: 45/52 (86.5%), OS: 38/50 (76.0%), ..."
         try {
-            val presentResult = fetchPresentDays()
-            val absentResult = fetchAbsentDays()
+            val presentResult = presentDeferred.await()
+            val absentResult = absentDeferred.await()
             if (presentResult is Result.Success && absentResult is Result.Success) {
                 // Flatten sessions to get per-subject counts
                 val presentSessions = presentResult.data.flatMap { it.sessions }
@@ -777,7 +830,7 @@ class AttendanceRepository(private val context: Context) {
 
         // Circulars → latest 3 titles
         try {
-            val circResult = fetchCirculars()
+            val circResult = circDeferred.await()
             if (circResult is Result.Success) {
                 val circulars = circResult.data.records
                 val summary = circulars.take(3).joinToString("; ") { it.title ?: "Untitled" }

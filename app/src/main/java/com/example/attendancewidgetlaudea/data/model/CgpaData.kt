@@ -104,7 +104,7 @@ data class TargetSubjectResult(
     val courseCode: String,
     val courseTitle: String,
     val credits: Int,
-    val caMarksScored: Double,   // What the student got in CA (out of 40 for theory)
+    val caMarksScored: Double,   // What the student got in CA so far (out of caMarksMax)
     val caMarksMax: Double,      // Max CA marks (typically 40)
     val requiredGradePoint: Int, // Grade point needed
     val requiredGrade: String,   // Letter grade needed (O, A+, A, etc.)
@@ -112,7 +112,14 @@ data class TargetSubjectResult(
     val requiredEseMarks: Int,   // ESE marks needed (out of 100 on paper, scaled to 60)
     val eseOutOf: Int = 100,     // ESE paper is out of 100
     val isPossible: Boolean,     // Can they achieve this grade?
-    val isAlreadySecured: Boolean = false // CA marks alone already secure the grade
+    val isAlreadySecured: Boolean = false, // CA marks alone already secure the grade
+    val ca2Needed: Int? = null,       // Test marks needed in next component (out of testMax)
+    val ca2Max: Int = 65,             // Test paper max marks (for display "X/65")
+    val ca2Name: String = "IAT-2",   // Name of the pending component
+    val hasCa2Pending: Boolean = false, // True if next component not yet entered
+    val hasCa1Pending: Boolean = false, // True if IAT-1 also not entered
+    val ca1Needed: Int? = null,       // Test marks needed in IAT-1 (if pending)
+    val ca1Max: Int = 65              // IAT-1 test paper max
 )
 
 data class TargetCgpaResult(
@@ -169,18 +176,60 @@ fun gradePointToLetter(gp: Int): String = when (gp) {
  * @param currentCAMarks CA marks for current semester subjects (courseCode → Pair(scored, max))
  * @param currentSemSubjects Current semester subjects with credits (courseCode → credits)
  */
+/**
+ * Per-subject CA component breakdown for target calculation.
+ * @param ca1Scored CA-1 marks scored (null if not entered)
+ * @param ca1Max CA-1 max marks
+ * @param ca2Scored CA-2 marks scored (null if not entered)
+ * @param ca2Max CA-2 max marks
+ */
+/**
+ * Per-subject CA component breakdown for target calculation.
+ * Components vary by course type:
+ * - Theory: IAT-1 (test+assignment, scaled to 20) + IAT-2 (test+assignment, scaled to 20) = 40 CA
+ * - Theory+Lab: IAT-1 (test+assignment, scaled to 25) + IA LAB (record+model, scaled to 25) = 50 CA
+ * - Lab only: INTERNAL (observation+test, scaled to 60) = 60 CA
+ */
+data class CaComponentData(
+    val ca1Scored: Double? = null,  // IAT-1 scaled marks
+    val ca1Max: Double = 20.0,      // IAT-1 scaled max
+    val ca2Scored: Double? = null,  // IAT-2 or IA LAB scaled marks
+    val ca2Max: Double = 20.0,      // IAT-2 or IA LAB scaled max
+    val ca2Name: String = "IAT-2",  // Component name (IAT-2, IA LAB, INTERNAL)
+    val testMax: Double = 65.0,     // Actual test paper max marks (for display)
+    val testScaled: Double = 60.0,  // Test scaled max
+    val ca2TestMax: Double = 65.0,  // IAT-2/component test max (actual, for "min X/65")
+    val ca2TestScaled: Double = 60.0 // IAT-2/component test scaled max
+)
+
 fun calculateTargetCgpa(
     targetCgpa: Double,
     previousGrades: List<GradeEntry>,
     currentSemester: Int,
-    currentCAMarks: Map<String, Pair<Double, Double>>, // courseCode → (scored, max)
-    currentSemSubjects: Map<String, Pair<String, Int>>  // courseCode → (title, credits)
+    currentCAMarks: Map<String, Pair<Double, Double>>,
+    currentSemSubjects: Map<String, Pair<String, Int>>,
+    caComponents: Map<String, CaComponentData> = emptyMap()
 ): TargetCgpaResult {
-    // Calculate previous CGPA from grade entries (all semesters before current)
     val pastGrades = previousGrades.filter { it.semester < currentSemester && it.isPassed() }
-    val previousCredits = pastGrades.sumOf { it.getCreditsValue() }
-    val previousWeightedSum = pastGrades.sumOf { it.gradePoint * it.getCreditsValue() }
-    val currentCgpa = if (previousCredits > 0) previousWeightedSum.toDouble() / previousCredits else 0.0
+    val prevCredits = pastGrades.sumOf { it.getCreditsValue() }
+    val prevWeightedSum = pastGrades.sumOf { it.gradePoint * it.getCreditsValue() }
+    val prevCgpa = if (prevCredits > 0) prevWeightedSum.toDouble() / prevCredits else 0.0
+    return calculateTargetCgpaFromLocal(targetCgpa, prevCgpa, prevCredits, prevWeightedSum,
+        currentCAMarks, currentSemSubjects, caComponents)
+}
+
+/**
+ * Calculate target CGPA using pre-computed previous semester data (from GPA calculator).
+ */
+fun calculateTargetCgpaFromLocal(
+    targetCgpa: Double,
+    currentCgpa: Double,
+    previousCredits: Int,
+    previousWeightedSum: Int,
+    currentCAMarks: Map<String, Pair<Double, Double>>,
+    currentSemSubjects: Map<String, Pair<String, Int>>,
+    caComponents: Map<String, CaComponentData> = emptyMap()
+): TargetCgpaResult {
 
     val currentSemCredits = currentSemSubjects.values.sumOf { it.second }
     val totalCredits = previousCredits + currentSemCredits
@@ -190,15 +239,7 @@ fun calculateTargetCgpa(
     val requiredThisSem = requiredTotalWeighted - previousWeightedSum
     val requiredSgpa = if (currentSemCredits > 0) requiredThisSem.toDouble() / currentSemCredits else 0.0
 
-    if (requiredSgpa > 10.0) {
-        return TargetCgpaResult(
-            targetCgpa = targetCgpa, currentCgpa = currentCgpa,
-            previousCredits = previousCredits, previousWeightedSum = previousWeightedSum,
-            currentSemCredits = currentSemCredits, requiredSgpa = requiredSgpa,
-            subjects = emptyList(), isAchievable = false,
-            message = "Not achievable — would need SGPA ${String.format("%.2f", requiredSgpa)} (max is 10.0)"
-        )
-    }
+    val isNotAchievable = requiredSgpa > 10.0
 
     if (requiredSgpa <= 0) {
         return TargetCgpaResult(
@@ -210,38 +251,108 @@ fun calculateTargetCgpa(
         )
     }
 
-    // For each subject, calculate required grade points to hit the target SGPA.
-    // Strategy: assign minimum viable grades starting from highest-credit subjects.
-    // Simple approach: find the minimum uniform grade point that achieves the required SGPA.
-    val minUniformGP = kotlin.math.ceil(requiredSgpa).toInt().coerceIn(5, 10)
+    // Calculate per-subject breakdown even if not fully achievable
+    // so user can see what grades they'd aim for (best case O for everything)
+    val minUniformGP = if (isNotAchievable) 10 // show O grade as best case
+        else kotlin.math.ceil(requiredSgpa).toInt().coerceIn(5, 10)
 
     val subjects = currentSemSubjects.map { (code, titleCredits) ->
         val (title, credits) = titleCredits
         val caData = currentCAMarks[code]
         val caScored = caData?.first ?: 0.0
         val caMax = caData?.second ?: 40.0
+        val comp = caComponents[code]
 
-        // Scale CA marks to 40 if max is different
-        val caScaled = if (caMax > 0) (caScored / caMax * 40.0) else 0.0
+        // Marking scheme varies by course type:
+        //   Theory: Total(100) = CA(40) + Sem Exam(60). CA = IAT-1(20) + IAT-2(20)
+        //   Theory+Lab: Total(100) = CA(50) + Sem Exam(50). CA = IAT-1(25) + IA LAB(25)
+        //   Lab: Total(100) = CA(60) + Sem Exam(40). CA = INTERNAL(60)
 
-        // Required grade point for this subject (use uniform minimum)
+        val hasCa1Pending = comp != null && comp.ca1Scored == null
+        val hasCa2Pending = comp != null && comp.ca2Scored == null && !hasCa1Pending
+
+        // IAT-1 scaled marks
+        val iat1Scaled = if (comp != null && comp.ca1Scored != null && comp.ca1Max > 0)
+            comp.ca1Scored else 0.0
+        val iat1ScaledMax = comp?.ca1Max ?: 20.0
+
+        // CA-2 / IA LAB scaled max
+        val iat2ScaledMax = comp?.ca2Max ?: 20.0
+        val totalCaMax = iat1ScaledMax + iat2ScaledMax // e.g. 40, 50, or 60
+
+        // Best possible CA (assume max in pending components)
+        val bestPossibleCaScaled = when {
+            hasCa1Pending -> totalCaMax // both pending → can get full CA
+            hasCa2Pending -> iat1Scaled + iat2ScaledMax // IAT-1 done + max IAT-2
+            else -> if (caMax > 0) (caScored / caMax * totalCaMax) else 0.0
+        }
+
+        // ESE portion: Total(100) - CA portion
+        val eseScaledMax = 100.0 - totalCaMax // 60, 50, or 40
+
         val reqGP = minUniformGP
-
-        // Required total marks (out of 100) for this grade
         val reqTotalMarks = gradePointToMinMarks(reqGP)
 
-        // ESE contribution: Total = CA(scaled to 40) + ESE(scaled to 60)
-        // CA is already out of 40, ESE paper is out of 100 scaled to 60
-        // So: totalMarks = caScaled + (eseRaw / 100 * 60)
-        // Required ESE raw (out of 100): eseRaw = (reqTotalMarks - caScaled) / 60 * 100
-        val eseScaledNeeded = reqTotalMarks - caScaled
-        val eseRawNeeded = if (eseScaledNeeded > 0) kotlin.math.ceil(eseScaledNeeded / 60.0 * 100.0).toInt() else 0
+        // ESE needed assuming best possible CA
+        val eseScaledNeeded = reqTotalMarks - bestPossibleCaScaled
+        val eseRawNeeded = if (eseScaledNeeded > 0 && eseScaledMax > 0)
+            kotlin.math.ceil(eseScaledNeeded / eseScaledMax * 100.0).toInt() else 0
 
-        // Check feasibility
         val isPossible = eseRawNeeded <= 100
-        // Minimum ESE to pass: 45% of 100 = 45
         val eseMinPass = 45
         val finalEseNeeded = eseRawNeeded.coerceAtLeast(eseMinPass)
+
+        // Calculate minimum TEST marks needed in pending component(s)
+        // Structure: IAT has sub-components (Test out of 65, Assignment out of 40)
+        //   IAT actual (100) = test_actual/65 * testWeight + assignment_actual/40 * assignmentWeight
+        //   Where testWeight = ca2TestScaled (e.g. 60), assignmentWeight = 100 - testWeight (e.g. 40)
+        //   Then IAT actual (100) → scaled to ca2Max (e.g. 20) for overall CA
+        // Minimum test pass threshold: 33/65 (approximately 50%)
+        val minTestPass = 33
+
+        var ca2Needed: Int? = null
+        var ca2TestMax = comp?.ca2TestMax?.toInt() ?: 65
+        var ca2Name = comp?.ca2Name ?: "IAT-2"
+        var ca1Needed: Int? = null
+        var ca1TestMax = comp?.testMax?.toInt() ?: 65
+
+        // Helper: given needed IAT scaled marks and component structure, calc minimum test actual
+        fun calcMinTest(iatScaledNeeded: Double, iatScaledMax: Double, testActMax: Double, testWeight: Double, assignWeight: Double): Int {
+            if (iatScaledNeeded <= 0) return minTestPass
+            // Convert IAT scaled needed to IAT actual (out of 100)
+            val iatActualNeeded = iatScaledNeeded / iatScaledMax * 100.0
+            // Assume full assignment marks: assignment contributes assignWeight out of 100
+            val testContribNeeded = (iatActualNeeded - assignWeight).coerceAtLeast(0.0)
+            // Convert test contribution (internal weight) to actual marks
+            val testActual = if (testWeight > 0) kotlin.math.ceil(testContribNeeded / testWeight * testActMax).toInt() else 0
+            return testActual.coerceIn(minTestPass, testActMax.toInt())
+        }
+
+        if (hasCa2Pending && comp != null) {
+            val minCaScaled = (reqTotalMarks - eseScaledMax).coerceAtLeast(0.0)
+            val iat2ScaledNeeded = (minCaScaled - iat1Scaled).coerceAtLeast(0.0)
+            val assignWeight = 100.0 - comp.ca2TestScaled // e.g. 100 - 60 = 40
+            ca2Needed = calcMinTest(iat2ScaledNeeded, comp.ca2Max, comp.ca2TestMax, comp.ca2TestScaled, assignWeight)
+            ca2TestMax = comp.ca2TestMax.toInt()
+            ca2Name = comp.ca2Name
+        }
+
+        if (hasCa1Pending && comp != null) {
+            // Both pending: each component needs to contribute its share
+            val minCaScaled = (reqTotalMarks - eseScaledMax).coerceAtLeast(0.0)
+            // Split proportionally by scaled max
+            val comp1Share = (minCaScaled * comp.ca1Max / totalCaMax).coerceAtLeast(0.0)
+            val comp2Share = (minCaScaled * comp.ca2Max / totalCaMax).coerceAtLeast(0.0)
+
+            val assignWeight1 = 100.0 - comp.testScaled
+            ca1Needed = calcMinTest(comp1Share, comp.ca1Max, comp.testMax, comp.testScaled, assignWeight1)
+            ca1TestMax = comp.testMax.toInt()
+
+            val assignWeight2 = 100.0 - comp.ca2TestScaled
+            ca2Needed = calcMinTest(comp2Share, comp.ca2Max, comp.ca2TestMax, comp.ca2TestScaled, assignWeight2)
+            ca2TestMax = comp.ca2TestMax.toInt()
+            ca2Name = comp.ca2Name
+        }
 
         TargetSubjectResult(
             courseCode = code,
@@ -254,7 +365,14 @@ fun calculateTargetCgpa(
             requiredTotalMarks = reqTotalMarks,
             requiredEseMarks = finalEseNeeded,
             isPossible = isPossible,
-            isAlreadySecured = eseRawNeeded <= eseMinPass
+            isAlreadySecured = eseRawNeeded <= eseMinPass,
+            ca2Needed = ca2Needed,
+            ca2Max = ca2TestMax,
+            ca2Name = ca2Name,
+            hasCa2Pending = hasCa2Pending,
+            hasCa1Pending = hasCa1Pending,
+            ca1Needed = ca1Needed,
+            ca1Max = ca1TestMax
         )
     }.sortedByDescending { it.credits }
 
@@ -263,13 +381,17 @@ fun calculateTargetCgpa(
         .map { (grade, list) -> "${grade} in ${list.size}" }
     val impossibleCount = subjects.count { !it.isPossible }
     val message = buildString {
-        if (gradeCounts.isNotEmpty()) {
-            append("Need ")
-            append(gradeCounts.joinToString(", "))
-        }
-        if (impossibleCount > 0) {
-            if (isNotEmpty()) append(". ")
-            append("$impossibleCount subject${if (impossibleCount > 1) "s" else ""} may not be achievable")
+        if (isNotAchievable) {
+            append("Would need SGPA ${String.format("%.2f", requiredSgpa)} (max 10.0). Showing best case (all O).")
+        } else {
+            if (gradeCounts.isNotEmpty()) {
+                append("Need ")
+                append(gradeCounts.joinToString(", "))
+            }
+            if (impossibleCount > 0) {
+                if (isNotEmpty()) append(". ")
+                append("$impossibleCount subject${if (impossibleCount > 1) "s" else ""} may not be achievable")
+            }
         }
     }
 
@@ -277,7 +399,7 @@ fun calculateTargetCgpa(
         targetCgpa = targetCgpa, currentCgpa = currentCgpa,
         previousCredits = previousCredits, previousWeightedSum = previousWeightedSum,
         currentSemCredits = currentSemCredits, requiredSgpa = requiredSgpa,
-        subjects = subjects, isAchievable = impossibleCount == 0,
+        subjects = subjects, isAchievable = !isNotAchievable && impossibleCount == 0,
         message = message
     )
 }

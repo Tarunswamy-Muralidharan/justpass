@@ -27,12 +27,28 @@ class SubjectAttendanceViewModel(application: Application) : AndroidViewModel(ap
     val uiState: StateFlow<SubjectAttendanceUiState> = _uiState.asStateFlow()
 
     init {
+        // Load from cache instantly, then refresh in background
+        loadFromCache()
         fetchSubjectAttendance()
+    }
+
+    private fun loadFromCache() {
+        val present = repository.cachedPresentDays
+        val absent = repository.cachedAbsentDays
+        if (present != null && absent != null) {
+            val subjects = calculateWithoutExemptions(present, absent)
+            if (subjects.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(subjects = subjects)
+            }
+        }
     }
 
     fun fetchSubjectAttendance() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            // Only show loading spinner if we have no cached data
+            if (_uiState.value.subjects.isEmpty()) {
+                _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            }
 
             val presentResult = repository.fetchPresentDays()
             val absentResult = repository.fetchAbsentDays()

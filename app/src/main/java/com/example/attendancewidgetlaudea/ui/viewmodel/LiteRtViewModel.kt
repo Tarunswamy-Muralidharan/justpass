@@ -252,7 +252,7 @@ class LiteRtViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // ── Intent detection + subject extraction + nav action routing ──
-    private enum class QueryIntent { GREETING, BUNK, ATTENDANCE, MARKS, SYLLABUS, GENERAL }
+    private enum class QueryIntent { GREETING, BUNK, ATTENDANCE, MARKS, MARKS_NEEDED, SYLLABUS, GENERAL }
 
     /** Detect which app screen to suggest opening based on the user's question */
     private fun detectNavAction(question: String): NavAction? {
@@ -278,10 +278,11 @@ class LiteRtViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun detectIntent(question: String): QueryIntent {
-        val q = question.lowercase()
+        val q = question.lowercase().trim()
         return when {
-            q.matches(Regex("^(hi|hey|hello|sup|yo|what'?s up|good (morning|evening|night)).*")) -> QueryIntent.GREETING
+            q.matches(Regex("^(hi|hey|hello|sup|yo|what'?s ?up|good ?(morning|evening|night|afternoon)|howdy|greetings)[!?.,:;\\s]*$")) -> QueryIntent.GREETING
             q.let { it.contains("bunk") || it.contains("skip") || it.contains("miss") || it.contains("leave") || it.contains("safe") || it.contains("tomorrow") || it.contains("today") } -> QueryIntent.BUNK
+            q.let { (it.contains("marks needed") || it.contains("how much") || it.contains("need to score") || it.contains("need to get") || it.contains("target marks") || it.contains("ca marks needed") || it.contains("should i get") || it.contains("must i score") || it.contains("required marks")) && (it.contains("internal") || it.contains("iat") || it.contains("test") || it.contains("next") || it.contains("score") || it.contains("get") || it.contains("mark") || it.contains("need")) } -> QueryIntent.MARKS_NEEDED
             q.let { it.contains("mark") || it.contains("grade") || it.contains("score") || it.contains("ct") || it.contains("cgpa") || it.contains("gpa") || it.contains("test") || it.contains("internal") || it.contains("subject wise") || it.contains("subject-wise") || it.contains("how much") || it.contains("need to score") || it.contains("semester") } -> QueryIntent.MARKS
             q.let { it.contains("attendance") || it.contains("present") || it.contains("absent") || it.contains("percent") } -> QueryIntent.ATTENDANCE
             q.let { it.contains("unit") || it.contains("topic") || it.contains("syllabus") } -> QueryIntent.SYLLABUS
@@ -359,7 +360,10 @@ class LiteRtViewModel(application: Application) : AndroidViewModel(application) 
         val intent = detectIntent(userMessage)
         val subject = extractSubject(userMessage)
         val context = when (intent) {
-            QueryIntent.GREETING -> "[Student: $name]"
+            QueryIntent.GREETING -> "[Student: $name | GREETING — respond warmly, use their name, and briefly mention you can help with attendance, marks, bunk calculations, timetable, GPA, syllabus, and more.]"
+            QueryIntent.MARKS_NEEDED -> {
+                buildMarksNeededContext(name, userMessage, subject)
+            }
             QueryIntent.BUNK -> {
                 buildBunkContext(name, userMessage, subject)
             }
@@ -509,6 +513,31 @@ class LiteRtViewModel(application: Application) : AndroidViewModel(application) 
         return sb.toString()
     }
 
+    /** Build context for "how much should I score in next internals" questions */
+    private fun buildMarksNeededContext(name: String, userMessage: String, subject: String?): String {
+        val targetCgpa = securePrefs.targetCgpa
+        val sb = StringBuilder()
+        sb.append("[DATA FOR ANSWERING — use these exact numbers:\n")
+        sb.append("Student: $name\n")
+        sb.append("Target CGPA: ${"%.2f".format(targetCgpa)}\n")
+
+        if (subject != null) {
+            val subjectCA = filterToSubject(securePrefs.cachedCAMarksJson, subject)
+            val subjectResult = filterToSubject(securePrefs.cachedResultsJson, subject)
+            if (subjectCA != null) sb.append("Current CA marks for $subject: $subjectCA\n")
+            if (subjectResult != null) sb.append("Past result for $subject: $subjectResult\n")
+            if (subjectCA == null && subjectResult == null) sb.append("No marks data found for $subject\n")
+        } else {
+            val caMarks = securePrefs.cachedCAMarksJson
+            if (!caMarks.isNullOrBlank()) sb.append("All CA marks: $caMarks\n")
+            else sb.append("No CA marks cached yet\n")
+        }
+
+        sb.append("\nINSTRUCTIONS: Based on the current CA marks and target CGPA, calculate and tell the student how much they need to score in their next internals/IAT. CA marks typically have max 40-50 total across all tests. Use the numbers above to give specific advice.\n")
+        sb.append("]")
+        return sb.toString()
+    }
+
     fun sendMessage(userMessage: String) {
         if (userMessage.isBlank() || _uiState.value.isGenerating) return
         val conv = conversation ?: return
@@ -613,7 +642,7 @@ class LiteRtViewModel(application: Application) : AndroidViewModel(application) 
 
     // Minimal system prompt — processed ONCE at session start, cached in KV
     private fun buildSystemPrompt(): String =
-        "/no_think\nYou are a student attendance calculator. RULES: 1) Every answer MUST quote the exact numbers from [DATA]. 2) For bunk/skip/leave questions: state classes count, percentage before→after, exact drop, and SAFE/DANGER. 3) For attendance questions: state with-exemption %, without-exemption %, and the difference. 4) NEVER give generic advice — always use the numbers. 5) Keep it to 2-3 sentences with numbers. 6) Do NOT use <think> tags. 7) Never say you don't have data — it's in the [DATA] block."
+        "/no_think\nYou are a friendly student academic advisor called JustPass. RULES: 1) Every answer MUST quote the exact numbers from [DATA]. 2) For bunk/skip/leave questions: state classes count, percentage before→after, exact drop, and SAFE/DANGER. 3) For attendance questions: state with-exemption %, without-exemption %, and the difference. 4) NEVER give generic advice — always use the numbers. 5) Keep it to 2-3 sentences with numbers. 6) Do NOT use <think> tags. 7) Never say you don't have data — it's in the [DATA] block. 8) For GREETING: be warm and friendly, greet the student by name, briefly mention you can help with attendance, bunking, marks, GPA, timetable, and syllabus. 9) For marks-needed questions: use the CA marks data and target CGPA to calculate how much they need in their next test."
 
     override fun onCleared() {
         super.onCleared()
