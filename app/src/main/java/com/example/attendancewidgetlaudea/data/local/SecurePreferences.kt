@@ -70,6 +70,10 @@ class SecurePreferences(context: Context) {
         get() = regularPrefs.getInt(KEY_ATTENDANCE_TARGET, 75)
         set(value) = regularPrefs.edit().putInt(KEY_ATTENDANCE_TARGET, value).apply()
 
+    var targetCgpa: Float
+        get() = regularPrefs.getFloat(KEY_TARGET_CGPA, 0f)
+        set(value) = regularPrefs.edit().putFloat(KEY_TARGET_CGPA, value).apply()
+
     var chessBoardTheme: String
         get() = regularPrefs.getString(KEY_CHESS_BOARD_THEME, "CHESS_COM") ?: "CHESS_COM"
         set(value) = regularPrefs.edit().putString(KEY_CHESS_BOARD_THEME, value).apply()
@@ -241,6 +245,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_CACHED_SUBJECT_ATTENDANCE = "cached_subject_attendance_json"
         private const val KEY_CACHED_CIRCULARS = "cached_circulars_summary"
         private const val KEY_CHESS_BOARD_THEME = "chess_board_theme"
+        private const val KEY_TARGET_CGPA = "target_cgpa"
 
         @Volatile
         private var instance: SecurePreferences? = null

@@ -1,5 +1,6 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
+import com.example.attendancewidgetlaudea.ui.components.AdBanner
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -224,6 +225,8 @@ fun SubjectDetailScreen(
                     maxLines = 1)
             }
         }
+
+        AdBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), screenName = "SubjectDetail")
 
         // Warning card if below 80%
         if (hoursNeeded != null) {

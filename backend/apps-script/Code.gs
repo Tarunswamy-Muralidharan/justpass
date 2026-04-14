@@ -54,12 +54,16 @@ const BRANCH_ALIASES = {
 // ============ TRIGGER SETUP ============
 
 function setupTrigger() {
+  // TEMP: clear timetable and reprocess with updated parser
+  var ss = getOrCreateSpreadsheet_();
+  var tt = ss.getSheetByName('ExamTimetable');
+  if (tt && tt.getLastRow() > 1) { tt.deleteRows(2, tt.getLastRow() - 1); Logger.log('Cleared ExamTimetable rows'); }
+  var label = GmailApp.getUserLabelByName(CONFIG.PROCESSED_LABEL);
+  if (label) { label.getThreads().forEach(function(t) { t.removeLabel(label); }); Logger.log('Removed processed labels'); }
+  processNewEmails();
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('processNewEmails')
-    .timeBased()
-    .everyMinutes(10)
-    .create();
-  Logger.log('Trigger set up! Script will scan Gmail every 10 minutes.');
+  ScriptApp.newTrigger('processNewEmails').timeBased().everyMinutes(10).create();
+  Logger.log('Done reprocessing + trigger reset');
 }
 
 function removeTrigger() {
@@ -298,7 +302,10 @@ function parseExamTimetableText_(text) {
         lower.includes('circular') || lower.includes('schedule for the test') ||
         lower.includes('semester b.e') || lower.includes('held from') ||
         lower.includes('course name') || lower.includes('course code') ||
-        (lower.includes('date') && lower.includes('session') && lower.includes('course'));
+        lower.includes('ref:') || lower.includes('office of') ||
+        (lower.includes('date') && lower.includes('session')) ||
+        (lower.includes('date') && lower.includes('course')) ||
+        (lower.startsWith('date') && lower.includes(':'));
   }
 
   function isTimePart(s) {
@@ -312,9 +319,9 @@ function parseExamTimetableText_(text) {
 
     if (isNoiseLine(line)) { i++; continue; }
 
-    // Extract date from anywhere in the line
+    // Extract date from anywhere in the line — but skip "Date: 6-4-2026" header lines
     var dateMatch = line.match(dateRegex);
-    if (dateMatch) {
+    if (dateMatch && !line.toLowerCase().startsWith('date')) {
       currentDate = formatDate(parseInt(dateMatch[1]), parseInt(dateMatch[2]), parseInt(dateMatch[3]));
     }
 
@@ -358,30 +365,46 @@ function parseExamTimetableText_(text) {
       // If no name yet, look ahead for course name and branch
       if (!courseName || !branch) {
         var j = i + 1;
-        while (j < lines.length && j <= i + 4) {
+        while (j < lines.length && j <= i + 6) {
           var nextLine = lines[j];
           if (isNoiseLine(nextLine)) { j++; continue; }
 
-          // Stop if next line has a course code
-          if (courseCodeRegex.test(nextLine)) break;
-          // Stop if next line is a new date
-          if (dateRegex.test(nextLine) && !courseCodeRegex.test(nextLine)) break;
+          // If next line has a course code, try to extract name before it
+          if (courseCodeRegex.test(nextLine)) {
+            // Check if line has text BEFORE the code (e.g., "Engineering Geology AG3601")
+            var codePos = nextLine.search(courseCodeRegex);
+            if (codePos > 3 && !courseName) {
+              var beforeCode = nextLine.substring(0, codePos).trim();
+              if (beforeCode.length > 2 && !extractBranch(beforeCode)) {
+                courseName = beforeCode;
+              }
+            }
+            break;
+          }
+          // Stop if next line is a new date (but not if it also contains useful text)
+          if (dateRegex.test(nextLine) && nextLine.length < 15) break;
 
           // Skip time parts
           if (isTimePart(nextLine)) { j++; continue; }
           // Skip day words as standalone lines
           if (/^\(?(Mon|Tue|Wed|Thu|Fri|Sat)/i.test(nextLine) && nextLine.length < 15) { j++; continue; }
+          // Skip standalone semester numbers
+          if (/^\d{1,2}$/.test(nextLine)) { j++; continue; }
+          // Skip "PASS" / "RESULT" lines
+          if (nextLine.toUpperCase() === 'PASS' || nextLine.toUpperCase() === 'RESULT') { j++; continue; }
 
           // Check if it's a session marker
           var nextSess = nextLine.match(/^(FN-II|FN-I|AN-II|AN-I)\b/i);
-          if (nextSess) { j++; continue; } // session already extracted inline
+          if (nextSess) { j++; continue; }
 
           // Check if it's a branch
           var br = extractBranch(nextLine);
           if (br && !branch) { branch = br; j++; continue; }
 
-          // Otherwise it's the course name
-          if (!courseName) { courseName = nextLine; }
+          // Otherwise it's the course name (must be > 2 chars, not just numbers)
+          if (!courseName && nextLine.length > 2 && !/^\d+$/.test(nextLine)) {
+            courseName = nextLine;
+          }
           j++;
         }
       }

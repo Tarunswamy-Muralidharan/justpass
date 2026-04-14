@@ -94,6 +94,194 @@ fun calculateCGPA(allSemesterGrades: List<List<SubjectGrade>>): Double {
     return if (totalCredits > 0) totalWeighted / totalCredits else 0.0
 }
 
+// ===================== TARGET CGPA CALCULATOR =====================
+
+/**
+ * R2025 absolute grading: marks range → grade point.
+ * Used as best estimate (relative grading depends on class curve).
+ */
+data class TargetSubjectResult(
+    val courseCode: String,
+    val courseTitle: String,
+    val credits: Int,
+    val caMarksScored: Double,   // What the student got in CA (out of 40 for theory)
+    val caMarksMax: Double,      // Max CA marks (typically 40)
+    val requiredGradePoint: Int, // Grade point needed
+    val requiredGrade: String,   // Letter grade needed (O, A+, A, etc.)
+    val requiredTotalMarks: Int, // Total marks needed (CA + ESE combined, out of 100)
+    val requiredEseMarks: Int,   // ESE marks needed (out of 100 on paper, scaled to 60)
+    val eseOutOf: Int = 100,     // ESE paper is out of 100
+    val isPossible: Boolean,     // Can they achieve this grade?
+    val isAlreadySecured: Boolean = false // CA marks alone already secure the grade
+)
+
+data class TargetCgpaResult(
+    val targetCgpa: Double,
+    val currentCgpa: Double,
+    val previousCredits: Int,
+    val previousWeightedSum: Int, // Σ(credits × gradePoint) from past semesters
+    val currentSemCredits: Int,
+    val requiredSgpa: Double,     // SGPA needed this semester
+    val subjects: List<TargetSubjectResult>,
+    val isAchievable: Boolean,
+    val message: String           // Summary like "Need A+ in 3, A in 2 subjects"
+)
+
+/** Convert total marks (out of 100) to grade point using absolute grading scale */
+fun totalMarksToGradePoint(totalMarks: Int): Int = when {
+    totalMarks >= 91 -> 10 // O
+    totalMarks >= 81 -> 9  // A+
+    totalMarks >= 71 -> 8  // A
+    totalMarks >= 61 -> 7  // B+
+    totalMarks >= 56 -> 6  // B
+    totalMarks >= 50 -> 5  // C
+    else -> 0              // RA
+}
+
+/** Grade point to minimum total marks needed */
+fun gradePointToMinMarks(gp: Int): Int = when (gp) {
+    10 -> 91
+    9 -> 81
+    8 -> 71
+    7 -> 61
+    6 -> 56
+    5 -> 50
+    else -> 0
+}
+
+/** Grade point to letter grade string */
+fun gradePointToLetter(gp: Int): String = when (gp) {
+    10 -> "O"
+    9 -> "A+"
+    8 -> "A"
+    7 -> "B+"
+    6 -> "B"
+    5 -> "C"
+    else -> "RA"
+}
+
+/**
+ * Calculate what grades/marks are needed in the current semester to achieve target CGPA.
+ *
+ * @param targetCgpa Desired cumulative CGPA
+ * @param previousGrades All grade entries from past semesters (from Results API)
+ * @param currentSemester Current semester number
+ * @param currentCAMarks CA marks for current semester subjects (courseCode → Pair(scored, max))
+ * @param currentSemSubjects Current semester subjects with credits (courseCode → credits)
+ */
+fun calculateTargetCgpa(
+    targetCgpa: Double,
+    previousGrades: List<GradeEntry>,
+    currentSemester: Int,
+    currentCAMarks: Map<String, Pair<Double, Double>>, // courseCode → (scored, max)
+    currentSemSubjects: Map<String, Pair<String, Int>>  // courseCode → (title, credits)
+): TargetCgpaResult {
+    // Calculate previous CGPA from grade entries (all semesters before current)
+    val pastGrades = previousGrades.filter { it.semester < currentSemester && it.isPassed() }
+    val previousCredits = pastGrades.sumOf { it.getCreditsValue() }
+    val previousWeightedSum = pastGrades.sumOf { it.gradePoint * it.getCreditsValue() }
+    val currentCgpa = if (previousCredits > 0) previousWeightedSum.toDouble() / previousCredits else 0.0
+
+    val currentSemCredits = currentSemSubjects.values.sumOf { it.second }
+    val totalCredits = previousCredits + currentSemCredits
+
+    // Required weighted sum this semester
+    val requiredTotalWeighted = (targetCgpa * totalCredits).toInt()
+    val requiredThisSem = requiredTotalWeighted - previousWeightedSum
+    val requiredSgpa = if (currentSemCredits > 0) requiredThisSem.toDouble() / currentSemCredits else 0.0
+
+    if (requiredSgpa > 10.0) {
+        return TargetCgpaResult(
+            targetCgpa = targetCgpa, currentCgpa = currentCgpa,
+            previousCredits = previousCredits, previousWeightedSum = previousWeightedSum,
+            currentSemCredits = currentSemCredits, requiredSgpa = requiredSgpa,
+            subjects = emptyList(), isAchievable = false,
+            message = "Not achievable — would need SGPA ${String.format("%.2f", requiredSgpa)} (max is 10.0)"
+        )
+    }
+
+    if (requiredSgpa <= 0) {
+        return TargetCgpaResult(
+            targetCgpa = targetCgpa, currentCgpa = currentCgpa,
+            previousCredits = previousCredits, previousWeightedSum = previousWeightedSum,
+            currentSemCredits = currentSemCredits, requiredSgpa = requiredSgpa,
+            subjects = emptyList(), isAchievable = true,
+            message = "Already achieved! Any passing grade will do."
+        )
+    }
+
+    // For each subject, calculate required grade points to hit the target SGPA.
+    // Strategy: assign minimum viable grades starting from highest-credit subjects.
+    // Simple approach: find the minimum uniform grade point that achieves the required SGPA.
+    val minUniformGP = kotlin.math.ceil(requiredSgpa).toInt().coerceIn(5, 10)
+
+    val subjects = currentSemSubjects.map { (code, titleCredits) ->
+        val (title, credits) = titleCredits
+        val caData = currentCAMarks[code]
+        val caScored = caData?.first ?: 0.0
+        val caMax = caData?.second ?: 40.0
+
+        // Scale CA marks to 40 if max is different
+        val caScaled = if (caMax > 0) (caScored / caMax * 40.0) else 0.0
+
+        // Required grade point for this subject (use uniform minimum)
+        val reqGP = minUniformGP
+
+        // Required total marks (out of 100) for this grade
+        val reqTotalMarks = gradePointToMinMarks(reqGP)
+
+        // ESE contribution: Total = CA(scaled to 40) + ESE(scaled to 60)
+        // CA is already out of 40, ESE paper is out of 100 scaled to 60
+        // So: totalMarks = caScaled + (eseRaw / 100 * 60)
+        // Required ESE raw (out of 100): eseRaw = (reqTotalMarks - caScaled) / 60 * 100
+        val eseScaledNeeded = reqTotalMarks - caScaled
+        val eseRawNeeded = if (eseScaledNeeded > 0) kotlin.math.ceil(eseScaledNeeded / 60.0 * 100.0).toInt() else 0
+
+        // Check feasibility
+        val isPossible = eseRawNeeded <= 100
+        // Minimum ESE to pass: 45% of 100 = 45
+        val eseMinPass = 45
+        val finalEseNeeded = eseRawNeeded.coerceAtLeast(eseMinPass)
+
+        TargetSubjectResult(
+            courseCode = code,
+            courseTitle = title,
+            credits = credits,
+            caMarksScored = caScored,
+            caMarksMax = caMax,
+            requiredGradePoint = reqGP,
+            requiredGrade = gradePointToLetter(reqGP),
+            requiredTotalMarks = reqTotalMarks,
+            requiredEseMarks = finalEseNeeded,
+            isPossible = isPossible,
+            isAlreadySecured = eseRawNeeded <= eseMinPass
+        )
+    }.sortedByDescending { it.credits }
+
+    // Build summary message
+    val gradeCounts = subjects.filter { it.isPossible }.groupBy { it.requiredGrade }
+        .map { (grade, list) -> "${grade} in ${list.size}" }
+    val impossibleCount = subjects.count { !it.isPossible }
+    val message = buildString {
+        if (gradeCounts.isNotEmpty()) {
+            append("Need ")
+            append(gradeCounts.joinToString(", "))
+        }
+        if (impossibleCount > 0) {
+            if (isNotEmpty()) append(". ")
+            append("$impossibleCount subject${if (impossibleCount > 1) "s" else ""} may not be achievable")
+        }
+    }
+
+    return TargetCgpaResult(
+        targetCgpa = targetCgpa, currentCgpa = currentCgpa,
+        previousCredits = previousCredits, previousWeightedSum = previousWeightedSum,
+        currentSemCredits = currentSemCredits, requiredSgpa = requiredSgpa,
+        subjects = subjects, isAchievable = impossibleCount == 0,
+        message = message
+    )
+}
+
 // ===================== R2021 CURRICULUM DATA =====================
 
 private fun sub(code: String, name: String, credits: Double, elective: Boolean = false) =

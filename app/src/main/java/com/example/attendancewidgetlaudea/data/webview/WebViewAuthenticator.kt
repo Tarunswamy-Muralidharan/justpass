@@ -29,10 +29,69 @@ import kotlin.coroutines.suspendCoroutine
 
 class InvalidCredentialsException(message: String) : Exception(message)
 
+/**
+ * Auto-detected Keycloak configuration from /auth/config endpoints.
+ * Falls back to known defaults if the config endpoint is unreachable.
+ */
+private data class KeycloakConfig(
+    val realm: String,
+    val authUrl: String,
+    val clientId: String
+) {
+    val tokenUrl: String
+        get() = "${authUrl.trimEnd('/')}realms/$realm/protocol/openid-connect/token"
+}
+
 class WebViewAuthenticator(private val context: Context) {
 
     private val gson = Gson()
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // Auto-detected Keycloak configs — fetched once per session
+    @Volatile private var sisKeycloakConfig: KeycloakConfig? = null
+    @Volatile private var meetingsKeycloakConfig: KeycloakConfig? = null
+
+    /**
+     * Fetch Keycloak config from the server's /auth/config endpoint.
+     * This is the same endpoint the browser uses, so it always has the current
+     * realm, auth URL, and client_id — even if the server changes them.
+     */
+    private fun fetchKeycloakConfig(configUrl: String, fallback: KeycloakConfig): KeycloakConfig {
+        return try {
+            val url = java.net.URL(configUrl)
+            val connection = url.openConnection() as java.net.HttpURLConnection
+            connection.connectTimeout = 5000
+            connection.readTimeout = 5000
+            val body = connection.inputStream.bufferedReader().use { it.readText() }
+            // Response is JSONP: parseKeycloakInfo({...})
+            val jsonStr = body.substringAfter("(").substringBeforeLast(")")
+            val json = org.json.JSONObject(jsonStr)
+            val realm = json.getString("realm")
+            val authUrl = json.optString("url", json.optString("auth-server-url", fallback.authUrl))
+            val clientId = json.optString("clientId", json.optString("resource", fallback.clientId))
+            android.util.Log.d("WebViewAuth", "Auto-detected Keycloak config: realm=$realm, authUrl=$authUrl, clientId=$clientId")
+            KeycloakConfig(realm, authUrl, clientId)
+        } catch (e: Exception) {
+            android.util.Log.w("WebViewAuth", "Could not fetch Keycloak config from $configUrl, using fallback: ${e.message}")
+            fallback
+        }
+    }
+
+    /** Get the SIS Keycloak config, fetching from server if not yet cached. */
+    private fun getSisConfig(): KeycloakConfig {
+        return sisKeycloakConfig ?: fetchKeycloakConfig(
+            "$SIS_BASE_URL/auth/config?callback=parseKeycloakInfo",
+            KeycloakConfig("psgitech", "https://accounts.psgitech.ac.in/", "ies_sis")
+        ).also { sisKeycloakConfig = it }
+    }
+
+    /** Get the Meetings Keycloak config, fetching from server if not yet cached. */
+    private fun getMeetingsConfig(): KeycloakConfig {
+        return meetingsKeycloakConfig ?: fetchKeycloakConfig(
+            "${MEETINGS_BASE_URL}auth/config?callback=parseKeycloakInfo",
+            KeycloakConfig("psgitech", "https://accounts.psgitech.ac.in/", "ies_meetings")
+        ).also { meetingsKeycloakConfig = it }
+    }
 
     // Cache the auth token for fast refreshes — persisted to SecurePreferences
     var cachedAuthToken: String?
@@ -52,13 +111,12 @@ class WebViewAuthenticator(private val context: Context) {
     private var _cachedMeetingsToken: String? = null
 
     companion object {
-        private const val SIS_BASE_URL = "https://laudea.psgitech.ac.in/sis/"
+        private const val SIS_BASE_URL = "https://laudea.psgitech.ac.in/sis"
         private const val LOGIN_URL_PATTERN = "accounts.psgitech.ac.in"
         private const val ATTENDANCE_API_PATTERN = "/sis/attendance/"
         private const val CA_MARKS_API_URL = "https://laudea.psgitech.ac.in/sis/ca/marks/v2/"
         private const val ATTENDANCE_API_BASE = "https://laudea.psgitech.ac.in/sis/attendance/"
         private const val TIMETABLE_API_BASE = "https://laudea.psgitech.ac.in/sis/time/table/"
-        private const val KEYCLOAK_TOKEN_URL = "https://accounts.psgitech.ac.in/realms/itech/protocol/openid-connect/token"
         private const val MEETINGS_BASE_URL = "https://laudea.psgitech.ac.in/meetings/"
     }
 
@@ -70,8 +128,9 @@ class WebViewAuthenticator(private val context: Context) {
     suspend fun loginViaKeycloak(username: String, password: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                android.util.Log.d("WebViewAuth", "Direct Keycloak login for: $username")
-                val url = java.net.URL(KEYCLOAK_TOKEN_URL)
+                val config = getSisConfig()
+                android.util.Log.d("WebViewAuth", "Direct Keycloak login for: $username (realm=${config.realm}, clientId=${config.clientId})")
+                val url = java.net.URL(config.tokenUrl)
                 val connection = url.openConnection() as java.net.HttpURLConnection
                 connection.requestMethod = "POST"
                 connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
@@ -79,7 +138,7 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.connectTimeout = 10000
                 connection.readTimeout = 10000
 
-                val params = "grant_type=password&client_id=ies_sis" +
+                val params = "grant_type=password&client_id=${config.clientId}" +
                     "&scope=openid%20offline_access" +
                     "&username=" + java.net.URLEncoder.encode(username, "UTF-8") +
                     "&password=" + java.net.URLEncoder.encode(password, "UTF-8")
@@ -122,8 +181,9 @@ class WebViewAuthenticator(private val context: Context) {
 
         return withContext(Dispatchers.IO) {
             try {
-                android.util.Log.d("WebViewAuth", "Refreshing access token via refresh_token")
-                val url = java.net.URL(KEYCLOAK_TOKEN_URL)
+                val config = getSisConfig()
+                android.util.Log.d("WebViewAuth", "Refreshing access token via refresh_token (realm=${config.realm})")
+                val url = java.net.URL(config.tokenUrl)
                 val connection = url.openConnection() as java.net.HttpURLConnection
                 connection.requestMethod = "POST"
                 connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
@@ -131,7 +191,7 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.connectTimeout = 10000
                 connection.readTimeout = 10000
 
-                val params = "grant_type=refresh_token&client_id=ies_sis" +
+                val params = "grant_type=refresh_token&client_id=${config.clientId}" +
                     "&scope=openid%20offline_access" +
                     "&refresh_token=" + java.net.URLEncoder.encode(refreshToken, "UTF-8")
                 connection.outputStream.use { it.write(params.toByteArray()) }
@@ -1348,8 +1408,9 @@ class WebViewAuthenticator(private val context: Context) {
     suspend fun loginViaMeetingsKeycloak(username: String, password: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                android.util.Log.d("WebViewAuth", "Meetings Keycloak login for: $username")
-                val url = java.net.URL(KEYCLOAK_TOKEN_URL)
+                val config = getMeetingsConfig()
+                android.util.Log.d("WebViewAuth", "Meetings Keycloak login for: $username (realm=${config.realm}, clientId=${config.clientId})")
+                val url = java.net.URL(config.tokenUrl)
                 val connection = url.openConnection() as java.net.HttpURLConnection
                 connection.requestMethod = "POST"
                 connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
@@ -1357,7 +1418,7 @@ class WebViewAuthenticator(private val context: Context) {
                 connection.connectTimeout = 10000
                 connection.readTimeout = 10000
 
-                val params = "grant_type=password&client_id=ies_meetings" +
+                val params = "grant_type=password&client_id=${config.clientId}" +
                     "&scope=openid" +
                     "&username=" + java.net.URLEncoder.encode(username, "UTF-8") +
                     "&password=" + java.net.URLEncoder.encode(password, "UTF-8")

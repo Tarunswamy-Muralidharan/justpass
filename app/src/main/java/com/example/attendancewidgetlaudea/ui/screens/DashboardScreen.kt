@@ -1,5 +1,6 @@
 package com.example.attendancewidgetlaudea.ui.screens
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.core.Animatable
@@ -31,8 +32,10 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -58,6 +61,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -69,6 +73,7 @@ import com.example.attendancewidgetlaudea.ui.components.GlassListCard
 import com.example.attendancewidgetlaudea.ui.components.GlassListSurface
 import com.example.attendancewidgetlaudea.ui.components.LiquidGlassCard
 import com.example.attendancewidgetlaudea.ui.viewmodel.DashboardViewModel
+import com.example.attendancewidgetlaudea.data.model.TargetCgpaResult
 import io.github.fletchmckee.liquid.LiquidState
 import com.example.attendancewidgetlaudea.data.analytics.Analytics
 import kotlinx.coroutines.launch
@@ -380,9 +385,14 @@ fun DashboardScreen(
 
         // Attendance % — real liquid glass with color tint
         val attendanceTint = getAttendanceTintColor(uiState.attendanceData.attendanceWithExemption)
+        var showCgpaSetup by remember { mutableStateOf(false) }
+        var showCgpaDetail by remember { mutableStateOf(false) }
+        val targetCgpa = remember { securePrefs.targetCgpa }
+        val cgpaResult = uiState.targetCgpaResult
         LiquidGlassCard(cardState = cardState,
             modifier = Modifier.fillMaxWidth().clickable { Analytics.logTileClicked("attendance"); onSubjectAttendanceClick() },
             tintColor = attendanceTint) {
+            Box(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Attendance (with exemption)", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                 Spacer(modifier = Modifier.height(8.dp))
@@ -476,7 +486,70 @@ fun DashboardScreen(
                     fontSize = 12.sp, fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f))
             }
+            // CGPA badge — top-right corner of attendance box
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (uiState.hasGpaData) Color(0xFF42A5F5).copy(alpha = 0.15f)
+                        else Color.White.copy(alpha = 0.08f)
+                    )
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    ) {
+                        if (!uiState.hasGpaData) {
+                            // No GPA data — prompt to use calculator
+                            onCgpaClick()
+                        } else if (targetCgpa > 0f && cgpaResult != null) {
+                            showCgpaDetail = true
+                        } else {
+                            showCgpaSetup = true
+                        }
+                    }
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                if (uiState.hasGpaData && uiState.calculatorCgpa != null) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            String.format("%.2f", uiState.calculatorCgpa),
+                            fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                            color = Color(0xFF42A5F5)
+                        )
+                        Text("CGPA", fontSize = 9.sp, color = Color(0xFF42A5F5).copy(alpha = 0.7f))
+                        if (targetCgpa > 0f && cgpaResult != null) {
+                            Text(
+                                "→ ${String.format("%.1f", targetCgpa)}",
+                                fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
+                                color = if (cgpaResult.isAchievable) Color(0xFF00E676) else Color(0xFFFF8A80)
+                            )
+                        }
+                    }
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.School, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(16.dp))
+                        Text("GPA", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                    }
+                }
+            }
+            } // end Box wrapper
         }
+
+        // ── Target CGPA Dialogs ──
+        TargetCgpaDialogs(
+            viewModel = viewModel,
+            securePrefs = securePrefs,
+            showSetup = showCgpaSetup,
+            onDismissSetup = { showCgpaSetup = false },
+            showDetail = showCgpaDetail,
+            onDismissDetail = { showCgpaDetail = false },
+            cgpaResult = cgpaResult,
+            targetCgpa = targetCgpa
+        )
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -867,7 +940,12 @@ fun DashboardScreen(
                         }
                     },
                     confirmButton = {
-                        TextButton(onClick = { showLeavePopup = false }) {
+                        TextButton(onClick = {
+                            showLeavePopup = false
+                            (context as? Activity)?.let { activity ->
+                                com.example.attendancewidgetlaudea.ui.components.InterstitialAdManager.show(activity)
+                            }
+                        }) {
                             Text("Done")
                         }
                     },
@@ -1172,5 +1250,224 @@ private fun DashboardTile(
             }
             Icon(icon, title, tint = iconTint, modifier = Modifier.size(24.dp))
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TargetCgpaDialogs(
+    viewModel: DashboardViewModel,
+    securePrefs: SecurePreferences,
+    showSetup: Boolean,
+    onDismissSetup: () -> Unit,
+    showDetail: Boolean,
+    onDismissDetail: () -> Unit,
+    cgpaResult: TargetCgpaResult?,
+    targetCgpa: Float
+) {
+    var internalShowSetup by remember { mutableStateOf(false) }
+    val activeShowSetup = showSetup || internalShowSetup
+
+    // ── Setup dialog ──
+    if (activeShowSetup) {
+        // Dropdown options: 6.0, 6.5, 7.0, ... 10.0
+        val cgpaOptions = remember { (12..20).map { it / 2f } } // 6.0 to 10.0 in 0.5 steps
+        var selectedCgpa by remember {
+            mutableFloatStateOf(if (targetCgpa > 0f) targetCgpa else 8.0f)
+        }
+        var expanded by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { onDismissSetup(); internalShowSetup = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.School, null, tint = Color(0xFF42A5F5), modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Set Target CGPA", fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface)
+                }
+            },
+            text = {
+                Column {
+                    Text("What CGPA do you want to achieve?", fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ExposedDropdownMenuBox(
+                        expanded = expanded,
+                        onExpandedChange = { expanded = !expanded }
+                    ) {
+                        OutlinedTextField(
+                            value = String.format("%.1f", selectedCgpa),
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Target CGPA") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF42A5F5)
+                            )
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            cgpaOptions.forEach { option ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            String.format("%.1f", option),
+                                            fontWeight = if (option == selectedCgpa) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (option == selectedCgpa) Color(0xFF42A5F5) else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    onClick = { selectedCgpa = option; expanded = false }
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Based on absolute grading (91→O, 81→A+, 71→A, etc.)",
+                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.updateTargetCgpa(selectedCgpa)
+                    onDismissSetup(); internalShowSetup = false
+                }) {
+                    Text("Set", color = Color(0xFF42A5F5), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                if (targetCgpa > 0f) {
+                    TextButton(onClick = {
+                        viewModel.updateTargetCgpa(0f)
+                        onDismissSetup(); internalShowSetup = false
+                    }) { Text("Remove", color = Color(0xFFFF5252)) }
+                }
+                TextButton(onClick = { onDismissSetup(); internalShowSetup = false }) { Text("Cancel") }
+            },
+            containerColor = Color(0xFF1E2A3A)
+        )
+    }
+
+    // ── Detail dialog with per-subject breakdown ──
+    if (showDetail && cgpaResult != null) {
+        AlertDialog(
+            onDismissRequest = { onDismissDetail() },
+            title = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.School, null, tint = Color(0xFF42A5F5), modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Target: ${String.format("%.1f", cgpaResult.targetCgpa)} CGPA",
+                            fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Current CGPA: ${String.format("%.2f", cgpaResult.currentCgpa)} | Need SGPA: ${String.format("%.2f", cgpaResult.requiredSgpa)}",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    if (!cgpaResult.isAchievable) {
+                        GlassListSurface(
+                            shape = RoundedCornerShape(10.dp),
+                            tintColor = Color(0xFFFF5252).copy(alpha = 0.12f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                cgpaResult.message,
+                                fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                color = Color(0xFFFF8A80),
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    cgpaResult.subjects.forEach { subj ->
+                        GlassListSurface(
+                            shape = RoundedCornerShape(10.dp),
+                            tintColor = if (subj.isPossible) Color(0xFF42A5F5).copy(alpha = 0.08f)
+                                       else Color(0xFFFF5252).copy(alpha = 0.08f),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(subj.courseTitle, fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1)
+                                        Text("${subj.courseCode} · ${subj.credits} credits",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(
+                                                if (subj.isPossible) Color(0xFF42A5F5).copy(alpha = 0.2f)
+                                                else Color(0xFFFF5252).copy(alpha = 0.2f)
+                                            )
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(subj.requiredGrade, fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (subj.isPossible) Color(0xFF42A5F5)
+                                                   else Color(0xFFFF5252))
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("CA: ${String.format("%.0f", subj.caMarksScored)}/${String.format("%.0f", subj.caMarksMax)}",
+                                        fontSize = 12.sp, color = Color(0xFF00E676))
+                                    Text("ESE needed: ${subj.requiredEseMarks}/100",
+                                        fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                        color = when {
+                                            !subj.isPossible -> Color(0xFFFF5252)
+                                            subj.isAlreadySecured -> Color(0xFF00E676)
+                                            subj.requiredEseMarks >= 80 -> Color(0xFFFF9800)
+                                            else -> MaterialTheme.colorScheme.onSurface
+                                        })
+                                }
+
+                                if (subj.isAlreadySecured) {
+                                    Text("Just pass the exam (45+)",
+                                        fontSize = 11.sp, color = Color(0xFF00E676).copy(alpha = 0.8f))
+                                } else if (!subj.isPossible) {
+                                    Text("Cannot achieve this grade",
+                                        fontSize = 11.sp, color = Color(0xFFFF5252).copy(alpha = 0.8f))
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("* Based on absolute grading scale. Actual grades may vary with relative grading.",
+                        fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { onDismissDetail() }) {
+                    Text("Close", color = Color(0xFF42A5F5))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { internalShowSetup = true; onDismissDetail() }) {
+                    Text("Change Target", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            containerColor = Color(0xFF1E2A3A)
+        )
     }
 }

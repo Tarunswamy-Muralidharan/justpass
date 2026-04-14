@@ -9,7 +9,7 @@ import retrofit2.http.POST
 interface AuthApi {
 
     @FormUrlEncoded
-    @POST("realms/itech/protocol/openid-connect/token")
+    @POST("realms/psgitech/protocol/openid-connect/token")
     suspend fun login(
         @Field("grant_type") grantType: String = "password",
         @Field("client_id") clientId: String = "ies_sis",
@@ -18,7 +18,7 @@ interface AuthApi {
     ): Response<TokenResponse>
 
     @FormUrlEncoded
-    @POST("realms/itech/protocol/openid-connect/token")
+    @POST("realms/psgitech/protocol/openid-connect/token")
     suspend fun refreshToken(
         @Field("grant_type") grantType: String = "refresh_token",
         @Field("client_id") clientId: String = "ies_sis",
