@@ -66,20 +66,36 @@ class AttendanceRepository(private val context: Context) {
     }
 
     suspend fun login(rollNumber: String, password: String): Result<AttendanceData> {
-        // FAST CHECK: Validate credentials via direct Keycloak before slow WebView
+        // FAST PATH: Direct Keycloak login + direct API fetch (no WebView needed)
         try {
             android.util.Log.d("AttendanceRepo", "Validating credentials for: $rollNumber")
-            webViewAuthenticator.loginViaKeycloak(rollNumber, password)
-            // Credentials are valid — proceed with WebView to get a proper auth-code token
+            val loginOk = webViewAuthenticator.loginViaKeycloak(rollNumber, password)
+            if (loginOk) {
+                // Token acquired — try fetching attendance directly
+                android.util.Log.d("AttendanceRepo", "Token acquired, trying direct attendance fetch")
+                val directResult = webViewAuthenticator.fetchAttendanceDirect(rollNumber)
+                if (directResult != null && directResult.isSuccess) {
+                    val attendanceData = directResult.getOrThrow()
+                    securePrefs.rollNumber = rollNumber
+                    securePrefs.password = password
+                    securePrefs.saveAttendanceData(attendanceData)
+                    securePrefs.setLoggedIn(true)
+                    try {
+                        com.example.attendancewidgetlaudea.widget.AttendanceWidgetReceiver.updateWidget(context)
+                    } catch (_: Exception) {}
+                    android.util.Log.d("AttendanceRepo", "Fast login successful: ${attendanceData.attendancePercentage}%")
+                    return Result.Success(attendanceData)
+                }
+                android.util.Log.d("AttendanceRepo", "Direct fetch failed, falling back to WebView")
+            }
         } catch (e: InvalidCredentialsException) {
             android.util.Log.e("AttendanceRepo", "Invalid credentials: ${e.message}")
             return Result.Error("Invalid roll number or password")
         } catch (e: Exception) {
-            // Keycloak unreachable — skip validation, try WebView anyway
-            android.util.Log.d("AttendanceRepo", "Credential check skipped: ${e.message}")
+            android.util.Log.d("AttendanceRepo", "Fast login failed: ${e.message}")
         }
 
-        // WebView login (gets the proper authorization-code token that the SIS API accepts)
+        // SLOW PATH: WebView login fallback
         return withContext(Dispatchers.Main) {
             try {
                 android.util.Log.d("AttendanceRepo", "Starting WebView login for: $rollNumber")
