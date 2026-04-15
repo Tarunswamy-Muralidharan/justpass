@@ -96,7 +96,7 @@ fun SyllabusScreen(
                 TextField(
                     value = uiState.searchQuery,
                     onValueChange = { viewModel.updateSearch(it) },
-                    placeholder = { Text("Search by code or title...", fontSize = 13.sp) },
+                    placeholder = { Text("Search by code or title...", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)) },
                     singleLine = true,
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
@@ -104,7 +104,7 @@ fun SyllabusScreen(
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent
                     ),
-                    modifier = Modifier.weight(1f).height(48.dp),
+                    modifier = Modifier.weight(1f),
                     textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
                 )
             }

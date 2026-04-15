@@ -5206,3 +5206,156 @@ T+30s: all data cached
 
 **Files Modified:**
 - `DashboardViewModel.kt` — Removed `filledSemCount == 0` early return
+
+---
+
+### Challenge 103: Login Decoupled from Attendance — Users Can Access All Features
+
+**Date:** 2026-04-15
+
+**Problem:** Login required attendance data to succeed. When the SIS attendance API returned 403/500 (server down or maintenance), users couldn't log in at all — blocked from chess, CA marks, results, and everything else.
+
+**Solution:** If Keycloak token acquisition succeeds but attendance fetch fails, log the user in with empty attendance data. The dashboard shows 0% attendance but all other features (chess, CA marks, results, GPA calculator, circulars, calendar, timetable) work normally. When attendance comes back, pull-to-refresh loads it.
+
+**Also added:** 403 retry with fresh token before giving up — eliminates unnecessary WebView fallback (saves 20s).
+
+**Files Modified:**
+- `AttendanceRepository.kt` — Login succeeds on token alone; attendance failure no longer blocks login
+
+---
+
+### Challenge 104: Firestore Announcement System — Remote Push Messages to Users
+
+**Date:** 2026-04-15
+
+**Problem:** When the SIS server went down, there was no way to notify existing app users about the issue. Users just saw login failures with no explanation.
+
+**Solution:** Built a Firestore-based announcement system:
+- Collection: `announcements`, Document: `current`
+- Fields: `id` (string), `title` (string), `message` (string), `active` (boolean)
+- App reads on dashboard init, shows dismissable dialog if active
+- Dismissed announcement ID saved locally — won't show same announcement twice
+- New announcements (different `id`) show to all users including those who dismissed previous ones
+
+**Firestore Rules:** Added `match /announcements/{doc} { allow read: if true; }` — read-only for clients, editable only via Firebase Console.
+
+**How to use:**
+- To show: Set `active = true` + update `title`/`message` in Firebase Console
+- To hide: Set `active = false`
+- New message: Change `id` to force re-display to all users
+
+**Files Modified:**
+- `DashboardViewModel.kt` — `fetchAnnouncement()`, `dismissAnnouncement()`, `Announcement` data class
+- `DashboardScreen.kt` — AlertDialog for announcement display
+- `SecurePreferences.kt` — `dismissedAnnouncementId` for local dismiss tracking
+
+---
+
+### Challenge 105: CGPA Tile Chevron Animation — Always Visible
+
+**Date:** 2026-04-15
+
+**Problem:** The Audi-style sweeping chevron animation on the CGPA tile only appeared after a target was set. Users couldn't see the visual indicator that the tile was interactive.
+
+**Solution:** Changed the condition from `hasGpaData && targetCgpa > 0f && cgpaResult != null` to `hasGpaData && calculatorCgpa != null`. Chevrons now animate whenever GPA data exists. Adjusted end position for "Set target" vs "Target X.X" text widths.
+
+**Files Modified:**
+- `DashboardScreen.kt` — Chevron animation condition broadened, endX adjusted per state
+
+---
+
+### Challenge 106: Target CGPA Auto-Show Detail After Setting
+
+**Date:** 2026-04-15
+
+**Problem:** After setting a target CGPA value, users had to tap the tile again to see the per-subject breakdown. Two taps for one action.
+
+**Solution:** Added `pendingDetailShow` flag — when user taps "Set", the setup dialog closes and a `LaunchedEffect` watches for `cgpaResult` to arrive. Once the async calculation completes, the detail dialog opens automatically.
+
+**Files Modified:**
+- `DashboardScreen.kt` — `pendingDetailShow` state, `LaunchedEffect(cgpaResult)` auto-show, `onRequestDetail` callback
+
+---
+
+### Challenge 107: Subject Detail Instant Load — Cache-First with Background Exemptions
+
+**Date:** 2026-04-15
+
+**Problem:** Subject detail screen showed loading spinner for 20+ seconds even though present/absent data was already cached.
+
+**Solution:** Show present/absent entries immediately from cache (`isLoading = false` right after filtering), fetch exemptions + timetable in background. Exemption entries appear silently when ready.
+
+**Files Modified:**
+- `SubjectDetailScreen.kt` — Cache-first present/absent, immediate `isLoading = false`, background exemptions
+
+---
+
+### Challenge 108: Timetable Added to Parallel Prefetch
+
+**Date:** 2026-04-15
+
+**Problem:** Timetable was not part of the parallel prefetch batch. First navigation to timetable tab required a separate 20s fetch.
+
+**Solution:** Added `fetchTimetable()` as 7th parallel API in `prefetchForAI()`. Result cached to `securePrefs.cachedTimetableJson`.
+
+**Files Modified:**
+- `AttendanceRepository.kt` — Added timetable to parallel prefetch batch
+
+---
+
+### Challenge 109: SGPA Consistency — Curriculum Credits as Primary Source
+
+**Date:** 2026-04-15
+
+**Problem:** Semester Results screen showed SGPA 7.0 initially (from curriculum credits fallback), then changed to 6.813 when API credits loaded. The flicker confused users.
+
+**Root Cause:** The SGPA calculation first checked API credit fields — if null (during initial load), fell back to curriculum which gave a different result. When API data populated, it recalculated with different credits.
+
+**Solution:** Always use curriculum credits as primary source (consistent, deterministic), with API credits as fallback for courses not in curriculum. No more value flickering.
+
+**Files Modified:**
+- `ResultScreen.kt` — SGPA always uses curriculum credits first, API credits as fallback
+
+---
+
+### Challenge 110: Dashboard CGPA Refreshes on Return from GPA Calculator
+
+**Date:** 2026-04-15
+
+**Problem:** Dashboard CGPA tile showed stale value (e.g., 7.0) after user imported results in GPA Calculator (which showed 6.813). The tile only loaded at init.
+
+**Solution:** Added `LifecycleEventObserver` — `loadCalculatorCgpa()` and `loadTargetCgpa()` re-run on every `ON_RESUME`. Made `loadCalculatorCgpa()` public.
+
+**Files Modified:**
+- `DashboardViewModel.kt` — `loadCalculatorCgpa()` public, debug logs removed
+- `DashboardScreen.kt` — `DisposableEffect` lifecycle observer for CGPA refresh
+
+---
+
+### Challenge 111: Ad Banner on CA Marks + Interstitial on Target CGPA
+
+**Date:** 2026-04-15
+
+**Problem:** CA Marks screen had no ad banner. Target CGPA detail had no interstitial.
+
+**Solution:**
+- Added `AdBanner` to CA Marks screen (after header)
+- Added interstitial ad trigger when target CGPA detail dialog is dismissed
+- Preloads interstitial on dashboard init
+
+**Files Modified:**
+- `CAMarksScreen.kt` — Added `AdBanner` import and composable
+- `DashboardScreen.kt` — Interstitial preload + show on target CGPA dismiss
+
+---
+
+### Challenge 112: Syllabus Search Placeholder Visibility
+
+**Date:** 2026-04-15
+
+**Problem:** "Search by code or title" placeholder text was barely visible (low contrast) and clipped by 48dp height constraint.
+
+**Solution:** Added explicit color (`onSurface.copy(alpha = 0.5f)`) and removed fixed height constraint.
+
+**Files Modified:**
+- `SyllabusScreen.kt` — Placeholder color + removed height(48.dp)
