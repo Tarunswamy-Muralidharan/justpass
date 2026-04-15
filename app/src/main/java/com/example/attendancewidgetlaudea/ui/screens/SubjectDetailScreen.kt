@@ -74,8 +74,11 @@ fun SubjectDetailScreen(
         isLoading = true
         errorMessage = null
 
-        val presentResult = repository.fetchPresentDays()
-        val absentResult = repository.fetchAbsentDays()
+        // Use cached data if available (instant), otherwise fetch from server
+        val presentResult = repository.cachedPresentDays?.let { Result.Success(it) }
+            ?: repository.fetchPresentDays()
+        val absentResult = repository.cachedAbsentDays?.let { Result.Success(it) }
+            ?: repository.fetchAbsentDays()
 
         if (presentResult is Result.Success) {
             presentEntries = presentResult.data.flatMap { day ->
@@ -93,7 +96,10 @@ fun SubjectDetailScreen(
             }.sortedByDescending { it.rawDate }
         }
 
-        // Fetch exemptions and timetable, then map exemptions to this subject
+        // Show present/absent immediately — don't wait for exemptions
+        isLoading = false
+
+        // Fetch exemptions and timetable in background (updates UI when ready)
         val exemptionResult = repository.fetchExemptions()
         val timetableResult = repository.fetchTimetable()
 
@@ -177,7 +183,6 @@ fun SubjectDetailScreen(
         if (presentResult is Result.Error && absentResult is Result.Error) {
             errorMessage = "Could not load data"
         }
-        isLoading = false
     }
 
     val presentCount = presentEntries.size

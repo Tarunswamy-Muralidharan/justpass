@@ -25,7 +25,7 @@ data class ChessChallenge(
     val lichessGameId: String = "", // for tracking result
     val fromColor: String = "",     // "white" or "black" — challenger's color
     val resultChecked: Boolean = false,
-    val timeControl: String = "rapid", // bullet, blitz, rapid, classical
+    val timeControl: Any = "rapid", // bullet, blitz, rapid, classical — Any to handle Firestore type mismatches
     val timestamp: Long = 0L
 )
 

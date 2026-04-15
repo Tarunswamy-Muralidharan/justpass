@@ -526,7 +526,7 @@ fun ChessScreen(
                     }
                     Spacer(Modifier.height(4.dp))
                     val tcLabel = try {
-                        val tc = TimeControl.valueOf(uiState.pendingChallenge!!.timeControl.uppercase())
+                        val tc = TimeControl.valueOf(uiState.pendingChallenge!!.timeControl.toString().uppercase())
                         "${tc.icon} ${tc.description} ${tc.label}"
                     } catch (_: Exception) { "Rapid 10 min" }
                     Text("${uiState.pendingChallenge!!.fromName} wants to play", fontSize = 13.sp,
