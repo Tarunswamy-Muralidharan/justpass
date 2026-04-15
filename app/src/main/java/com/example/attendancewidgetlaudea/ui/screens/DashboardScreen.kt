@@ -133,6 +133,25 @@ fun DashboardScreen(
 
     // Fetch biodata (department, programmeName) on first Dashboard load if missing
     // Safe here because login WebView is fully destroyed before Dashboard renders
+    // Preload interstitial ad
+    LaunchedEffect(Unit) {
+        com.example.attendancewidgetlaudea.ui.components.InterstitialAdManager.preload(context)
+    }
+
+    // Refresh CGPA from saved grades whenever dashboard becomes visible
+    // (e.g. after user imports results in GPA Calculator)
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.loadCalculatorCgpa()
+                viewModel.loadTargetCgpa()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(Unit) {
         if (securePrefs.programmeName == null) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -166,8 +185,17 @@ fun DashboardScreen(
     var showAiBubble by remember { mutableStateOf(false) }
     var showCgpaSetup by remember { mutableStateOf(false) }
     var showCgpaDetail by remember { mutableStateOf(false) }
+    var pendingDetailShow by remember { mutableStateOf(false) }
     var targetCgpa by remember { mutableFloatStateOf(securePrefs.targetCgpa) }
     val cgpaResult = uiState.targetCgpaResult
+
+    // Auto-show detail dialog when result arrives after setting target
+    LaunchedEffect(cgpaResult) {
+        if (pendingDetailShow && cgpaResult != null) {
+            pendingDetailShow = false
+            showCgpaDetail = true
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
     PullToRefreshBox(
@@ -425,10 +453,10 @@ fun DashboardScreen(
                                 color = Color(0xFF42A5F5)
                             )
                         }
-                        if (targetCgpa > 0f) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (targetCgpa > 0f) {
                                 Text("Target ", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
                                 Text(
                                     String.format("%.1f", targetCgpa),
                                     fontSize = 22.sp, fontWeight = FontWeight.Black,
@@ -442,16 +470,14 @@ fun DashboardScreen(
                                         color = Color(0xFF00E676).copy(alpha = 0.5f)
                                     )
                                 }
-                            }
-                        } else {
-                            // No target set — prompt
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Tap to set target", fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                            } else {
+                                Text("Set target", fontSize = 13.sp, fontWeight = FontWeight.Medium,
                                     color = Color(0xFFFFAB00))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null,
-                                    tint = Color(0xFFFFAB00), modifier = Modifier.size(14.dp))
                             }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null,
+                                tint = if (targetCgpa > 0f) Color(0xFF00E676).copy(alpha = 0.6f) else Color(0xFFFFAB00),
+                                modifier = Modifier.size(20.dp))
                         }
                     } else {
                         // No GPA data — prompt to use calculator
@@ -471,7 +497,7 @@ fun DashboardScreen(
                     }
                 }
                 // Sequential chevron indicator — Audi-style sweeping turn signal
-                if (uiState.hasGpaData && targetCgpa > 0f && cgpaResult != null) {
+                if (uiState.hasGpaData && uiState.calculatorCgpa != null) {
                     Canvas(modifier = Modifier.matchParentSize()) {
                         val w = size.width
                         val h = size.height
@@ -480,7 +506,7 @@ fun DashboardScreen(
                         val chevronWidth = 10f
                         val chevronHeight = h * 0.35f
                         val startX = w * 0.38f // start after CGPA number
-                        val endX = w * 0.72f   // end before Target text
+                        val endX = if (targetCgpa > 0f) w * 0.55f else w * 0.58f // end before target/set text
                         val totalSpan = endX - startX
                         val spacing = totalSpan / numChevrons
 
@@ -627,12 +653,43 @@ fun DashboardScreen(
             showSetup = showCgpaSetup,
             onDismissSetup = { showCgpaSetup = false },
             showDetail = showCgpaDetail,
-            onDismissDetail = { showCgpaDetail = false },
+            onDismissDetail = {
+                showCgpaDetail = false
+                com.example.attendancewidgetlaudea.ui.components.InterstitialAdManager.show(context as android.app.Activity)
+            },
             cgpaResult = cgpaResult,
             targetCgpa = targetCgpa,
             onTargetChanged = { newTarget -> targetCgpa = newTarget },
-            onShowSetup = { showCgpaSetup = true }
+            onShowSetup = { showCgpaSetup = true },
+            onRequestDetail = { pendingDetailShow = true }
         )
+
+        // ── Remote Announcement Dialog ──
+        val announcement = uiState.announcement
+        if (announcement != null) {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissAnnouncement() },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, null, tint = Color(0xFFFFAB00), modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(announcement.title, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface)
+                    }
+                },
+                text = {
+                    Text(announcement.message, fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                        lineHeight = 20.sp)
+                },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.dismissAnnouncement() }) {
+                        Text("Got it", color = Color(0xFF42A5F5), fontWeight = FontWeight.Bold)
+                    }
+                },
+                containerColor = Color(0xFF1E2A3A)
+            )
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -1360,7 +1417,8 @@ private fun TargetCgpaDialogs(
     cgpaResult: TargetCgpaResult?,
     targetCgpa: Float,
     onTargetChanged: (Float) -> Unit = {},
-    onShowSetup: () -> Unit = {}
+    onShowSetup: () -> Unit = {},
+    onRequestDetail: () -> Unit = {}
 ) {
     // ── Setup dialog ──
     if (showSetup) {
@@ -1429,6 +1487,7 @@ private fun TargetCgpaDialogs(
                     viewModel.updateTargetCgpa(selectedCgpa)
                     onTargetChanged(selectedCgpa)
                     onDismissSetup()
+                    onRequestDetail()
                 }) {
                     Text("Set", color = Color(0xFF42A5F5), fontWeight = FontWeight.Bold)
                 }

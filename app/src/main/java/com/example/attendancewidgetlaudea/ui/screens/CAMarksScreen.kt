@@ -1,6 +1,7 @@
 @file:Suppress("UNUSED_PARAMETER")
 package com.example.attendancewidgetlaudea.ui.screens
 
+import com.example.attendancewidgetlaudea.ui.components.AdBanner
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -53,6 +54,8 @@ fun CAMarksScreen(cardState: LiquidState, viewModel: CAMarksViewModel = viewMode
                     tint = MaterialTheme.colorScheme.onSurface) }
             }
         }
+
+        AdBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), screenName = "CAMarks")
 
         Box(modifier = Modifier.fillMaxSize()) {
             when {

@@ -86,7 +86,13 @@ class AttendanceRepository(private val context: Context) {
                     android.util.Log.d("AttendanceRepo", "Fast login successful: ${attendanceData.attendancePercentage}%")
                     return Result.Success(attendanceData)
                 }
-                android.util.Log.d("AttendanceRepo", "Direct fetch failed, falling back to WebView")
+                // Token works but attendance failed — log in anyway with empty data
+                // User can still use chess, CA marks, results, etc.
+                android.util.Log.d("AttendanceRepo", "Token OK but attendance fetch failed — logging in with empty attendance")
+                securePrefs.rollNumber = rollNumber
+                securePrefs.password = password
+                securePrefs.setLoggedIn(true)
+                return Result.Success(AttendanceData.empty())
             }
         } catch (e: InvalidCredentialsException) {
             android.util.Log.e("AttendanceRepo", "Invalid credentials: ${e.message}")

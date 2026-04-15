@@ -37,6 +37,13 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+data class Announcement(
+    val id: String = "",
+    val title: String = "",
+    val message: String = "",
+    val active: Boolean = false
+)
+
 data class DashboardUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
@@ -51,7 +58,9 @@ data class DashboardUiState(
     val targetCgpaResult: TargetCgpaResult? = null,
     // CGPA from GPA calculator (null = not calculated yet)
     val calculatorCgpa: Double? = null,
-    val hasGpaData: Boolean = false
+    val hasGpaData: Boolean = false,
+    // Remote announcement from Firestore
+    val announcement: Announcement? = null
 )
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -76,6 +85,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         loadHolidayDates()
         loadCalculatorCgpa()
         loadTargetCgpa()
+        fetchAnnouncement()
         // Fire prefetch immediately alongside attendance refresh — don't wait
         viewModelScope.launch { try { repository.prefetchForAI() } catch (_: Exception) {} }
     }
@@ -383,7 +393,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
      * Read CGPA from the GPA calculator's saved grades.
      * Uses the same SharedPreferences + curriculum data as CgpaViewModel.
      */
-    private fun loadCalculatorCgpa() {
+    fun loadCalculatorCgpa() {
         try {
             val json = localPrefs.getString("cgpa_grades", null)
             if (json.isNullOrEmpty()) {
@@ -417,10 +427,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     val gradeLabel = semObj.getString(idxKey)
                     val grade = LetterGrade.entries.find { it.label == gradeLabel } ?: continue
                     val credits = semSubjects[idx].credits
-                    if (credits > 0) {
-                        totalWeighted += credits * grade.gradePoint
-                        totalCredits += credits
-                    }
+                    totalWeighted += credits * grade.gradePoint
+                    totalCredits += credits
                 }
             }
 
@@ -430,9 +438,39 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             } else {
                 _uiState.value = _uiState.value.copy(calculatorCgpa = null, hasGpaData = false)
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.e("DashVM", "loadCalculatorCgpa error", e)
             _uiState.value = _uiState.value.copy(calculatorCgpa = null, hasGpaData = false)
         }
+    }
+
+    /** Fetch announcement from Firestore announcements/current */
+    private fun fetchAnnouncement() {
+        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            .collection("announcements").document("current")
+            .get()
+            .addOnSuccessListener { doc ->
+                if (doc.exists() && doc.getBoolean("active") == true) {
+                    val id = doc.getString("id") ?: doc.id
+                    // Don't show if user already dismissed this announcement
+                    if (id == securePrefs.dismissedAnnouncementId) return@addOnSuccessListener
+                    _uiState.value = _uiState.value.copy(
+                        announcement = Announcement(
+                            id = id,
+                            title = doc.getString("title") ?: "Announcement",
+                            message = doc.getString("message") ?: "",
+                            active = true
+                        )
+                    )
+                }
+            }
+            .addOnFailureListener { /* silently ignore — don't block app */ }
+    }
+
+    fun dismissAnnouncement() {
+        val announcement = _uiState.value.announcement ?: return
+        securePrefs.dismissedAnnouncementId = announcement.id
+        _uiState.value = _uiState.value.copy(announcement = null)
     }
 
     fun updateTargetCgpa(target: Float) {

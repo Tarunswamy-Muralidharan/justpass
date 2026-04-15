@@ -74,6 +74,10 @@ class SecurePreferences(context: Context) {
         get() = regularPrefs.getFloat(KEY_TARGET_CGPA, 0f)
         set(value) = regularPrefs.edit().putFloat(KEY_TARGET_CGPA, value).apply()
 
+    var dismissedAnnouncementId: String?
+        get() = regularPrefs.getString(KEY_DISMISSED_ANNOUNCEMENT, null)
+        set(value) = regularPrefs.edit().putString(KEY_DISMISSED_ANNOUNCEMENT, value).apply()
+
     var chessBoardTheme: String
         get() = regularPrefs.getString(KEY_CHESS_BOARD_THEME, "CHESS_COM") ?: "CHESS_COM"
         set(value) = regularPrefs.edit().putString(KEY_CHESS_BOARD_THEME, value).apply()
@@ -261,6 +265,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_CACHED_COURSE_MARKS_FULL = "cached_course_marks_full_json"
         private const val KEY_CHESS_BOARD_THEME = "chess_board_theme"
         private const val KEY_TARGET_CGPA = "target_cgpa"
+        private const val KEY_DISMISSED_ANNOUNCEMENT = "dismissed_announcement_id"
 
         @Volatile
         private var instance: SecurePreferences? = null
