@@ -5137,3 +5137,72 @@ T+30s: all data cached
 - `AttendanceRepository.kt` — `persistPresentDays()`, `persistAbsentDays()`, disk restore in `init`
 - `SubjectAttendanceViewModel.kt` — `loadFromCache()`, error handling preserves cached data
 - `CAMarksViewModel.kt` — Cache-first init, error handling preserves cached data
+
+---
+
+### Challenge 99: Chess Crash — Firestore Type Mismatch on timeControl Field
+
+**Date:** 2026-04-15
+
+**Problem:** Tapping Chess tab crashed the app with `java.lang.RuntimeException: Field 'timeControl' is not a java.lang.String`. The crash occurred in `ChessRepository.listenIncomingChallenges()` at line 374.
+
+**Root Cause:** Some Firestore documents in the `chess_challenges` collection had `timeControl` stored as a number (e.g., `10`) instead of a string (e.g., `"rapid_10"`). Firestore's `doc.getString("timeControl")` throws when the field type doesn't match.
+
+**Solution:**
+1. Changed `doc.getString("timeControl")` to `doc.get("timeControl")?.toString()` in all 3 locations in `ChessRepository.kt` (lines 345, 374, 398)
+2. Changed `ChessChallenge.timeControl` type from `String` to `Any` in `ChessData.kt`
+3. Added `.toString()` calls in `ChessScreen.kt` and `ChessViewModel.kt` where `timeControl` is used
+
+**Files Modified:**
+- `ChessData.kt` — `timeControl: String` → `timeControl: Any`
+- `ChessRepository.kt` — 3× `getString("timeControl")` → `get("timeControl")?.toString()`
+- `ChessScreen.kt` — Added `.toString()` for TimeControl.valueOf()
+- `ChessViewModel.kt` — Added `.toString()` for acceptChallenge()
+
+---
+
+### Challenge 100: Subject Detail Instant Load — Cache-First Day Timeline
+
+**Date:** 2026-04-15
+
+**Problem:** Tapping a subject in Subject Attendance always made 4 network calls (present days, absent days, exemptions, timetable) even though present/absent data was already cached from the previous screen.
+
+**Solution:**
+1. Present/absent: use `repository.cachedPresentDays`/`cachedAbsentDays` if available
+2. Show present/absent entries immediately (`isLoading = false` after filtering)
+3. Exemptions + timetable fetch in background, update UI when ready
+4. No loading spinner for cached data path
+
+**Result:** Subject detail opens instantly when cache is available. Exemption entries appear a few seconds later when the background fetch completes.
+
+**Files Modified:**
+- `SubjectDetailScreen.kt` — Cache-first present/absent, immediate `isLoading = false`, background exemptions
+
+---
+
+### Challenge 101: Timetable Added to Parallel Prefetch
+
+**Date:** 2026-04-15
+
+**Problem:** Timetable was not part of the parallel prefetch batch. On fresh install, navigating to Timetable tab required a separate 20s network call.
+
+**Solution:** Added `fetchTimetable()` as the 7th parallel API in `prefetchForAI()`. Result is cached to `securePrefs.cachedTimetableJson` for instant timetable screen loads.
+
+**Files Modified:**
+- `AttendanceRepository.kt` — Added `timetableDeferred` to parallel batch, await + cache result
+
+---
+
+### Challenge 102: Target CGPA Works Without Previous Semester Grades
+
+**Date:** 2026-04-15
+
+**Problem:** Target CGPA was blocked entirely when `filledSemCount == 0` (no GPA calculator grades entered). Users on fresh install couldn't use the feature at all.
+
+**Solution:** Removed the blocking check. Target CGPA now works with any amount of data:
+- 0 semesters: shows best-case breakdown based on current semester CA marks only
+- Partial semesters: shows results with accuracy note
+- All semesters: full accurate calculation
+
+**Files Modified:**
+- `DashboardViewModel.kt` — Removed `filledSemCount == 0` early return

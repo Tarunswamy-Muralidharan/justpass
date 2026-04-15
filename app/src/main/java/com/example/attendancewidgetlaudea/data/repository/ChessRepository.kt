@@ -342,7 +342,7 @@ class ChessRepository {
                 toName = doc.getString("toName") ?: "",
                 status = "pending",
                 timestamp = doc.getLong("timestamp") ?: 0L,
-                timeControl = doc.getString("timeControl") ?: "rapid_10"
+                timeControl = doc.get("timeControl")?.toString() ?: "rapid_10"
             )
         } catch (e: Exception) {
             Log.e(TAG, "Check existing challenge error: ${e.message}")
@@ -371,7 +371,7 @@ class ChessRepository {
                             lichessGameId = doc.getString("lichessGameId") ?: "",
                             fromColor = doc.getString("fromColor") ?: "white",
                             resultChecked = doc.getBoolean("resultChecked") ?: false,
-                            timeControl = doc.getString("timeControl") ?: "rapid_10",
+                            timeControl = doc.get("timeControl")?.toString() ?: "rapid_10",
                             timestamp = doc.getLong("timestamp") ?: 0L
                         ))
                     }
@@ -395,7 +395,7 @@ class ChessRepository {
                     lichessGameId = doc.getString("lichessGameId") ?: "",
                     fromColor = doc.getString("fromColor") ?: "white",
                     resultChecked = doc.getBoolean("resultChecked") ?: false,
-                    timeControl = doc.getString("timeControl") ?: "rapid_10",
+                    timeControl = doc.get("timeControl")?.toString() ?: "rapid_10",
                     timestamp = doc.getLong("timestamp") ?: 0L
                 ))
             }

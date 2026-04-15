@@ -389,7 +389,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         val challenge = _uiState.value.pendingChallenge ?: return
         countdownJob?.cancel()
         viewModelScope.launch {
-            val urls = repo.acceptChallenge(challenge.id, challenge.timeControl)
+            val urls = repo.acceptChallenge(challenge.id, challenge.timeControl.toString())
             if (urls != null) {
                 _uiState.value = _uiState.value.copy(
                     acceptedChallenge = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first),

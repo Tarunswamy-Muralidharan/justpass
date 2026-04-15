@@ -505,16 +505,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 currentCgpa = _uiState.value.calculatorCgpa
                     ?: if (previousCredits > 0) previousWeightedSum.toDouble() / previousCredits else 0.0
 
-                if (filledSemCount == 0) {
-                    _uiState.value = _uiState.value.copy(targetCgpaResult = com.example.attendancewidgetlaudea.data.model.TargetCgpaResult(
-                        targetCgpa = target, currentCgpa = currentCgpa,
-                        previousCredits = previousCredits, previousWeightedSum = previousWeightedSum,
-                        currentSemCredits = 0, requiredSgpa = 0.0,
-                        subjects = emptyList(), isAchievable = false,
-                        message = "Update your grades in GPA Calculator to use target CGPA"
-                    ))
-                    return@launch
-                }
+                // Don't block — proceed even with 0 semesters filled
+                // The calculation will use whatever data is available
 
                 // ── Current semester CA marks: use cache if available, otherwise fetch ──
                 val caMarks: List<CourseMarks> = repository.cachedCourseMarks ?: run {

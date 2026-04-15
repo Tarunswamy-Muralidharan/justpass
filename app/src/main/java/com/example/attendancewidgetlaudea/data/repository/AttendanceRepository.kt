@@ -756,6 +756,7 @@ class AttendanceRepository(private val context: Context) {
         val absentDeferred = async { try { fetchAbsentDays() } catch (_: Exception) { null } }
         val presentDeferred = async { try { fetchPresentDays() } catch (_: Exception) { null } }
         val circDeferred = async { try { fetchCirculars() } catch (_: Exception) { null } }
+        val timetableDeferred = async { try { fetchTimetable() } catch (_: Exception) { null } }
 
         // CA Marks → compact summary
         try {
@@ -855,6 +856,17 @@ class AttendanceRepository(private val context: Context) {
             }
         } catch (e: Exception) {
             android.util.Log.e("AttendanceRepo", "AI prefetch circulars failed: ${e.message}")
+        }
+
+        // Timetable — await so it's cached for timetable screen
+        try {
+            val timetableResult = timetableDeferred.await()
+            if (timetableResult is Result.Success) {
+                securePrefs.cachedTimetableJson = com.google.gson.Gson().toJson(timetableResult.data)
+                android.util.Log.d("AttendanceRepo", "AI prefetch: Timetable cached")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceRepo", "AI prefetch timetable failed: ${e.message}")
         }
     }
 
