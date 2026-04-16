@@ -5359,3 +5359,40 @@ T+30s: all data cached
 
 **Files Modified:**
 - `SyllabusScreen.kt` — Placeholder color + removed height(48.dp)
+
+---
+
+### Challenge 113: Interstitial Ad Test ID + Bunkometer Dismiss Ad
+
+**Date:** 2026-04-15
+
+**Problem:** Interstitial ads used real ad unit ID (wouldn't load until AdMob approved). Also, dismissing Bunkometer by tapping outside didn't trigger the interstitial — only the "Done" button did.
+
+**Solution:**
+- Switched `InterstitialAdManager` to Google test interstitial ID (`ca-app-pub-3940256099942544/1033173712`)
+- Added interstitial trigger to Bunkometer's `onDismissRequest` (tap outside to close)
+
+**Files Modified:**
+- `InterstitialAdManager.kt` — Switched to test ad unit ID
+- `DashboardScreen.kt` — Bunkometer `onDismissRequest` now shows interstitial
+
+---
+
+### Challenge 114: Cross-Platform Chess Sync Fixes (PWA ↔ Android)
+
+**Date:** 2026-04-16
+
+**Problem:** Multiple sync issues between Android app and PWA (Next.js) sharing the same Firestore chess backend:
+1. PWA stored `timeControl` as numeric array index (0, 1, 2...), Android stored it as enum name string ("bullet", "blitz_3", etc.) — caused 1-minute games to show as 10-minute on the other platform
+2. PWA "challenge sent" UI stayed stuck when Android declined — `setSentChallenge(null)` was missing from the disappearance handler
+3. Random name lists differed (54 on PWA vs 50 on Android) — same roll number got different nicknames per platform
+
+**Solution (PWA-side fixes in `src/app/chess/page.tsx`):**
+- Added `TC_INDEX_TO_ENUM` / `TC_ENUM_TO_INDEX` mapping tables and `resolveTcIndex()` helper
+- PWA now writes enum strings matching Android format, reads both formats for backwards compatibility
+- Added `setSentChallenge(null)` + `stopChallengeWatcher()` when sent challenge disappears from pending query
+- Removed 4 extra names (CastleCrusher, EnPassantPro, CheckMaster, GambitGuru) to match Android's 50-name list
+- Fixed TypeScript type: `Challenge.timeControl` from `number` to `number | string`
+
+**Files Modified:**
+- `[PWA] src/app/chess/page.tsx` — All 4 fixes above

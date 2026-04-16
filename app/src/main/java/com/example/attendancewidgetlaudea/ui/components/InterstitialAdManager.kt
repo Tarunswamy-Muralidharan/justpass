@@ -12,7 +12,9 @@ import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 
 object InterstitialAdManager {
 
-    private const val AD_UNIT_ID = "ca-app-pub-4936276228225156/3208220090"
+    // TODO: Switch back to real ad unit once AdMob account is approved
+    // private const val AD_UNIT_ID = "ca-app-pub-4936276228225156/3208220090"
+    private const val AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712" // Google test interstitial
     private const val TAG = "InterstitialAd"
 
     private var interstitialAd: InterstitialAd? = null

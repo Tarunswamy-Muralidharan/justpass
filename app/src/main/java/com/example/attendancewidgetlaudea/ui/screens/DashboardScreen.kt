@@ -691,6 +691,42 @@ fun DashboardScreen(
             )
         }
 
+        // ── Server Down Banner ──
+        val serverError = uiState.errorMessage
+        if (serverError != null && serverError.contains("server", ignoreCase = true)) {
+            Spacer(modifier = Modifier.height(8.dp))
+            GlassListCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = GlassCardShapeSmall
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFFF5252),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "LAUDEA server is down. Showing cached data.",
+                        fontSize = 13.sp,
+                        color = Color(0xFFFF8A80),
+                        maxLines = 2,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = { viewModel.clearError() },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Close, "Dismiss", tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(12.dp))
 
         // Leave calculator
@@ -773,7 +809,12 @@ fun DashboardScreen(
                 }
 
                 AlertDialog(
-                    onDismissRequest = { showLeavePopup = false },
+                    onDismissRequest = {
+                        showLeavePopup = false
+                        (context as? Activity)?.let { activity ->
+                            com.example.attendancewidgetlaudea.ui.components.InterstitialAdManager.show(activity)
+                        }
+                    },
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Speed, contentDescription = null,
