@@ -1084,10 +1084,26 @@ private fun LichessGameScreen(
                         "border-bottom:2px solid #00E676!important}" +
                         ".mchat__content{flex:1!important;overflow-y:auto!important;background:#1A1A2E!important;" +
                         "padding:4px 6px!important}" +
-                        ".mchat__messages{background:transparent!important;color:#FFFFFF!important;padding:0!important}" +
-                        ".mchat__messages li,.mchat li{color:#E0E0E0!important;padding:3px 6px!important;" +
-                        "line-height:1.35!important;border:none!important;background:transparent!important}" +
-                        ".mchat .user-link,.mchat__messages .user-link{color:#4FC3F7!important;font-weight:600!important}" +
+                        // iMessage-style bubble list
+                        ".mchat__messages{background:transparent!important;color:#FFFFFF!important;" +
+                        "padding:8px 6px!important;display:flex!important;flex-direction:column!important;" +
+                        "gap:3px!important;list-style:none!important}" +
+                        ".mchat__messages li,.mchat li{color:#FFFFFF!important;" +
+                        "padding:8px 13px!important;line-height:1.32!important;border:none!important;" +
+                        "background:#2A3240!important;border-radius:18px!important;" +
+                        "max-width:78%!important;word-wrap:break-word!important;" +
+                        "align-self:flex-start!important;" +  // opponent = left by default
+                        "border-bottom-left-radius:5px!important;font-size:13.5px!important;" +
+                        "animation:jpBubbleIn 0.18s ease-out!important}" +
+                        "@keyframes jpBubbleIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}" +
+                        // Own messages = right + iMessage blue
+                        ".mchat__messages li.jp-self,.mchat li.jp-self{" +
+                        "background:linear-gradient(180deg,#2F95FF 0%,#007AFF 100%)!important;" +
+                        "color:#FFFFFF!important;align-self:flex-end!important;" +
+                        "border-bottom-right-radius:5px!important;border-bottom-left-radius:18px!important}" +
+                        // Hide the "Anonymous:" labels — bubbles carry the sender context
+                        ".mchat__messages .user-link,.mchat__messages li .user-link," +
+                        ".mchat__messages li a,.mchat li a{display:none!important}" +
                         // Wrap the say row in a flex so we can stick an icon before the input.
                         // Target every form control inside .mchat so we don't miss Lichess' input.
                         ".mchat__say,.mchat__content .mchat__say,.mchat form{background:#0A0F1A!important;" +
@@ -1130,9 +1146,32 @@ private fun LichessGameScreen(
                         "main,.round,.round__app{padding-bottom:48vh!important}"
                     )
                     val chatJs = "javascript:(function(){var id='jp-chat';var st=document.getElementById(id);if(!st){st=document.createElement('style');st.id=id;(document.head||document.documentElement).appendChild(st);}st.textContent=\"$chatCss\";" +
-                        // Find every chat input Lichess might render and slap a friendly placeholder on it
+                        // Friendly placeholder on whatever input Lichess rendered
                         "function setPh(){var nodes=document.querySelectorAll('.mchat input, .mchat textarea, input.mchat__say, .clinput, .mchat__say input, .mchat form input, .mchat form textarea');nodes.forEach(function(i){if(!i.getAttribute('data-jp-ph')){i.setAttribute('placeholder','Type a message…');i.setAttribute('data-jp-ph','1');}});}" +
-                        "setPh();setInterval(setPh,1500);" +
+                        // iMessage-style self-message tagging: remember every outgoing message (input Enter + preset clicks)
+                        // and tag matching <li>s with .jp-self so CSS can flip them to the right.
+                        "window.jpPending=window.jpPending||[];" +
+                        "function armChat(){" +
+                          "document.querySelectorAll('.mchat input, input.mchat__say, .mchat textarea').forEach(function(i){" +
+                            "if(i._jpArmed)return;i._jpArmed=true;" +
+                            "i.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){var t=(i.value||'').trim();if(t)window.jpPending.push(t);}});" +
+                          "});" +
+                          "document.querySelectorAll('.mchat__presets button,.preset button,.mchat__say button').forEach(function(b){" +
+                            "if(b._jpArmed)return;b._jpArmed=true;" +
+                            "b.addEventListener('click',function(){var t=(b.textContent||'').trim();if(t)window.jpPending.push(t);});" +
+                          "});" +
+                        "}" +
+                        "function tagSelf(){" +
+                          "document.querySelectorAll('.mchat__messages li:not([data-jp-tagged])').forEach(function(li){" +
+                            "li.setAttribute('data-jp-tagged','1');" +
+                            "var txt=(li.textContent||'').trim();" +
+                            "for(var i=0;i<window.jpPending.length;i++){" +
+                              "if(txt.indexOf(window.jpPending[i])>=0){li.classList.add('jp-self');window.jpPending.splice(i,1);break;}" +
+                            "}" +
+                          "});" +
+                        "}" +
+                        "setPh();armChat();tagSelf();" +
+                        "setInterval(function(){setPh();armChat();tagSelf();},600);" +
                         "})()"
 
                     // Poll for game-over status in Lichess DOM
