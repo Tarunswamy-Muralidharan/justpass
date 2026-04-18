@@ -86,39 +86,20 @@ class AttendanceRepository(private val context: Context) {
     }
 
     private suspend fun loginInternal(rollNumber: String, password: String): Result<AttendanceData> {
-        // FAST PATH: Direct Keycloak login + direct API fetch (no WebView needed)
+        // FAST PATH: Validate credentials via Keycloak only — skip the attendance fetch.
+        // Dashboard will show cached data immediately and trigger its own background refresh.
         try {
             android.util.Log.d("AttendanceRepo", "Validating credentials for: $rollNumber")
             val loginOk = webViewAuthenticator.loginViaKeycloak(rollNumber, password)
             if (loginOk) {
-                // Token acquired — try fetching attendance directly
-                android.util.Log.d("AttendanceRepo", "Token acquired, trying direct attendance fetch")
-                val directResult = webViewAuthenticator.fetchAttendanceDirect(rollNumber)
-                if (directResult != null && directResult.isSuccess) {
-                    val attendanceData = directResult.getOrThrow()
-                    securePrefs.rollNumber = rollNumber
-                    securePrefs.password = password
-                    securePrefs.saveAttendanceData(attendanceData)
-                    securePrefs.setLoggedIn(true)
-                    try {
-                        com.example.attendancewidgetlaudea.widget.AttendanceWidgetReceiver.updateWidget(context)
-                    } catch (_: Exception) {}
-                    android.util.Log.d("AttendanceRepo", "Fast login successful: ${attendanceData.attendancePercentage}%")
-                    return Result.Success(attendanceData)
-                }
-                // Token works but attendance failed — log in anyway with empty/cached data
-                // User can still use chess, CA marks, results, etc.
-                val failure = directResult?.exceptionOrNull()
-                if (failure is WebViewAuthenticator.ServerDownException) {
-                    android.util.Log.w("AttendanceRepo", "Login OK but SIS server down (HTTP ${failure.statusCode}) — logging in with cached data")
-                } else {
-                    android.util.Log.d("AttendanceRepo", "Token OK but attendance fetch failed — logging in with empty attendance")
-                }
                 securePrefs.rollNumber = rollNumber
                 securePrefs.password = password
                 securePrefs.setLoggedIn(true)
-                val cached = securePrefs.getAttendanceData()
-                return Result.Success(cached)
+                try {
+                    com.example.attendancewidgetlaudea.widget.AttendanceWidgetReceiver.updateWidget(context)
+                } catch (_: Exception) {}
+                android.util.Log.d("AttendanceRepo", "Fast login successful — token captured, returning cached data")
+                return Result.Success(securePrefs.getAttendanceData())
             }
         } catch (e: InvalidCredentialsException) {
             android.util.Log.e("AttendanceRepo", "Invalid credentials: ${e.message}")
