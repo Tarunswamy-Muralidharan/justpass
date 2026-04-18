@@ -1084,22 +1084,31 @@ private fun LichessGameScreen(
                         "border-bottom:2px solid #00E676!important}" +
                         ".mchat__content{flex:1!important;overflow-y:auto!important;background:#1A1A2E!important;" +
                         "padding:4px 6px!important}" +
-                        // iMessage-style bubble list
+                        // iMessage-style bubble list — use block layout so flex squish can't shrink bubbles
                         ".mchat__messages{background:transparent!important;color:#FFFFFF!important;" +
-                        "padding:8px 6px!important;display:flex!important;flex-direction:column!important;" +
-                        "gap:3px!important;list-style:none!important}" +
+                        "padding:8px 6px!important;display:block!important;list-style:none!important;" +
+                        "margin:0!important}" +
                         ".mchat__messages li,.mchat li{color:#FFFFFF!important;" +
-                        "padding:8px 13px!important;line-height:1.32!important;border:none!important;" +
+                        "padding:9px 14px!important;line-height:1.4!important;border:none!important;" +
                         "background:#2A3240!important;border-radius:18px!important;" +
-                        "max-width:78%!important;word-wrap:break-word!important;" +
-                        "align-self:flex-start!important;" +  // opponent = left by default
-                        "border-bottom-left-radius:5px!important;font-size:13.5px!important;" +
+                        "max-width:75%!important;width:fit-content!important;" +
+                        "word-break:break-word!important;white-space:normal!important;" +
+                        "margin:4px auto 4px 0!important;" +  // opponent = left (auto right margin pushes left)
+                        "border-bottom-left-radius:5px!important;font-size:14px!important;" +
+                        "min-height:0!important;height:auto!important;flex:none!important;" +
+                        "display:block!important;" +
                         "animation:jpBubbleIn 0.18s ease-out!important}" +
+                        // Force all descendants to inherit bubble colour + size — some Lichess
+                        // rules colour usernames/timestamps differently and shrink the text.
+                        ".mchat__messages li *,.mchat li *{color:inherit!important;" +
+                        "font-size:inherit!important;line-height:inherit!important;" +
+                        "background:transparent!important}" +
                         "@keyframes jpBubbleIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}" +
                         // Own messages = right + iMessage blue
                         ".mchat__messages li.jp-self,.mchat li.jp-self{" +
                         "background:linear-gradient(180deg,#2F95FF 0%,#007AFF 100%)!important;" +
-                        "color:#FFFFFF!important;align-self:flex-end!important;" +
+                        "color:#FFFFFF!important;" +
+                        "margin:4px 0 4px auto!important;" +  // flip: auto left margin pushes right
                         "border-bottom-right-radius:5px!important;border-bottom-left-radius:18px!important}" +
                         // Hide the "Anonymous:" labels — bubbles carry the sender context
                         ".mchat__messages .user-link,.mchat__messages li .user-link," +
