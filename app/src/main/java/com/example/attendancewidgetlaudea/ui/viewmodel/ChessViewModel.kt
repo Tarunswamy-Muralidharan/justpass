@@ -68,6 +68,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     private var incomingListener: ListenerRegistration? = null
     private var friendReqListener: ListenerRegistration? = null
     private var sentChallengeListener: ListenerRegistration? = null
+    private var gameLeftListener: ListenerRegistration? = null
     private var heartbeatJob: Job? = null
     private var countdownJob: Job? = null
     private var senderCountdownJob: Job? = null
@@ -148,6 +149,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                                 pendingChallenge = null,
                                 challengeCountdown = null
                             )
+                            watchForOpponentLeave(challenge.id)
                         }
                     }
                     return@listenIncomingChallenges
@@ -375,6 +377,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                                 acceptedChallenge = challenge, sentChallengeId = null,
                                 sentChallengeName = null, sentChallengeToId = null, senderCountdown = null
                             )
+                            watchForOpponentLeave(challenge.id)
                         }
                         "declined" -> {
                             senderCountdownJob?.cancel()
@@ -438,6 +441,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                     pendingChallenge = null,
                     challengeCountdown = null
                 )
+                watchForOpponentLeave(challenge.id)
             }
         }
     }
@@ -452,11 +456,38 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearAcceptedChallenge() {
+        gameLeftListener?.remove(); gameLeftListener = null
         _uiState.value = _uiState.value.copy(acceptedChallenge = null)
         // Check results shortly after returning from Lichess
         viewModelScope.launch {
             kotlinx.coroutines.delay(3000L)
             checkPendingResults()
+        }
+    }
+
+    /**
+     * User exited an in-progress game — write leftBy to Firestore so the opponent's
+     * client can show "Opponent left the game" instead of waiting for Lichess timeout.
+     */
+    fun notifyGameLeft() {
+        val challengeId = _uiState.value.acceptedChallenge?.id ?: return
+        val myId = _uiState.value.myProfile?.id ?: return
+        val myName = _uiState.value.myProfile?.visibleName ?: "Opponent"
+        viewModelScope.launch { repo.markGameLeft(challengeId, myId, myName) }
+    }
+
+    /**
+     * Watch the accepted challenge doc for a leftBy field set by the opponent.
+     * Called when a game starts; dropped in clearAcceptedChallenge().
+     */
+    fun watchForOpponentLeave(challengeId: String) {
+        gameLeftListener?.remove()
+        val myId = _uiState.value.myProfile?.id
+        gameLeftListener = repo.listenGameLeft(challengeId) { leaverId, leaverName ->
+            if (myId != null && leaverId == myId) return@listenGameLeft
+            _uiState.value = _uiState.value.copy(
+                errorMessage = "$leaverName left the game"
+            )
         }
     }
 
