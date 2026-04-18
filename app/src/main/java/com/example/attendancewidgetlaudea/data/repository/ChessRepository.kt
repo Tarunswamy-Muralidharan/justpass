@@ -406,6 +406,35 @@ class ChessRepository {
             }
     }
 
+    /**
+     * Listen for the other player writing a leftBy field to the accepted challenge doc.
+     * Callback fires whenever leftBy becomes non-null.
+     */
+    fun listenGameLeft(challengeId: String, onLeft: (leaverId: String, leaverName: String) -> Unit): ListenerRegistration {
+        return challengeCollection.document(challengeId)
+            .addSnapshotListener { doc, error ->
+                if (error != null || doc == null || !doc.exists()) return@addSnapshotListener
+                val leaverId = doc.getString("leftBy") ?: return@addSnapshotListener
+                val leaverName = doc.getString("leftByName") ?: "Opponent"
+                onLeft(leaverId, leaverName)
+            }
+    }
+
+    suspend fun markGameLeft(challengeId: String, leaverId: String, leaverName: String) {
+        try {
+            challengeCollection.document(challengeId).update(
+                mapOf(
+                    "leftBy" to leaverId,
+                    "leftByName" to leaverName,
+                    "leftAt" to System.currentTimeMillis()
+                )
+            ).await()
+            Log.d(TAG, "Marked game $challengeId as left by $leaverName")
+        } catch (e: Exception) {
+            Log.w(TAG, "markGameLeft failed: ${e.message}")
+        }
+    }
+
     fun listenChallengeStatus(challengeId: String, onUpdate: (ChessChallenge) -> Unit): ListenerRegistration {
         return challengeCollection.document(challengeId)
             .addSnapshotListener { doc, error ->

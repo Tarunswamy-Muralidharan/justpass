@@ -256,6 +256,8 @@ fun ChessScreen(
             url = activeGameUrl!!,
             boardTheme = uiState.boardTheme,
             onClose = { result ->
+                // User exited before the game ended — signal the opponent
+                if (result == null) viewModel.notifyGameLeft()
                 activeGameUrl = null
                 viewModel.checkPendingResults()
                 // If game ended with a result, show result dialog
