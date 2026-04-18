@@ -407,6 +407,36 @@ class ChessRepository {
     }
 
     /**
+     * Atomically mark a game as finished due to the opponent abandoning.
+     * Credits winnerId with a win and loserId with a loss. Returns true
+     * iff this call was the one to claim the challenge (prevents both
+     * devices double-counting).
+     */
+    suspend fun recordAbandonmentResult(challengeId: String, winnerId: String, loserId: String): Boolean {
+        return try {
+            val docRef = challengeCollection.document(challengeId)
+            val claimed = FirebaseFirestore.getInstance().runTransaction { txn ->
+                val snap = txn.get(docRef)
+                if (snap.getBoolean("resultChecked") == true) return@runTransaction false
+                txn.update(docRef, mapOf(
+                    "resultChecked" to true,
+                    "abandoned" to true
+                ))
+                true
+            }.await()
+            if (claimed) {
+                recordGameResult(winnerId, "win")
+                recordGameResult(loserId, "loss")
+                Log.d(TAG, "Recorded abandonment: $winnerId wins, $loserId loses")
+            }
+            claimed
+        } catch (e: Exception) {
+            Log.w(TAG, "recordAbandonmentResult failed: ${e.message}")
+            false
+        }
+    }
+
+    /**
      * Listen for the other player writing a leftBy field to the accepted challenge doc.
      * Callback fires whenever leftBy becomes non-null.
      */
