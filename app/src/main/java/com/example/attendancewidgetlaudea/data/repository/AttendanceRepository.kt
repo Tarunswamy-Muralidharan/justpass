@@ -86,13 +86,19 @@ class AttendanceRepository(private val context: Context) {
                     android.util.Log.d("AttendanceRepo", "Fast login successful: ${attendanceData.attendancePercentage}%")
                     return Result.Success(attendanceData)
                 }
-                // Token works but attendance failed — log in anyway with empty data
+                // Token works but attendance failed — log in anyway with empty/cached data
                 // User can still use chess, CA marks, results, etc.
-                android.util.Log.d("AttendanceRepo", "Token OK but attendance fetch failed — logging in with empty attendance")
+                val failure = directResult?.exceptionOrNull()
+                if (failure is WebViewAuthenticator.ServerDownException) {
+                    android.util.Log.w("AttendanceRepo", "Login OK but SIS server down (HTTP ${failure.statusCode}) — logging in with cached data")
+                } else {
+                    android.util.Log.d("AttendanceRepo", "Token OK but attendance fetch failed — logging in with empty attendance")
+                }
                 securePrefs.rollNumber = rollNumber
                 securePrefs.password = password
                 securePrefs.setLoggedIn(true)
-                return Result.Success(AttendanceData.empty())
+                val cached = securePrefs.getAttendanceData()
+                return Result.Success(cached)
             }
         } catch (e: InvalidCredentialsException) {
             android.util.Log.e("AttendanceRepo", "Invalid credentials: ${e.message}")
@@ -121,8 +127,20 @@ class AttendanceRepository(private val context: Context) {
                         Result.Success(attendanceData)
                     },
                     onFailure = { exception ->
-                        android.util.Log.e("AttendanceRepo", "Login failed: ${exception.message}")
-                        Result.Error("Login failed: ${exception.message}", exception as? Exception)
+                        val msg = exception.message ?: ""
+                        // If the SIS page loaded but attendance fetch failed (HTTP 5xx),
+                        // the user IS authenticated — log them in with cached/empty data
+                        if (msg.contains("HTTP 5") || msg.contains("Could not fetch attendance")) {
+                            android.util.Log.w("AttendanceRepo", "WebView login: authenticated but attendance API down — logging in with cached data")
+                            securePrefs.rollNumber = rollNumber
+                            securePrefs.password = password
+                            securePrefs.setLoggedIn(true)
+                            val cached = securePrefs.getAttendanceData()
+                            Result.Success(cached)
+                        } else {
+                            android.util.Log.e("AttendanceRepo", "Login failed: ${exception.message}")
+                            Result.Error("Login failed: ${exception.message}", exception as? Exception)
+                        }
                     }
                 )
             } catch (e: Exception) {
@@ -256,23 +274,25 @@ class AttendanceRepository(private val context: Context) {
             android.util.Log.e("AttendanceRepo", "CA marks token refresh error: ${e.message}")
         }
 
-        // Last resort: full WebView login
+        // Last resort: do a full WebView login to get a token, then retry
+        android.util.Log.d("AttendanceRepo", "No token available, doing WebView login first for CA marks")
         if (!password.isNullOrEmpty()) {
-            android.util.Log.d("AttendanceRepo", "Direct login failed, falling back to WebView for CA marks")
             val loginResult = login(rollNumber, password)
             if (loginResult is Result.Success) {
+                // Retry with whatever token was captured during login
                 try {
                     val retryResult = webViewAuthenticator.fetchCAMarksDirect(rollNumber)
                     if (retryResult != null && retryResult.isSuccess) {
-                        return Result.Success(retryResult.getOrThrow())
+                        val data = retryResult.getOrThrow()
+                        cachedCourseMarks = data
+                        try { securePrefs.cachedCourseMarksFullJson = gson.toJson(data) } catch (_: Exception) {}
+                        android.util.Log.d("AttendanceRepo", "CA marks after login successful: ${data.size} courses")
+                        return Result.Success(data)
                     }
-                } catch (e: Exception) {
-                    android.util.Log.e("AttendanceRepo", "CA marks retry error: ${e.message}")
-                }
+                } catch (_: Exception) {}
             }
         }
-
-        return Result.Error("Could not fetch CA marks. Try refreshing attendance first.")
+        return Result.Error("Could not fetch CA marks. Please refresh attendance from the dashboard first.")
     }
 
     suspend fun fetchAbsentDays(): Result<List<AbsentDay>> {

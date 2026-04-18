@@ -5396,3 +5396,165 @@ T+30s: all data cached
 
 **Files Modified:**
 - `[PWA] src/app/chess/page.tsx` — All 4 fixes above
+
+---
+
+### Challenge 115: Interstitial Ad on Bunkometer Dismiss
+
+**Date:** 2026-04-15
+
+**Problem:** Interstitial ads used real ad unit ID (wouldn't load until AdMob approved). Dismissing Bunkometer by tapping outside didn't trigger the interstitial.
+
+**Solution:**
+- Switched `InterstitialAdManager` to Google test interstitial ID (`ca-app-pub-3940256099942544/1033173712`)
+- Added interstitial trigger to Bunkometer's `onDismissRequest`
+
+**Files Modified:**
+- `InterstitialAdManager.kt` — Test ad unit ID
+- `DashboardScreen.kt` — Bunkometer dismiss triggers interstitial
+
+---
+
+### Challenge 116: Stale Chess Challenge Blocking New Challenges
+
+**Date:** 2026-04-16
+
+**Problem:** 30-minute-old pending chess challenges in Firestore blocked new challenges via mutual challenge prevention. `checkExistingChallenge` didn't check timestamps, and client-side cleanup only ran periodically.
+
+**Solution:** `checkExistingChallenge` now ignores pending challenges older than 20 seconds and auto-deletes stale ones found during the check.
+
+**Files Modified:**
+- `ChessRepository.kt` — Timestamp check + stale cleanup in `checkExistingChallenge`
+
+---
+
+### Challenge 117: PWA Game Not Loading After Opponent Accepts Challenge
+
+**Date:** 2026-04-16
+
+**Problem:** When Android accepted a challenge, the PWA stayed blank. The broad pending-challenges listener killed the per-doc watcher before it could process the "accepted" status and set `readyGameUrl`.
+
+**Solution:** Broad listener now only clears the countdown, leaves the per-doc watcher alive to handle accept/decline and set `readyGameUrl`.
+
+**Files Modified:**
+- `[PWA] src/app/chess/page.tsx` — Removed `stopChallengeWatcher()` from disappearance handler
+
+---
+
+### Challenge 118: Embedded Lichess Game in PWA
+
+**Date:** 2026-04-16
+
+**Problem:** PWA opened Lichess games in a new tab via `window.open()`, which iOS Safari blocks from async callbacks.
+
+**Solution:** Replaced `window.open()` with fullscreen iframe overlay inside the PWA. Header bar shows "vs {opponent}" with an Exit Game button, matching Android's in-app WebView experience.
+
+**Files Modified:**
+- `[PWA] src/app/chess/page.tsx` — `activeGameUrl` state, iframe overlay, removed `window.open`
+
+---
+
+### Challenge 119: College Disabled grant_type=password (Keycloak Direct Access Grants)
+
+**Date:** 2026-04-18
+
+**Problem:** PSG iTech disabled "Direct Access Grants" on the Keycloak `ies_sis` client. Our fast login (`grant_type=password`) now returns HTTP 400 `"unauthorized_client"`. The code treated all 400s as "wrong password" and threw `InvalidCredentialsException`, completely blocking login instead of falling through to WebView.
+
+**Root Cause Analysis:**
+- Keycloak `ies_sis` client: `grant_type=password` → HTTP 400 `"unauthorized_client"`
+- Keycloak `ies_meetings` client: `grant_type=password` → still works (HTTP 200)
+- `grant_type=refresh_token` → still works IF we have a refresh token
+
+**Solution (multi-layered):**
+1. **HTTP 400 handling:** Only treat 400 as invalid credentials if response body contains `"invalid_grant"`. Other 400 errors (like `"unauthorized_client"`) fall through to WebView.
+2. **WebView loginAttempted guard removed:** SIS page sometimes loads without Keycloak redirect (existing session). Removed `loginAttempted` requirement so attendance fetch proceeds even without Keycloak redirect.
+3. **Server-down graceful login:** When WebView login succeeds but attendance API returns HTTP 500, log the user in with cached/empty data instead of failing.
+4. **HTTP 500-as-401 detection:** SIS APIs proxy 401 errors as 500 (`"Request failed with status code 401"`). All `fetchXxxDirect` functions now check the 500 response body — if it contains "401" or "unauthorized", treat as token expired (clear token, retry) instead of server-down (return early).
+
+**Impact:** Without this fix, the app was completely unable to login or fetch any data. With it, login works via WebView fallback and all API fetches retry properly when tokens expire.
+
+**Files Modified:**
+- `WebViewAuthenticator.kt` — HTTP 400 handling, loginAttempted guard removal, 500-as-401 detection across all fetch functions
+- `AttendanceRepository.kt` — Server-down graceful login, WebView CA marks fallback
+
+---
+
+### Challenge 120: Bearer Token Capture from WebView (Keycloak Auth Code Flow)
+
+**Date:** 2026-04-18
+
+**Problem:** With `grant_type=password` disabled, the only way to get a Bearer token is by intercepting the Keycloak Authorization Code flow in the WebView. The Keycloak JS adapter stores the token in a local closure variable (not on `window`), making it inaccessible from injected JavaScript.
+
+**Approaches Tried (in order):**
+1. ~~Scan `window.*` for objects with `.token` property~~ — Keycloak instance not on window
+2. ~~Angular `$rootScope.Auth.keycloak.token`~~ — Angular injector not always available
+3. ~~`angular.element(document.body).injector().get('keycloak')`~~ — Service not registered
+4. ~~Monkey-patch `console.log` to detect "authenticated" message~~ — Hook runs AFTER page scripts
+5. ~~`shouldInterceptRequest` to inject script into HTML `<head>`~~ — Uses `HttpURLConnection` which fails when system DNS is broken (Android apps use system DNS, Chrome/WebView uses DNS-over-HTTPS)
+6. **`onPageStarted` early hook** — Injects XHR/fetch interceptors BEFORE page scripts run. Overrides `XMLHttpRequest.prototype.send` to capture the `/openid-connect/token` XHR response containing `access_token` and `refresh_token`.
+
+**Current State:** The `onPageStarted` early hook + `onPageFinished` global hook together capture the token when:
+- The Keycloak auth code exchange happens via XHR (captured by XHR send interceptor)
+- Any Angular API call includes an Authorization header (captured by setRequestHeader interceptor)
+
+**Token Capture Success:** Confirmed working — `TOKEN-HOOK: XHR captured token` + `Auth token cached for fast refresh` + `Auth-code refresh token captured`. Once captured, Tier 2 (`grant_type=refresh_token`) works for all subsequent API calls.
+
+**Known Limitation:** Token capture is timing-dependent. If the WebView gets destroyed before the Keycloak JS exchanges the auth code, the token is missed. The `shouldInterceptRequest` approach was more reliable (injected before any scripts ran) but broke when system DNS was unavailable.
+
+**Files Modified:**
+- `WebViewAuthenticator.kt` — `onPageStarted` early hook, `onPageFinished` global hook, `shouldInterceptRequest` removed (DNS issue), token poller, 500-as-401 detection
+- `AttendanceRepository.kt` — WebView login → token capture → direct fetch retry chain for CA marks
+
+---
+
+### Challenge 121: AdMob Configuration Refactor
+
+**Date:** 2026-04-15
+
+**Problem:** AdMob test device IDs were split between `AdConfig` and `MainActivity`. AdConfig.init() didn't accept Context.
+
+**Solution:** Moved all test device registration to `AdConfig.init(context)`. Both Moto G54 and Edge 60 Fusion registered as test devices.
+
+**Files Modified:**
+- `AdConfig.kt` — Added Context parameter, moved test device IDs here
+- `MainActivity.kt` — Simplified to `AdConfig.init(this)` + `MobileAds.initialize`
+
+---
+
+### Challenge 122: Cross-Platform Chess Improvements
+
+**Date:** 2026-04-15–16
+
+**Changes:**
+- **PWA time control format:** PWA now stores `timeControl` as enum name strings matching Android (`"bullet"`, `"blitz_3"`, etc.) instead of numeric array indices
+- **PWA decline reflection:** Fixed sent challenge UI staying stuck when opponent declines
+- **PWA embedded game:** Lichess games load inside the PWA via iframe instead of new tab
+- **Android stale challenge cleanup:** `checkExistingChallenge` ignores challenges older than 20s
+- **Random name parity:** Removed 4 extra names from PWA to match Android's 50-name list
+
+**Files Modified:**
+- `[PWA] src/app/chess/page.tsx` — TC mapping, decline fix, iframe game, name list
+- `ChessRepository.kt` — Stale challenge cleanup in `checkExistingChallenge`
+
+---
+
+### Current Token Flow (Post-Challenge 119-120)
+
+```
+Tier 1: grant_type=password
+        → DISABLED by college (HTTP 400 "unauthorized_client")
+        → App detects and falls through to Tier 3/4
+
+Tier 2: grant_type=refresh_token
+        → WORKS if refresh token is available
+        → Seeded by Tier 3 token capture
+
+Tier 3: WebView XHR hook (onPageStarted injection)
+        → Captures Bearer token from Keycloak auth code exchange
+        → Also captures refresh token
+        → Timing-dependent — may miss if WebView destroyed too fast
+
+Tier 4: Full WebView login (browser session + cookies)
+        → Always works but slowest (~15-30s)
+        → Used as login fallback when all tiers fail
+```

@@ -333,7 +333,22 @@ class ChessRepository {
                 .whereEqualTo("toId", toId)
                 .whereEqualTo("status", "pending")
                 .get().await()
-            val doc = docs.documents.firstOrNull() ?: return null
+            val now = System.currentTimeMillis()
+            // Only consider challenges less than 20 seconds old — stale ones are ignored and cleaned up
+            val doc = docs.documents.firstOrNull { d ->
+                val ts = d.getLong("timestamp") ?: 0L
+                now - ts < 20_000L
+            }
+            if (doc == null) {
+                // Clean up any stale pending challenges we found
+                docs.documents.forEach { d ->
+                    val ts = d.getLong("timestamp") ?: 0L
+                    if (now - ts >= 20_000L) {
+                        try { d.reference.delete() } catch (_: Exception) {}
+                    }
+                }
+                return null
+            }
             ChessChallenge(
                 id = doc.id,
                 fromId = doc.getString("fromId") ?: "",
