@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,9 +70,10 @@ fun ChessScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    // In-app game WebView state
-    var activeGameUrl by remember { mutableStateOf<String?>(null) }
-    var gameResult by remember { mutableStateOf<String?>(null) }
+    // In-app game WebView state — rememberSaveable so rotation / config change
+    // doesn't kick the user out mid-game.
+    var activeGameUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    var gameResult by rememberSaveable { mutableStateOf<String?>(null) }
     var lastChallengedPlayer by remember { mutableStateOf<OnlinePlayer?>(null) }
     var challengeTarget by remember { mutableStateOf<OnlinePlayer?>(null) }
     // Track the active challenge for name-based results
