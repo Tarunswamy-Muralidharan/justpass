@@ -1088,31 +1088,50 @@ private fun LichessGameScreen(
                         ".mchat__messages li,.mchat li{color:#E0E0E0!important;padding:3px 6px!important;" +
                         "line-height:1.35!important;border:none!important;background:transparent!important}" +
                         ".mchat .user-link,.mchat__messages .user-link{color:#4FC3F7!important;font-weight:600!important}" +
-                        // Input row — make it obviously a text field
-                        ".mchat__say,.mchat__content .mchat__say{background:#0A0F1A!important;" +
-                        "padding:8px 10px!important;flex-shrink:0!important;" +
+                        // Wrap the say row in a flex so we can stick an icon before the input.
+                        // Target every form control inside .mchat so we don't miss Lichess' input.
+                        ".mchat__say,.mchat__content .mchat__say,.mchat form{background:#0A0F1A!important;" +
+                        "padding:10px 12px!important;flex-shrink:0!important;" +
                         "border-top:1px solid rgba(255,255,255,0.08)!important;" +
                         "display:flex!important;align-items:center!important;gap:8px!important;position:relative!important}" +
-                        // Speech-bubble icon in front of the input to signal "type here"
-                        ".mchat__say::before{content:'\\1F4AC'!important;font-size:18px!important;opacity:0.7!important;flex-shrink:0!important}" +
-                        ".mchat__say input,.clinput,.mchat__say textarea{background:#1E2A3A!important;" +
-                        "color:#FFFFFF!important;border:1.5px solid rgba(0,230,118,0.35)!important;" +
+                        // Speech-bubble glyph signals "type here"
+                        ".mchat__say::before,.mchat form::before{content:'\\1F4AC'!important;font-size:20px!important;opacity:0.8!important;flex-shrink:0!important}" +
+                        // Every input/textarea that might be the chat input — broad net
+                        ".mchat input,.mchat textarea,.mchat__say,input.mchat__say,.clinput," +
+                        ".mchat__say input,.mchat__say textarea,.mchat form input,.mchat form textarea{" +
+                        "background:#1E2A3A!important;" +
+                        "color:#FFFFFF!important;border:1.5px solid rgba(0,230,118,0.45)!important;" +
                         "border-radius:22px!important;padding:10px 16px!important;font-size:14px!important;" +
                         "width:100%!important;flex:1!important;box-sizing:border-box!important;" +
                         "caret-color:#00E676!important;transition:border-color 0.15s,box-shadow 0.15s!important;" +
-                        "box-shadow:0 0 0 0 rgba(0,230,118,0)!important}" +
-                        ".mchat__say input::placeholder,.clinput::placeholder,.mchat__say textarea::placeholder{" +
-                        "color:rgba(255,255,255,0.45)!important;font-style:italic!important}" +
-                        ".mchat__say input:focus,.clinput:focus,.mchat__say textarea:focus{" +
+                        "min-height:40px!important;line-height:1.3!important;" +
+                        "box-shadow:0 0 0 0 rgba(0,230,118,0)!important;display:block!important}" +
+                        ".mchat input::placeholder,.mchat textarea::placeholder,.mchat__say::placeholder," +
+                        "input.mchat__say::placeholder,.clinput::placeholder{" +
+                        "color:rgba(255,255,255,0.55)!important;font-style:normal!important}" +
+                        ".mchat input:focus,.mchat textarea:focus,.mchat__say:focus," +
+                        "input.mchat__say:focus,.clinput:focus{" +
                         "border-color:#00E676!important;outline:none!important;" +
-                        "box-shadow:0 0 0 3px rgba(0,230,118,0.15)!important;" +
+                        "box-shadow:0 0 0 3px rgba(0,230,118,0.2)!important;" +
                         "background:#22304A!important}" +
+                        // Preset chat buttons for anonymous users (HI / GL / HF / U2)
+                        ".mchat__presets,.preset,[class*=preset]{background:#0A0F1A!important;" +
+                        "padding:8px!important;display:flex!important;flex-wrap:wrap!important;gap:6px!important;" +
+                        "border-top:1px solid rgba(255,255,255,0.08)!important}" +
+                        ".mchat__presets button,.preset button,[class*=preset] button,.mchat__say button{" +
+                        "background:#1E2A3A!important;color:#FFFFFF!important;" +
+                        "border:1.5px solid rgba(0,230,118,0.35)!important;" +
+                        "border-radius:18px!important;padding:8px 14px!important;" +
+                        "font-size:13px!important;font-weight:600!important;" +
+                        "min-width:60px!important;cursor:pointer!important;flex:1!important}" +
+                        ".mchat__presets button:active,.preset button:active{" +
+                        "background:#00E676!important;color:#000!important}" +
                         // Leave room below the board so chat doesn't cover it
                         "main,.round,.round__app{padding-bottom:48vh!important}"
                     )
-                    val chatJs = "javascript:(function(){if(document.getElementById('jp-chat'))return;var s=document.createElement('style');s.id='jp-chat';s.textContent=\"$chatCss\";(document.head||document.documentElement).appendChild(s);" +
-                        // Force a friendly placeholder on whatever input Lichess rendered
-                        "function setPh(){var i=document.querySelector('.mchat__say input, .clinput, .mchat__say textarea');if(i&&!i.getAttribute('data-jp-ph')){i.setAttribute('placeholder','Type a message…');i.setAttribute('data-jp-ph','1');}}" +
+                    val chatJs = "javascript:(function(){var id='jp-chat';var st=document.getElementById(id);if(!st){st=document.createElement('style');st.id=id;(document.head||document.documentElement).appendChild(st);}st.textContent=\"$chatCss\";" +
+                        // Find every chat input Lichess might render and slap a friendly placeholder on it
+                        "function setPh(){var nodes=document.querySelectorAll('.mchat input, .mchat textarea, input.mchat__say, .clinput, .mchat__say input, .mchat form input, .mchat form textarea');nodes.forEach(function(i){if(!i.getAttribute('data-jp-ph')){i.setAttribute('placeholder','Type a message…');i.setAttribute('data-jp-ph','1');}});}" +
                         "setPh();setInterval(setPh,1500);" +
                         "})()"
 
