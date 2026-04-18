@@ -233,9 +233,22 @@ class WebViewAuthenticator(private val context: Context) {
     ): Result<AttendanceData> = suspendCoroutine { continuation ->
         mainHandler.post {
             try {
-                // STEP 1: Set up cookie manager (don't clear — preserve Keycloak session cookies)
+                // STEP 1: Set up cookie manager
+                // If we don't have a valid token, clear cookies to force fresh Keycloak auth code exchange
+                // (needed to capture Bearer token via XHR hook)
                 val cookieManager = CookieManager.getInstance()
-                android.util.Log.d("WebViewAuth", "Starting login (preserving existing cookies)")
+                if (cachedAuthToken == null) {
+                    // Clear cookies synchronously to force fresh Keycloak auth code exchange
+                    val latch = java.util.concurrent.CountDownLatch(1)
+                    cookieManager.removeAllCookies { latch.countDown() }
+                    latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+                    cookieManager.flush()
+                    // Also clear WebView cache/storage to prevent cached session
+                    android.webkit.WebStorage.getInstance().deleteAllData()
+                    android.util.Log.d("WebViewAuth", "Starting login (cleared cookies+storage — need fresh token)")
+                } else {
+                    android.util.Log.d("WebViewAuth", "Starting login (preserving existing cookies)")
+                }
 
                 // STEP 2: Create fresh WebView with no-cache settings
                 val webView = WebView(context).apply {
@@ -579,14 +592,19 @@ class WebViewAuthenticator(private val context: Context) {
                         return false // Let WebView handle all URLs
                     }
 
+                    override fun shouldInterceptRequest(
+                        view: WebView?,
+                        request: WebResourceRequest?
+                    ): android.webkit.WebResourceResponse? {
+                        val url = request?.url?.toString() ?: return null
+                        return null
+                    }
+
                     override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                         super.onPageStarted(view, url, favicon)
-                        // Inject token-capture hooks BEFORE page scripts run
-                        // This overrides XMLHttpRequest prototype methods which are global, not DOM-dependent
-                        view?.evaluateJavascript("""
+                        // Inject token-capture hooks BEFORE page scripts run using loadUrl (works in onPageStarted unlike evaluateJavascript)
+                        val jsHookCode = """
                             (function() {
-                                if (window.__jpEarlyHook) return;
-                                window.__jpEarlyHook = true;
                                 var origOpen = XMLHttpRequest.prototype.open;
                                 var origSend = XMLHttpRequest.prototype.send;
                                 var origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
@@ -599,21 +617,27 @@ class WebViewAuthenticator(private val context: Context) {
                                 };
                                 XMLHttpRequest.prototype.send = function() {
                                     var self = this;
+                                    if (self._jpUrl) {
+                                        console.log('EARLY-HOOK-XHR: ' + self._jpUrl.substring(0, 80));
+                                    }
                                     if (self._jpUrl && self._jpUrl.indexOf('/openid-connect/token') >= 0) {
+                                        console.log('EARLY-HOOK: intercepting token exchange XHR!');
                                         self.addEventListener('load', function() {
+                                            console.log('EARLY-HOOK: token XHR response status=' + self.status);
                                             if (self.status === 200) {
                                                 try {
                                                     var t = JSON.parse(self.responseText);
-                                                    if (t.access_token) { console.log('EARLY-HOOK: token captured'); Android.onAuthToken(t.access_token); }
+                                                    if (t.access_token) { console.log('EARLY-HOOK: TOKEN CAPTURED!'); Android.onAuthToken(t.access_token); }
                                                     if (t.refresh_token) { Android.onRefreshToken(t.refresh_token, t.expires_in || 600); }
-                                                } catch(e) {}
+                                                } catch(e) { console.log('EARLY-HOOK: parse error: ' + e.message); }
                                             }
                                         });
                                     }
                                     return origSend.apply(this, arguments);
                                 };
                             })();
-                        """.trimIndent(), null)
+                        """.trimIndent()
+                        view?.loadUrl("javascript:void(${java.net.URLEncoder.encode(jsHookCode, "UTF-8")})")
                     }
                 }
 
@@ -796,7 +820,10 @@ class WebViewAuthenticator(private val context: Context) {
                     })
                     .catch(function(err) {
                         console.log('Fallback fetch error:', err.message);
-                        Android.onError('Could not fetch attendance: ' + err.message);
+                        // Don't destroy WebView immediately — wait for token capture hooks
+                        setTimeout(function() {
+                            Android.onError('Could not fetch attendance: ' + err.message);
+                        }, 5000);
                     });
                 }, 3000);
             })();

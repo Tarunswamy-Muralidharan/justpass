@@ -175,6 +175,21 @@ class LiteRtViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
+    fun cancelDownload() {
+        ModelDownloadService.cancel(getApplication())
+        // Delete any partial .tmp file
+        val model = _uiState.value.models.firstOrNull { it.id == _uiState.value.selectedModelId }
+        if (model != null) {
+            File(modelDir, "${model.fileName}.tmp").delete()
+        }
+        ModelDownloadService.resetState()
+        _uiState.value = _uiState.value.copy(
+            state = LiteRtState.NOT_DOWNLOADED,
+            downloadProgress = 0, downloadedMb = 0, totalMb = 0,
+            downloadSpeedKbps = 0, downloadEtaSeconds = 0
+        )
+    }
+
     fun selectModel(modelId: String) {
         _uiState.value = _uiState.value.copy(selectedModelId = modelId)
     }

@@ -42,6 +42,7 @@ class ModelDownloadService : Service() {
         private const val EXTRA_URL = "download_url"
         private const val EXTRA_FILE_PATH = "file_path"
         private const val EXTRA_MODEL_NAME = "model_name"
+        private const val ACTION_CANCEL = "cancel_download"
 
         private val _downloadState = MutableStateFlow(DownloadProgress())
         val downloadState: StateFlow<DownloadProgress> = _downloadState.asStateFlow()
@@ -62,6 +63,12 @@ class ModelDownloadService : Service() {
             }
         }
 
+        /** Cancel a running download */
+        fun cancel(context: Context) {
+            _downloadState.value = _downloadState.value.copy(isDownloading = false)
+            context.stopService(Intent(context, ModelDownloadService::class.java))
+        }
+
         /** Reset state after ViewModel has consumed the completion */
         fun resetState() {
             _downloadState.value = DownloadProgress()
@@ -76,6 +83,12 @@ class ModelDownloadService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Handle cancel action from notification
+        if (intent?.action == ACTION_CANCEL) {
+            _downloadState.value = _downloadState.value.copy(isDownloading = false)
+            return START_NOT_STICKY
+        }
+
         val url = intent?.getStringExtra(EXTRA_URL)
         val filePath = intent?.getStringExtra(EXTRA_FILE_PATH)
         val modelName = intent?.getStringExtra(EXTRA_MODEL_NAME) ?: "AI Model"
@@ -222,6 +235,14 @@ class ModelDownloadService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val cancelIntent = Intent(this, ModelDownloadService::class.java).apply {
+            action = ACTION_CANCEL
+        }
+        val cancelPendingIntent = PendingIntent.getService(
+            this, 1, cancelIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Downloading $modelName")
@@ -230,6 +251,7 @@ class ModelDownloadService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", cancelPendingIntent)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }

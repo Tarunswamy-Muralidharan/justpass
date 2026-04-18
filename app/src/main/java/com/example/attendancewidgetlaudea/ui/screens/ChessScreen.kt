@@ -84,16 +84,17 @@ fun ChessScreen(
             ?: activeChallenge?.let { ch ->
                 if (ch.fromId == (uiState.myProfile?.id ?: "")) ch.toName else ch.fromName
             } ?: "Opponent"
-        // Determine my color from the challenge
-        val myColor = activeChallenge?.let { ch ->
-            val fromColor = ch.fromColor.ifBlank { "white" }
-            if (ch.fromId == (uiState.myProfile?.id ?: "")) fromColor
-            else if (fromColor == "white") "black" else "white"
-        }
-        // Parse "winner|text" format from JS (e.g. "white|Checkmate" or "draw|Draw")
-        val parts = gameResult!!.split("|", limit = 2)
+        // Parse "winner|text|myColor" format from JS (e.g. "white|Checkmate|black")
+        val parts = gameResult!!.split("|", limit = 3)
         val winnerColor = parts.getOrNull(0)?.lowercase()?.trim() ?: "unknown"
         val rawResult = (parts.getOrNull(1) ?: gameResult!!).lowercase()
+        // My color: prefer the board orientation detected by JS, fall back to challenge data
+        val myColor = parts.getOrNull(2)?.lowercase()?.trim()?.takeIf { it == "white" || it == "black" }
+            ?: activeChallenge?.let { ch ->
+                val fromColor = ch.fromColor.ifBlank { "white" }
+                if (ch.fromId == (uiState.myProfile?.id ?: "")) fromColor
+                else if (fromColor == "white") "black" else "white"
+            }
         // Extract lichess game ID from the active challenge for replay/analysis
         val resultGameId = activeChallenge?.lichessGameId ?: ""
 
@@ -134,7 +135,7 @@ fun ChessScreen(
                             OutlinedButton(
                                 onClick = {
                                     gameResult = null; activeChallenge = null
-                                    activeGameUrl = "https://lichess.org/$resultGameId"
+                                    activeGameUrl = "https://lichess.org/$resultGameId#last"
                                 },
                                 shape = RoundedCornerShape(10.dp)
                             ) {
@@ -221,7 +222,7 @@ fun ChessScreen(
             history = uiState.matchHistory,
             onAnalyze = { gameId ->
                 if (gameId.isNotBlank()) {
-                    activeGameUrl = "https://lichess.org/$gameId"
+                    activeGameUrl = "https://lichess.org/$gameId#last"
                     viewModel.toggleHistory()
                 }
             },
@@ -969,7 +970,9 @@ private fun LichessGameScreen(
     var gameEnded by remember { mutableStateOf<String?>(null) }
 
     BackHandler {
-        if (gameEnded != null) onClose(gameEnded) else showExitConfirm = true
+        if (!isLiveGame) onClose(null)
+        else if (gameEnded != null) onClose(gameEnded)
+        else showExitConfirm = true
     }
 
     // Auto-close when game ends (live games only)
@@ -1016,7 +1019,7 @@ private fun LichessGameScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
-                onClick = { showExitConfirm = true },
+                onClick = { if (isLiveGame) showExitConfirm = true else onClose(null) },
                 colors = IconButtonDefaults.iconButtonColors(
                     containerColor = Color.Black.copy(alpha = 0.5f)
                 )
@@ -1062,7 +1065,7 @@ private fun LichessGameScreen(
                     val themeJs = "javascript:(function(){if(document.getElementById('jp-theme'))return;var s=document.createElement('style');s.id='jp-theme';s.textContent='$boardCss';(document.head||document.documentElement).appendChild(s);})()"
 
                     // Poll for game-over status in Lichess DOM
-                    // Extracts winner color from Lichess board state for accurate name mapping
+                    // Extracts winner color + my color from board orientation for accurate name mapping
                     val pollGameEnd = """javascript:(function(){
                         if(window._jpPoll)return;window._jpPoll=1;
                         setInterval(function(){
@@ -1088,7 +1091,18 @@ private fun LichessGameScreen(
                                                 else if(rmt.indexOf('½')>=0)winner='draw';
                                             }
                                         }
-                                        JustPass.onGameEnd(winner+'|'+txt);
+                                        var myC='unknown';
+                                        var bd=document.querySelector('cg-board,.cg-board');
+                                        if(bd){
+                                            var bcl=(bd.className||'')+' '+(bd.parentElement?bd.parentElement.className:'');
+                                            if(bcl.indexOf('orientation-black')>=0)myC='black';
+                                            else if(bcl.indexOf('orientation-white')>=0)myC='white';
+                                        }
+                                        if(myC==='unknown'){
+                                            var bw=document.querySelector('.round__app,.board-wrap');
+                                            if(bw){var bwc=bw.className||'';if(bwc.indexOf('black')>=0)myC='black';else myC='white';}
+                                        }
+                                        JustPass.onGameEnd(winner+'|'+txt+'|'+myC);
                                     }
                                 }
                             }
