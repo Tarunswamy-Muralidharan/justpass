@@ -1068,6 +1068,38 @@ private fun LichessGameScreen(
                     val boardCss = boardTheme.css
                     val themeJs = "javascript:(function(){if(document.getElementById('jp-theme'))return;var s=document.createElement('style');s.id='jp-theme';s.textContent='$boardCss';(document.head||document.documentElement).appendChild(s);})()"
 
+                    // Dock Lichess chat at the bottom with app theme colours so it's always
+                    // visible + styled to match the rest of JustPass.
+                    val chatCss = (
+                        ".mchat{position:fixed!important;bottom:0!important;left:0!important;right:0!important;" +
+                        "max-height:48vh!important;display:flex!important;flex-direction:column!important;" +
+                        "background:#1A1A2E!important;color:#FFFFFF!important;" +
+                        "border-top:1px solid rgba(0,230,118,0.25)!important;" +
+                        "box-shadow:0 -4px 14px rgba(0,0,0,0.4)!important;z-index:999!important;font-size:13px!important}" +
+                        ".mchat__tabs{background:#0A0F1A!important;border-bottom:1px solid rgba(255,255,255,0.08)!important;" +
+                        "padding:2px 4px!important;flex-shrink:0!important}" +
+                        ".mchat__tab{color:rgba(255,255,255,0.55)!important;padding:6px 10px!important;" +
+                        "font-weight:500!important;text-transform:none!important;font-size:12px!important}" +
+                        ".mchat__tab.mchat__tab-active,.mchat__tab.active{color:#00E676!important;" +
+                        "border-bottom:2px solid #00E676!important}" +
+                        ".mchat__content{flex:1!important;overflow-y:auto!important;background:#1A1A2E!important;" +
+                        "padding:4px 6px!important}" +
+                        ".mchat__messages{background:transparent!important;color:#FFFFFF!important;padding:0!important}" +
+                        ".mchat__messages li,.mchat li{color:#E0E0E0!important;padding:3px 6px!important;" +
+                        "line-height:1.35!important;border:none!important;background:transparent!important}" +
+                        ".mchat .user-link,.mchat__messages .user-link{color:#4FC3F7!important;font-weight:600!important}" +
+                        ".mchat__say,.mchat__content .mchat__say{background:#0A0F1A!important;" +
+                        "padding:6px!important;flex-shrink:0!important;" +
+                        "border-top:1px solid rgba(255,255,255,0.08)!important}" +
+                        ".mchat__say input,.clinput,.mchat__say textarea{background:#1E2A3A!important;" +
+                        "color:#FFFFFF!important;border:1px solid rgba(255,255,255,0.12)!important;" +
+                        "border-radius:8px!important;padding:8px 10px!important;font-size:13px!important;width:100%!important}" +
+                        ".mchat__say input:focus,.clinput:focus{border-color:#00E676!important;outline:none!important}" +
+                        // Leave room below the board so chat doesn't cover it
+                        "main,.round,.round__app{padding-bottom:48vh!important}"
+                    )
+                    val chatJs = "javascript:(function(){if(document.getElementById('jp-chat'))return;var s=document.createElement('style');s.id='jp-chat';s.textContent='$chatCss';(document.head||document.documentElement).appendChild(s);})()"
+
                     // Poll for game-over status in Lichess DOM
                     // Extracts winner color + my color from board orientation for accurate name mapping
                     val pollGameEnd = """javascript:(function(){
@@ -1128,6 +1160,7 @@ private fun LichessGameScreen(
                             super.onPageFinished(view, pageUrl)
                             view?.evaluateJavascript(hideJs, null)
                             view?.evaluateJavascript(themeJs, null)
+                            view?.evaluateJavascript(chatJs, null)
                             if (isLiveGame) view?.evaluateJavascript(pollGameEnd, null)
                             if (!pageReady) {
                                 pageReady = true
