@@ -74,12 +74,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         Analytics.init(this)
-        com.example.attendancewidgetlaudea.ui.components.AdConfig.init()
-        MobileAds.setRequestConfiguration(
-            RequestConfiguration.Builder()
-                .setTestDeviceIds(listOf("7A84F9727359E7E95B313BCCA0FC5DA8"))
-                .build()
-        )
+        com.example.attendancewidgetlaudea.ui.components.AdConfig.init(this)
         MobileAds.initialize(this) {
             com.example.attendancewidgetlaudea.ui.components.InterstitialAdManager.preload(this)
         }

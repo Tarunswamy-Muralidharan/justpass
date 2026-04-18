@@ -156,10 +156,19 @@ class WebViewAuthenticator(private val context: Context) {
                     prefs.tokenExpiryTime = System.currentTimeMillis() + (tokenResponse.expiresIn * 1000)
                     android.util.Log.d("WebViewAuth", "Direct Keycloak login successful, token expires in ${tokenResponse.expiresIn}s, refresh expires in ${tokenResponse.refreshExpiresIn}s, scope=${tokenResponse.scope}")
                     true
-                } else if (responseCode == 401 || responseCode == 400) {
-                    // Invalid credentials — don't fall back to WebView
+                } else if (responseCode == 401) {
+                    // Definitely invalid credentials — don't fall back to WebView
                     android.util.Log.e("WebViewAuth", "Direct Keycloak login: invalid credentials (HTTP $responseCode)")
                     throw InvalidCredentialsException("Invalid roll number or password")
+                } else if (responseCode == 400) {
+                    // Could be invalid creds OR "direct access grants disabled"
+                    val errBody = try { connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "" } catch (_: Exception) { "" }
+                    android.util.Log.e("WebViewAuth", "Direct Keycloak login HTTP 400: $errBody")
+                    if (errBody.contains("invalid_grant")) {
+                        throw InvalidCredentialsException("Invalid roll number or password")
+                    }
+                    // Other 400 errors (unauthorized_client, etc.) — fall through to WebView
+                    false
                 } else {
                     android.util.Log.e("WebViewAuth", "Direct Keycloak login failed: HTTP $responseCode")
                     false
@@ -307,6 +316,112 @@ class WebViewAuthenticator(private val context: Context) {
                         url?.let { currentUrl ->
                             android.util.Log.d("WebViewAuth", "Page loaded: $currentUrl")
 
+                            // Install token capture hook on EVERY page load
+                            // Captures: XHR headers, XHR token exchange, fetch() token exchange
+                            val jsGlobalHook = """
+                                (function() {
+                                    if (window.__jpTokenHook) return;
+                                    window.__jpTokenHook = true;
+
+                                    // Hook XHR
+                                    var origSend = XMLHttpRequest.prototype.send;
+                                    var origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+                                    var origOpen = XMLHttpRequest.prototype.open;
+                                    XMLHttpRequest.prototype.open = function(m, u) { this._jpUrl = u; return origOpen.apply(this, arguments); };
+                                    XMLHttpRequest.prototype.setRequestHeader = function(n, v) {
+                                        if (n.toLowerCase() === 'authorization' && v && v.length > 20) {
+                                            try { Android.onAuthToken(v.replace('Bearer ', '')); } catch(e) {}
+                                        }
+                                        return origSetHeader.apply(this, arguments);
+                                    };
+                                    XMLHttpRequest.prototype.send = function() {
+                                        var self = this;
+                                        if (self._jpUrl && self._jpUrl.indexOf('/openid-connect/token') >= 0) {
+                                            self.addEventListener('load', function() {
+                                                if (self.status === 200) {
+                                                    try {
+                                                        var t = JSON.parse(self.responseText);
+                                                        if (t.access_token) { console.log('TOKEN-HOOK: XHR captured token'); Android.onAuthToken(t.access_token); }
+                                                        if (t.refresh_token) { Android.onRefreshToken(t.refresh_token, t.expires_in || 600); }
+                                                    } catch(e) {}
+                                                }
+                                            });
+                                        }
+                                        return origSend.apply(this, arguments);
+                                    };
+
+                                    // Hook Keycloak adapter — intercept token when it's set
+                                    // Override Keycloak constructor to patch instances
+                                    try {
+                                        if (window.Keycloak) {
+                                            var OrigKeycloak = window.Keycloak;
+                                            window.Keycloak = function() {
+                                                var kc = new (Function.prototype.bind.apply(OrigKeycloak, [null].concat(Array.prototype.slice.call(arguments))))();
+                                                var origInit = kc.init;
+                                                kc.init = function() {
+                                                    var result = origInit.apply(this, arguments);
+                                                    var self = this;
+                                                    if (result && result.then) {
+                                                        result.then(function(authenticated) {
+                                                            if (authenticated && self.token) {
+                                                                console.log('TOKEN-HOOK: Keycloak init() authenticated');
+                                                                try { Android.onAuthToken(self.token); } catch(e) {}
+                                                                if (self.refreshToken) try { Android.onRefreshToken(self.refreshToken, self.tokenParsed ? (self.tokenParsed.exp - Math.floor(Date.now()/1000)) : 600); } catch(e) {}
+                                                            }
+                                                        });
+                                                        result.success = function(fn) { return result.then(function(auth) { if (auth) fn(auth); return auth; }); };
+                                                    }
+                                                    return result;
+                                                };
+                                                return kc;
+                                            };
+                                        }
+                                    } catch(kcErr) {}
+
+                                    // Also poll: after Keycloak logs 'authenticated', check for token
+                                    var origLog = console.log;
+                                    console.log = function() {
+                                        origLog.apply(console, arguments);
+                                        var msg = arguments[0];
+                                        if (typeof msg === 'string' && msg.indexOf('successfully authenticated') >= 0) {
+                                            // Keycloak just authenticated — scan for token after a tick
+                                            setTimeout(function() {
+                                                for (var key in window) {
+                                                    try {
+                                                        var v = window[key];
+                                                        if (v && typeof v === 'object' && v.token && typeof v.token === 'string' && v.token.length > 100 && v.authenticated === true) {
+                                                            console.log = origLog; // restore
+                                                            origLog('TOKEN-HOOK: Found after auth log, window.' + key);
+                                                            try { Android.onAuthToken(v.token); } catch(e) {}
+                                                            if (v.refreshToken) try { Android.onRefreshToken(v.refreshToken, 600); } catch(e) {}
+                                                            return;
+                                                        }
+                                                    } catch(e) {}
+                                                }
+                                            }, 100);
+                                        }
+                                    };
+
+                                    // Hook fetch() — Keycloak JS may use fetch for token exchange
+                                    var origFetch = window.fetch;
+                                    window.fetch = function(url, opts) {
+                                        var urlStr = typeof url === 'string' ? url : (url && url.url ? url.url : '');
+                                        if (urlStr.indexOf('/openid-connect/token') >= 0) {
+                                            return origFetch.apply(this, arguments).then(function(response) {
+                                                var clone = response.clone();
+                                                clone.json().then(function(t) {
+                                                    if (t.access_token) { console.log('TOKEN-HOOK: fetch() captured token'); Android.onAuthToken(t.access_token); }
+                                                    if (t.refresh_token) { Android.onRefreshToken(t.refresh_token, t.expires_in || 600); }
+                                                }).catch(function(){});
+                                                return response;
+                                            });
+                                        }
+                                        return origFetch.apply(this, arguments);
+                                    };
+                                })();
+                            """.trimIndent()
+                            view?.evaluateJavascript(jsGlobalHook, null)
+
                             when {
                                 // On Keycloak login page - fill credentials
                                 currentUrl.contains(LOGIN_URL_PATTERN) && !loginAttempted -> {
@@ -394,18 +509,64 @@ class WebViewAuthenticator(private val context: Context) {
                                     view?.evaluateJavascript(jsExtract, null)
                                 }
 
-                                // Successfully on SIS page (after login) - intercept XHR and navigate to attendance
+                                // On any SIS page load — install XHR hook to capture tokens
                                 (currentUrl.contains("laudea.psgitech.ac.in/sis") &&
                                 !currentUrl.contains(LOGIN_URL_PATTERN) &&
                                 !currentUrl.contains("/attendance/") &&
-                                !dataFetched && !fetchStarted &&
-                                loginAttempted) -> {
-                                    fetchStarted = true
-                                    android.util.Log.d("WebViewAuth", "On authenticated SIS page, intercepting XHR for attendance")
+                                !dataFetched) -> {
+                                    if (!fetchStarted) {
+                                        fetchStarted = true
+                                        android.util.Log.d("WebViewAuth", "On SIS page, injecting token poller then fetching attendance")
 
-                                    mainHandler.postDelayed({
-                                        interceptXhrAndNavigate(view, rollNumber)
-                                    }, 1000)
+                                        // Inject a JS poller that checks every 200ms for Angular's Auth/keycloak token
+                                        // The keycloak variable is in a closure (not on window), but Angular's
+                                        // injector can access it after bootstrap completes
+                                        val jsPoller = """
+                                            (function() {
+                                                if (window.__jpPoller) return;
+                                                window.__jpPoller = true;
+                                                var attempts = 0;
+                                                var poll = setInterval(function() {
+                                                    attempts++;
+                                                    try {
+                                                        var injector = angular.element(document.body).injector();
+                                                        if (injector) {
+                                                            // The Keycloak instance is used as a constant/value in the app
+                                                            // Try getting it from the rootScope which login.js populates
+                                                            var rootScope = injector.get('${'$'}rootScope');
+                                                            if (rootScope && rootScope.Auth && rootScope.Auth.token) {
+                                                                console.log('TOKEN-POLLER: Found via ${'$'}rootScope.Auth');
+                                                                Android.onAuthToken(rootScope.Auth.token);
+                                                                if (rootScope.Auth.refreshToken) Android.onRefreshToken(rootScope.Auth.refreshToken, 600);
+                                                                clearInterval(poll);
+                                                                return;
+                                                            }
+                                                            // Try http default headers — Angular sets Authorization header globally
+                                                            try {
+                                                                var http = injector.get('${'$'}http');
+                                                                if (http && http.defaults && http.defaults.headers && http.defaults.headers.common) {
+                                                                    var authHeader = http.defaults.headers.common['Authorization'] || http.defaults.headers.common['authorization'];
+                                                                    if (authHeader && authHeader.length > 20) {
+                                                                        console.log('TOKEN-POLLER: Found via ${'$'}http.defaults.headers');
+                                                                        Android.onAuthToken(authHeader.replace('Bearer ', ''));
+                                                                        clearInterval(poll);
+                                                                        return;
+                                                                    }
+                                                                }
+                                                            } catch(e2) {}
+                                                        }
+                                                    } catch(e) {}
+                                                    if (attempts >= 50) { clearInterval(poll); console.log('TOKEN-POLLER: gave up after 50 attempts'); }
+                                                }, 200);
+                                            })();
+                                        """.trimIndent()
+                                        view?.evaluateJavascript(jsPoller, null)
+
+                                        // Proceed with XHR intercept after 3s regardless
+                                        mainHandler.postDelayed({
+                                            interceptXhrAndNavigate(view, rollNumber)
+                                        }, 3000)
+                                    }
                                 }
                             }
                         }
@@ -416,6 +577,43 @@ class WebViewAuthenticator(private val context: Context) {
                         request: WebResourceRequest?
                     ): Boolean {
                         return false // Let WebView handle all URLs
+                    }
+
+                    override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                        super.onPageStarted(view, url, favicon)
+                        // Inject token-capture hooks BEFORE page scripts run
+                        // This overrides XMLHttpRequest prototype methods which are global, not DOM-dependent
+                        view?.evaluateJavascript("""
+                            (function() {
+                                if (window.__jpEarlyHook) return;
+                                window.__jpEarlyHook = true;
+                                var origOpen = XMLHttpRequest.prototype.open;
+                                var origSend = XMLHttpRequest.prototype.send;
+                                var origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+                                XMLHttpRequest.prototype.open = function(m, u) { this._jpUrl = u; return origOpen.apply(this, arguments); };
+                                XMLHttpRequest.prototype.setRequestHeader = function(n, v) {
+                                    if (n.toLowerCase() === 'authorization' && v && v.length > 20) {
+                                        try { Android.onAuthToken(v.replace('Bearer ', '')); } catch(e) {}
+                                    }
+                                    return origSetHeader.apply(this, arguments);
+                                };
+                                XMLHttpRequest.prototype.send = function() {
+                                    var self = this;
+                                    if (self._jpUrl && self._jpUrl.indexOf('/openid-connect/token') >= 0) {
+                                        self.addEventListener('load', function() {
+                                            if (self.status === 200) {
+                                                try {
+                                                    var t = JSON.parse(self.responseText);
+                                                    if (t.access_token) { console.log('EARLY-HOOK: token captured'); Android.onAuthToken(t.access_token); }
+                                                    if (t.refresh_token) { Android.onRefreshToken(t.refresh_token, t.expires_in || 600); }
+                                                } catch(e) {}
+                                            }
+                                        });
+                                    }
+                                    return origSend.apply(this, arguments);
+                                };
+                            })();
+                        """.trimIndent(), null)
                     }
                 }
 
@@ -768,7 +966,14 @@ class WebViewAuthenticator(private val context: Context) {
                     cachedAuthToken = null
                     null
                 } else if (responseCode in 500..599) {
-                    Result.failure(ServerDownException(responseCode))
+                    val errBody = try { connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "" } catch (_: Exception) { "" }
+                    if (errBody.contains("401") || errBody.contains("unauthorized", ignoreCase = true)) {
+                        android.util.Log.d("WebViewAuth", "Fast refresh 500 is proxied 401 — token expired")
+                        cachedAuthToken = null
+                        null
+                    } else {
+                        Result.failure(ServerDownException(responseCode))
+                    }
                 } else {
                     Result.failure(Exception("HTTP $responseCode"))
                 }
@@ -810,6 +1015,14 @@ class WebViewAuthenticator(private val context: Context) {
                 } else if (responseCode == 401) {
                     cachedAuthToken = null
                     null
+                } else if (responseCode in 500..599) {
+                    val errBody500 = try { connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "" } catch (_: Exception) { "" }
+                    if (errBody500.contains("401") || errBody500.contains("unauthorized", ignoreCase = true)) {
+                        cachedAuthToken = null
+                        null
+                    } else {
+                        Result.failure(ServerDownException(responseCode))
+                    }
                 } else {
                     Result.failure(Exception("HTTP $responseCode"))
                 }
@@ -848,6 +1061,14 @@ class WebViewAuthenticator(private val context: Context) {
                 } else if (responseCode == 401) {
                     cachedAuthToken = null
                     null
+                } else if (responseCode in 500..599) {
+                    val errBody500 = try { connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "" } catch (_: Exception) { "" }
+                    if (errBody500.contains("401") || errBody500.contains("unauthorized", ignoreCase = true)) {
+                        cachedAuthToken = null
+                        null
+                    } else {
+                        Result.failure(ServerDownException(responseCode))
+                    }
                 } else {
                     Result.failure(Exception("HTTP $responseCode"))
                 }
@@ -887,6 +1108,14 @@ class WebViewAuthenticator(private val context: Context) {
                 } else if (responseCode == 401) {
                     cachedAuthToken = null
                     null
+                } else if (responseCode in 500..599) {
+                    val errBody500 = try { connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "" } catch (_: Exception) { "" }
+                    if (errBody500.contains("401") || errBody500.contains("unauthorized", ignoreCase = true)) {
+                        cachedAuthToken = null
+                        null
+                    } else {
+                        Result.failure(ServerDownException(responseCode))
+                    }
                 } else {
                     Result.failure(Exception("HTTP $responseCode"))
                 }
@@ -925,6 +1154,14 @@ class WebViewAuthenticator(private val context: Context) {
                 } else if (responseCode == 401) {
                     cachedAuthToken = null
                     null
+                } else if (responseCode in 500..599) {
+                    val errBody500 = try { connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "" } catch (_: Exception) { "" }
+                    if (errBody500.contains("401") || errBody500.contains("unauthorized", ignoreCase = true)) {
+                        cachedAuthToken = null
+                        null
+                    } else {
+                        Result.failure(ServerDownException(responseCode))
+                    }
                 } else {
                     Result.failure(Exception("HTTP $responseCode"))
                 }
@@ -962,6 +1199,14 @@ class WebViewAuthenticator(private val context: Context) {
                 } else if (responseCode == 401) {
                     cachedAuthToken = null
                     null
+                } else if (responseCode in 500..599) {
+                    val errBody500 = try { connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "" } catch (_: Exception) { "" }
+                    if (errBody500.contains("401") || errBody500.contains("unauthorized", ignoreCase = true)) {
+                        cachedAuthToken = null
+                        null
+                    } else {
+                        Result.failure(ServerDownException(responseCode))
+                    }
                 } else {
                     Result.failure(Exception("HTTP $responseCode"))
                 }
@@ -1001,6 +1246,8 @@ class WebViewAuthenticator(private val context: Context) {
                 } else if (responseCode == 401) {
                     cachedAuthToken = null
                     null
+                } else if (responseCode in 500..599) {
+                    kotlin.Result.failure(ServerDownException(responseCode))
                 } else {
                     kotlin.Result.failure(Exception("HTTP $responseCode"))
                 }
@@ -1037,6 +1284,8 @@ class WebViewAuthenticator(private val context: Context) {
                 } else if (responseCode == 401) {
                     cachedAuthToken = null
                     null
+                } else if (responseCode in 500..599) {
+                    kotlin.Result.failure(ServerDownException(responseCode))
                 } else {
                     kotlin.Result.failure(Exception("HTTP $responseCode"))
                 }
@@ -1183,13 +1432,58 @@ class WebViewAuthenticator(private val context: Context) {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
 
-                        // If redirected to login, session expired
+                        // Install token hook on every page (including Keycloak login)
+                        val jsHook = """
+                            (function() {
+                                if (window.__jpTokenHook) return;
+                                window.__jpTokenHook = true;
+                                var origSend = XMLHttpRequest.prototype.send;
+                                var origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+                                var origOpen = XMLHttpRequest.prototype.open;
+                                XMLHttpRequest.prototype.open = function(m, u) { this._jpUrl = u; return origOpen.apply(this, arguments); };
+                                XMLHttpRequest.prototype.setRequestHeader = function(n, v) {
+                                    if (n.toLowerCase() === 'authorization' && v && v.length > 20) {
+                                        try { Android.onAuthToken(v.replace('Bearer ', '')); } catch(e) {}
+                                    }
+                                    return origSetHeader.apply(this, arguments);
+                                };
+                                XMLHttpRequest.prototype.send = function() {
+                                    var self = this;
+                                    if (self._jpUrl && self._jpUrl.indexOf('/openid-connect/token') >= 0) {
+                                        self.addEventListener('load', function() {
+                                            if (self.status === 200) {
+                                                try {
+                                                    var t = JSON.parse(self.responseText);
+                                                    if (t.access_token) { console.log('CA-TOKEN-HOOK: Captured token'); Android.onAuthToken(t.access_token); }
+                                                    if (t.refresh_token) { Android.onRefreshToken(t.refresh_token, t.expires_in || 600); }
+                                                } catch(e) {}
+                                            }
+                                        });
+                                    }
+                                    return origSend.apply(this, arguments);
+                                };
+                            })();
+                        """.trimIndent()
+                        view?.evaluateJavascript(jsHook, null)
+
+                        // If redirected to Keycloak login, fill credentials automatically
                         if (url?.contains(LOGIN_URL_PATTERN) == true) {
-                            if (!dataFetched) {
-                                dataFetched = true
-                                mainHandler.post { webView.destroy() }
-                                continuation.resume(Result.failure(Exception("Session expired, please login again")))
-                            }
+                            android.util.Log.d("WebViewAuth", "CA marks: redirected to login, filling credentials")
+                            val escapedRoll = rollNumber.replace("\\", "\\\\").replace("'", "\\'")
+                            val escapedPass = (com.example.attendancewidgetlaudea.data.local.SecurePreferences.getInstance(context).password ?: "").replace("\\", "\\\\").replace("'", "\\'")
+                            val jsLogin = """
+                                (function() {
+                                    var u = document.getElementById('username');
+                                    var p = document.getElementById('password');
+                                    if (u && p) {
+                                        u.value = '$escapedRoll';
+                                        p.value = '$escapedPass';
+                                        var form = document.getElementById('kc-form-login');
+                                        if (form) form.submit();
+                                    }
+                                })();
+                            """.trimIndent()
+                            view?.evaluateJavascript(jsLogin, null)
                             return
                         }
 
@@ -1228,7 +1522,7 @@ class WebViewAuthenticator(private val context: Context) {
                         webView.destroy()
                         continuation.resume(Result.failure(Exception("Timeout")))
                     }
-                }, 20000)
+                }, 45000)
 
             } catch (e: Exception) {
                 continuation.resume(Result.failure(e))
@@ -1485,6 +1779,8 @@ class WebViewAuthenticator(private val context: Context) {
                 } else if (responseCode == 401) {
                     cachedMeetingsToken = null
                     null
+                } else if (responseCode in 500..599) {
+                    kotlin.Result.failure(ServerDownException(responseCode))
                 } else {
                     kotlin.Result.failure(Exception("HTTP $responseCode"))
                 }
@@ -1523,6 +1819,8 @@ class WebViewAuthenticator(private val context: Context) {
                 } else if (responseCode == 401) {
                     cachedMeetingsToken = null
                     null
+                } else if (responseCode in 500..599) {
+                    kotlin.Result.failure(ServerDownException(responseCode))
                 } else {
                     kotlin.Result.failure(Exception("HTTP $responseCode"))
                 }
@@ -1573,6 +1871,8 @@ class WebViewAuthenticator(private val context: Context) {
                 } else if (responseCode == 401) {
                     cachedMeetingsToken = null
                     null
+                } else if (responseCode in 500..599) {
+                    kotlin.Result.failure(ServerDownException(responseCode))
                 } else {
                     kotlin.Result.failure(Exception("HTTP $responseCode"))
                 }
