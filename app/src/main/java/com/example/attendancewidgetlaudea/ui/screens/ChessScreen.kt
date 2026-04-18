@@ -1088,17 +1088,33 @@ private fun LichessGameScreen(
                         ".mchat__messages li,.mchat li{color:#E0E0E0!important;padding:3px 6px!important;" +
                         "line-height:1.35!important;border:none!important;background:transparent!important}" +
                         ".mchat .user-link,.mchat__messages .user-link{color:#4FC3F7!important;font-weight:600!important}" +
+                        // Input row — make it obviously a text field
                         ".mchat__say,.mchat__content .mchat__say{background:#0A0F1A!important;" +
-                        "padding:6px!important;flex-shrink:0!important;" +
-                        "border-top:1px solid rgba(255,255,255,0.08)!important}" +
+                        "padding:8px 10px!important;flex-shrink:0!important;" +
+                        "border-top:1px solid rgba(255,255,255,0.08)!important;" +
+                        "display:flex!important;align-items:center!important;gap:8px!important;position:relative!important}" +
+                        // Speech-bubble icon in front of the input to signal "type here"
+                        ".mchat__say::before{content:'\\1F4AC'!important;font-size:18px!important;opacity:0.7!important;flex-shrink:0!important}" +
                         ".mchat__say input,.clinput,.mchat__say textarea{background:#1E2A3A!important;" +
-                        "color:#FFFFFF!important;border:1px solid rgba(255,255,255,0.12)!important;" +
-                        "border-radius:8px!important;padding:8px 10px!important;font-size:13px!important;width:100%!important}" +
-                        ".mchat__say input:focus,.clinput:focus{border-color:#00E676!important;outline:none!important}" +
+                        "color:#FFFFFF!important;border:1.5px solid rgba(0,230,118,0.35)!important;" +
+                        "border-radius:22px!important;padding:10px 16px!important;font-size:14px!important;" +
+                        "width:100%!important;flex:1!important;box-sizing:border-box!important;" +
+                        "caret-color:#00E676!important;transition:border-color 0.15s,box-shadow 0.15s!important;" +
+                        "box-shadow:0 0 0 0 rgba(0,230,118,0)!important}" +
+                        ".mchat__say input::placeholder,.clinput::placeholder,.mchat__say textarea::placeholder{" +
+                        "color:rgba(255,255,255,0.45)!important;font-style:italic!important}" +
+                        ".mchat__say input:focus,.clinput:focus,.mchat__say textarea:focus{" +
+                        "border-color:#00E676!important;outline:none!important;" +
+                        "box-shadow:0 0 0 3px rgba(0,230,118,0.15)!important;" +
+                        "background:#22304A!important}" +
                         // Leave room below the board so chat doesn't cover it
                         "main,.round,.round__app{padding-bottom:48vh!important}"
                     )
-                    val chatJs = "javascript:(function(){if(document.getElementById('jp-chat'))return;var s=document.createElement('style');s.id='jp-chat';s.textContent='$chatCss';(document.head||document.documentElement).appendChild(s);})()"
+                    val chatJs = "javascript:(function(){if(document.getElementById('jp-chat'))return;var s=document.createElement('style');s.id='jp-chat';s.textContent=\"$chatCss\";(document.head||document.documentElement).appendChild(s);" +
+                        // Force a friendly placeholder on whatever input Lichess rendered
+                        "function setPh(){var i=document.querySelector('.mchat__say input, .clinput, .mchat__say textarea');if(i&&!i.getAttribute('data-jp-ph')){i.setAttribute('placeholder','Type a message…');i.setAttribute('data-jp-ph','1');}}" +
+                        "setPh();setInterval(setPh,1500);" +
+                        "})()"
 
                     // Poll for game-over status in Lichess DOM
                     // Extracts winner color + my color from board orientation for accurate name mapping
