@@ -1047,7 +1047,9 @@ private fun LichessGameScreen(
                     setBackgroundColor(android.graphics.Color.parseColor("#1A1A2E"))
 
                     var pageReady = false
-                    val hideJs = "javascript:(function(){if(document.getElementById('jp'))return;var s=document.createElement('style');s.id='jp';s.textContent='header,.header,#top,.site-title,.site-buttons,.mchat,footer,.fbt,.topnav,.clinput,.dasher,.hamburger,.signin,.signup,nav,.chat__members,.lobby__table,.lobby__app,.round__top__table,.game__meta__infos{display:none!important}#top,.top,div[role=banner],div[class*=site-buttons],div[class*=topnav]{display:none!important}body,.round__app,.round{padding-top:0!important;margin-top:0!important}';(document.head||document.documentElement).appendChild(s);})()"
+                    // Hide Lichess chrome (header/footer/nav) but KEEP .mchat and .clinput
+                    // so the in-game chat + input stays usable inside the WebView.
+                    val hideJs = "javascript:(function(){if(document.getElementById('jp'))return;var s=document.createElement('style');s.id='jp';s.textContent='header,.header,#top,.site-title,.site-buttons,footer,.fbt,.topnav,.dasher,.hamburger,.signin,.signup,nav,.lobby__table,.lobby__app,.round__top__table,.game__meta__infos{display:none!important}#top,.top,div[role=banner],div[class*=site-buttons],div[class*=topnav]{display:none!important}body,.round__app,.round{padding-top:0!important;margin-top:0!important}';(document.head||document.documentElement).appendChild(s);})()"
                     val boardCss = boardTheme.css
                     val themeJs = "javascript:(function(){if(document.getElementById('jp-theme'))return;var s=document.createElement('style');s.id='jp-theme';s.textContent='$boardCss';(document.head||document.documentElement).appendChild(s);})()"
 
