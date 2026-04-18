@@ -9,7 +9,11 @@ import com.google.firebase.remoteconfig.remoteConfigSettings
 object AdConfig {
     private const val KEY_ADS_ENABLED = "ads_enabled"
 
-    private val _adsEnabled = mutableStateOf(true) // ON by default, Remote Config can kill
+    // OFF by default. Flip the `ads_enabled` parameter in Firebase Remote Config
+    // (Firebase Console → Engage → Remote Config) to true when you're ready to
+    // monetise. Existing installs pick the new value up on their next launch
+    // after the 1h fetch cache expires.
+    private val _adsEnabled = mutableStateOf(false)
     val adsEnabled: Boolean get() = _adsEnabled.value
 
     fun init(context: android.content.Context) {
@@ -29,7 +33,7 @@ object AdConfig {
                 minimumFetchIntervalInSeconds = 3600 // 1 hour cache
             }
         )
-        remoteConfig.setDefaultsAsync(mapOf(KEY_ADS_ENABLED to true))
+        remoteConfig.setDefaultsAsync(mapOf(KEY_ADS_ENABLED to false))
         remoteConfig.fetchAndActivate().addOnCompleteListener {
             _adsEnabled.value = remoteConfig.getBoolean(KEY_ADS_ENABLED)
         }
