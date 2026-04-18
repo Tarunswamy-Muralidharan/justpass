@@ -15,6 +15,8 @@ import com.example.attendancewidgetlaudea.data.model.TimetableResponse
 import com.example.attendancewidgetlaudea.data.webview.InvalidCredentialsException
 import com.example.attendancewidgetlaudea.data.webview.WebViewAuthenticator
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 sealed class Result<out T> {
@@ -55,6 +57,10 @@ class AttendanceRepository(private val context: Context) {
         } catch (_: Exception) {}
     }
 
+    // Serializes login flows — prevents 4 parallel fetch() calls from triggering 4 parallel WebView logins
+    private val loginMutex = Mutex()
+    @Volatile private var lastTokenCaptureTimeMs: Long = 0L
+
     private fun persistPresentDays(data: List<AbsentDay>) {
         cachedPresentDays = data
         try { securePrefs.cachedPresentDaysJson = gson.toJson(data) } catch (_: Exception) {}
@@ -65,7 +71,21 @@ class AttendanceRepository(private val context: Context) {
         try { securePrefs.cachedAbsentDaysJson = gson.toJson(data) } catch (_: Exception) {}
     }
 
-    suspend fun login(rollNumber: String, password: String): Result<AttendanceData> {
+    suspend fun login(rollNumber: String, password: String): Result<AttendanceData> = loginMutex.withLock {
+        // If another caller just captured a token, skip the full login — token is fresh enough
+        val now = System.currentTimeMillis()
+        if (webViewAuthenticator.cachedAuthToken != null && (now - lastTokenCaptureTimeMs) < 30_000L) {
+            android.util.Log.d("AttendanceRepo", "Skipping duplicate login — token refreshed ${(now - lastTokenCaptureTimeMs) / 1000}s ago")
+            return@withLock Result.Success(securePrefs.getAttendanceData())
+        }
+        val result = loginInternal(rollNumber, password)
+        if (result is Result.Success) {
+            lastTokenCaptureTimeMs = System.currentTimeMillis()
+        }
+        result
+    }
+
+    private suspend fun loginInternal(rollNumber: String, password: String): Result<AttendanceData> {
         // FAST PATH: Direct Keycloak login + direct API fetch (no WebView needed)
         try {
             android.util.Log.d("AttendanceRepo", "Validating credentials for: $rollNumber")
