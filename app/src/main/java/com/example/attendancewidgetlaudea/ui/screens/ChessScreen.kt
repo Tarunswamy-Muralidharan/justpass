@@ -254,23 +254,35 @@ fun ChessScreen(
     // Track the last opponent for "Play Again"
 
     if (activeGameUrl != null) {
-        LichessGameScreen(
-            url = activeGameUrl!!,
-            boardTheme = uiState.boardTheme,
-            onClose = { result ->
-                // User exited before the game ended — signal the opponent
-                if (result == null) viewModel.notifyGameLeft()
-                activeGameUrl = null
-                viewModel.checkPendingResults()
-                // If game ended with a result, show result dialog
-                if (result != null) {
-                    gameResult = result
+        // Render the game in a Dialog so it gets its own Window — fully covers
+        // the app bottom nav + ad banner. The dialog window is sized to fill
+        // the whole screen, and imePadding() inside the game screen handles
+        // the keyboard.
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = {},
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            )
+        ) {
+            LichessGameScreen(
+                url = activeGameUrl!!,
+                boardTheme = uiState.boardTheme,
+                onClose = { result ->
+                    if (result == null) viewModel.notifyGameLeft()
+                    activeGameUrl = null
+                    viewModel.checkPendingResults()
+                    if (result != null) {
+                        gameResult = result
+                    }
+                },
+                onOpenExternal = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(activeGameUrl)))
                 }
-            },
-            onOpenExternal = {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(activeGameUrl)))
-            }
-        )
+            )
+        }
         return
     }
 
@@ -997,7 +1009,7 @@ private fun LichessGameScreen(
 
     var isLoading by remember { mutableStateOf(true) }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A2E))) {
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A2E)).imePadding()) {
         // Top bar — close + open in browser
         Row(
             modifier = Modifier
