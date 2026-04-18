@@ -41,6 +41,7 @@ data class ChessUiState(
     val pendingChallenge: ChessChallenge? = null,
     val sentChallengeId: String? = null,
     val sentChallengeName: String? = null,
+    val sentChallengeToId: String? = null,
     val acceptedChallenge: ChessChallenge? = null,
     val showNameSetup: Boolean = false,
     val showLeaderboard: Boolean = false,
@@ -115,13 +116,27 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             incomingListener = repo.listenIncomingChallenges(myPlayerId) { challenge ->
-                // Check if there's already a pending challenge we sent to this person
-                // (mutual challenge prevention — first one wins)
-                if (_uiState.value.sentChallengeId != null && _uiState.value.sentChallengeName == challenge.fromName) {
-                    // We already challenged them — ignore their challenge, ours was first
-                    // Actually we need to check timestamps: whoever sent first wins
+                // Mutual challenge: if we already sent a challenge to this same person,
+                // auto-accept theirs (both want to play!) and cancel ours
+                if (_uiState.value.sentChallengeId != null && challenge.fromId == _uiState.value.sentChallengeToId) {
+                    val ourChallengeId = _uiState.value.sentChallengeId!!
+                    senderCountdownJob?.cancel()
+                    sentChallengeListener?.remove()
+                    _uiState.value = _uiState.value.copy(
+                        sentChallengeId = null, sentChallengeName = null,
+                        sentChallengeToId = null, senderCountdown = null
+                    )
+                    // Cancel our outgoing challenge and accept theirs
                     viewModelScope.launch {
-                        repo.declineChallenge(challenge.id) // auto-decline theirs
+                        repo.declineChallenge(ourChallengeId)
+                        val urls = repo.acceptChallenge(challenge.id, challenge.timeControl.toString())
+                        if (urls != null) {
+                            _uiState.value = _uiState.value.copy(
+                                acceptedChallenge = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first),
+                                pendingChallenge = null,
+                                challengeCountdown = null
+                            )
+                        }
                     }
                     return@listenIncomingChallenges
                 }
@@ -337,7 +352,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             if (challengeId != null) {
                 _uiState.value = _uiState.value.copy(
                     sentChallengeId = challengeId, sentChallengeName = player.displayName,
-                    senderCountdown = 15
+                    sentChallengeToId = player.id, senderCountdown = 15
                 )
                 sentChallengeListener = repo.listenChallengeStatus(challengeId) { challenge ->
                     when (challenge.status) {
@@ -345,17 +360,24 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                             senderCountdownJob?.cancel()
                             _uiState.value = _uiState.value.copy(
                                 acceptedChallenge = challenge, sentChallengeId = null,
-                                sentChallengeName = null, senderCountdown = null
+                                sentChallengeName = null, sentChallengeToId = null, senderCountdown = null
                             )
                         }
                         "declined" -> {
                             senderCountdownJob?.cancel()
                             _uiState.value = _uiState.value.copy(
                                 sentChallengeId = null, sentChallengeName = null,
-                                senderCountdown = null,
+                                sentChallengeToId = null, senderCountdown = null,
                                 errorMessage = "${challenge.toName} declined"
                             )
                             sentChallengeListener?.remove()
+                            // Auto-clear declined message after 3 seconds
+                            viewModelScope.launch {
+                                delay(3000L)
+                                if (_uiState.value.errorMessage == "${challenge.toName} declined") {
+                                    _uiState.value = _uiState.value.copy(errorMessage = null)
+                                }
+                            }
                         }
                     }
                 }
@@ -374,11 +396,18 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                     if (_uiState.value.sentChallengeId == challengeId) {
                         _uiState.value = _uiState.value.copy(
                             sentChallengeId = null, sentChallengeName = null,
-                            senderCountdown = null,
+                            sentChallengeToId = null, senderCountdown = null,
                             errorMessage = "${player.displayName} didn't respond"
                         )
                         sentChallengeListener?.remove()
                         repo.declineChallenge(challengeId)
+                        // Auto-clear after 3 seconds
+                        viewModelScope.launch {
+                            delay(3000L)
+                            if (_uiState.value.errorMessage == "${player.displayName} didn't respond") {
+                                _uiState.value = _uiState.value.copy(errorMessage = null)
+                            }
+                        }
                     }
                 }
             }
@@ -423,7 +452,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         sentChallengeListener?.remove()
         senderCountdownJob?.cancel()
         _uiState.value = _uiState.value.copy(
-            sentChallengeId = null, sentChallengeName = null, senderCountdown = null
+            sentChallengeId = null, sentChallengeName = null, sentChallengeToId = null, senderCountdown = null
         )
         // Clean up in Firestore
         if (challengeId != null) {

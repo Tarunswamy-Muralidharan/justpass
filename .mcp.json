@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "maestro": {
+      "command": "C:\\Users\\tmswa\\maestro-install\\maestro\\bin\\maestro.bat",
+      "args": ["mcp"],
+      "env": {
+        "MAESTRO_CLI_NO_ANALYTICS": "1",
+        "MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED": "true",
+        "ANDROID_HOME": "C:\\Users\\tmswa\\AppData\\Local\\Android\\Sdk"
+      }
+    },
+    "appium": {
+      "command": "npx",
+      "args": ["appium-mcp"],
+      "env": {
+        "ANDROID_HOME": "C:\\Users\\tmswa\\AppData\\Local\\Android\\Sdk"
+      }
+    }
+  }
+}

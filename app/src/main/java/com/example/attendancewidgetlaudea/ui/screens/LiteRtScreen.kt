@@ -263,6 +263,10 @@ fun LiteRtScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+                            Spacer(Modifier.height(16.dp))
+                            TextButton(onClick = { viewModel.cancelDownload() }) {
+                                Text("Cancel", fontSize = 13.sp, color = Color(0xFFFF5252))
+                            }
                         }
                     }
                 }

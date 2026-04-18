@@ -16,9 +16,35 @@
       "Bash(ls RELEASE:*)",
       "Bash(gh:*)",
       "Bash(winget install:*)",
-      "Bash(export:*)"
+      "Bash(export:*)",
+      "Bash(cd:*)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Android/Android Studio/jbr\" ./gradlew assembleDebug)",
+      "Bash(/c/Users/tmswa/AppData/Local/Android/Sdk/platform-tools/adb.exe -s ZN4224BRCG install -r \"C:/Users/tmswa/AndroidStudioProjects/AttendanceWidgetLaudea/app/build/outputs/apk/debug/app-debug.apk\")",
+      "Bash(/c/Users/tmswa/AppData/Local/Android/Sdk/platform-tools/adb.exe -s ZN4224BRCG shell am force-stop com.example.attendancewidgetlaudea)",
+      "Bash(/c/Users/tmswa/AppData/Local/Android/Sdk/platform-tools/adb.exe -s ZN4224BRCG shell am start -n com.example.attendancewidgetlaudea/.MainActivity)",
+      "Bash(/c/Users/tmswa/AppData/Local/Android/Sdk/platform-tools/adb.exe:*)",
+      "Bash(/c/Users/tmswa/AppData/Local/Android/Sdk/platform-tools/adb.exe devices:*)",
+      "Bash(npm install:*)",
+      "Bash(claude mcp:*)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Android/Android Studio/jbr\" ./gradlew assembleRelease)",
+      "Bash(curl *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Token OK, expires in', d.get\\('expires_in','?'\\), 'seconds'\\)\")",
+      "Bash(firebase --version)",
+      "Bash(firebase projects:list)",
+      "Bash(firebase firestore:set *)",
+      "Bash(firebase firestore *)",
+      "Bash(firebase login:ci --no-localhost)",
+      "Bash(grep \"1//\")",
+      "Bash(gcloud auth *)",
+      "Bash(node *)",
+      "Bash(firebase --project attendacewidget firestore:rules:get)",
+      "Bash(python3 -c ' *)",
+      "Bash(git add *)"
     ],
     "deny": [],
     "ask": []
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true
   }
 }
