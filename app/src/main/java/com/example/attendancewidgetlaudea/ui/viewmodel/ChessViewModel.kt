@@ -483,11 +483,33 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     fun watchForOpponentLeave(challengeId: String) {
         gameLeftListener?.remove()
         val myId = _uiState.value.myProfile?.id
+        var claimed = false
         gameLeftListener = repo.listenGameLeft(challengeId) { leaverId, leaverName ->
             if (myId != null && leaverId == myId) return@listenGameLeft
+            if (claimed) return@listenGameLeft
+            claimed = true
             _uiState.value = _uiState.value.copy(
-                errorMessage = "$leaverName left the game"
+                errorMessage = "$leaverName left the game — you win!"
             )
+            // Credit the win immediately — don't wait for Lichess flag fall.
+            val accepted = _uiState.value.acceptedChallenge
+            if (myId != null && accepted != null) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    val ok = repo.recordAbandonmentResult(challengeId, winnerId = myId, loserId = leaverId)
+                    if (ok) {
+                        val lichessId = accepted.lichessGameId
+                        val existingIds = _uiState.value.matchHistory.map { it.lichessGameId }.toSet()
+                        if (lichessId.isNotBlank() && lichessId !in existingIds) {
+                            saveMatchToHistory(leaverName, "win", lichessId)
+                        }
+                        // Pull fresh profile so the dashboard stats update
+                        val fresh = repo.getOrCreateProfile(myId, accepted.toName, "")
+                        if (fresh != null) {
+                            _uiState.value = _uiState.value.copy(myProfile = fresh)
+                        }
+                    }
+                }
+            }
         }
     }
 
