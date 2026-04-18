@@ -341,24 +341,9 @@ fun ChessScreen(
                     }
                 }
             }
-            // Board Theme
-            GlassListCard(
-                modifier = Modifier.weight(1f).clickable { viewModel.toggleThemePicker() },
-                shape = RoundedCornerShape(12.dp),
-                tintColor = Color(uiState.boardTheme.preview).copy(alpha = 0.12f)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(Icons.Default.Palette, null, Modifier.size(18.dp),
-                        tint = Color(uiState.boardTheme.preview))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Theme", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        color = Color.White, maxLines = 1)
-                }
-            }
+            // Board Theme tile removed — Lichess' styling can't be reliably themed from
+            // the WebView, so the setting did nothing. Users can pick a board on
+            // lichess.org preferences if they want one.
             // History
             GlassListCard(
                 modifier = Modifier.weight(1f).clickable { viewModel.toggleHistory() },
