@@ -115,7 +115,19 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.value = _uiState.value.copy(onlinePlayers = players)
             }
 
-            incomingListener = repo.listenIncomingChallenges(myPlayerId) { challenge ->
+            incomingListener = repo.listenIncomingChallenges(
+                myId = myPlayerId,
+                onChallengeRemoved = { removedId ->
+                    // Challenger cancelled on their side (e.g. from the PWA) — clear the prompt
+                    if (_uiState.value.pendingChallenge?.id == removedId) {
+                        countdownJob?.cancel()
+                        _uiState.value = _uiState.value.copy(
+                            pendingChallenge = null,
+                            challengeCountdown = null
+                        )
+                    }
+                },
+                onChallenge = { challenge ->
                 // Mutual challenge: if we already sent a challenge to this same person,
                 // auto-accept theirs (both want to play!) and cancel ours
                 if (_uiState.value.sentChallengeId != null && challenge.fromId == _uiState.value.sentChallengeToId) {
@@ -171,7 +183,8 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
                 }
-            }
+                }
+            )
 
             friendReqListener = repo.listenFriendRequests(myPlayerId) { requests ->
                 _uiState.value = _uiState.value.copy(friendRequests = requests)

@@ -365,30 +365,42 @@ class ChessRepository {
         }
     }
 
-    fun listenIncomingChallenges(myId: String, onChallenge: (ChessChallenge) -> Unit): ListenerRegistration {
+    fun listenIncomingChallenges(
+        myId: String,
+        onChallenge: (ChessChallenge) -> Unit,
+        onChallengeRemoved: (challengeId: String) -> Unit = {}
+    ): ListenerRegistration {
         return challengeCollection
             .whereEqualTo("toId", myId)
             .whereEqualTo("status", "pending")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) return@addSnapshotListener
                 snapshot?.documentChanges?.forEach { change ->
-                    if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
-                        val doc = change.document
-                        onChallenge(ChessChallenge(
-                            id = doc.id,
-                            fromId = doc.getString("fromId") ?: "",
-                            fromName = doc.getString("fromName") ?: "",
-                            toId = doc.getString("toId") ?: "",
-                            toName = doc.getString("toName") ?: "",
-                            status = "pending",
-                            gameUrl = doc.getString("gameUrl") ?: "",
-                            opponentUrl = doc.getString("opponentUrl") ?: "",
-                            lichessGameId = doc.getString("lichessGameId") ?: "",
-                            fromColor = doc.getString("fromColor") ?: "white",
-                            resultChecked = doc.getBoolean("resultChecked") ?: false,
-                            timeControl = doc.get("timeControl")?.toString() ?: "rapid_10",
-                            timestamp = doc.getLong("timestamp") ?: 0L
-                        ))
+                    when (change.type) {
+                        com.google.firebase.firestore.DocumentChange.Type.ADDED -> {
+                            val doc = change.document
+                            onChallenge(ChessChallenge(
+                                id = doc.id,
+                                fromId = doc.getString("fromId") ?: "",
+                                fromName = doc.getString("fromName") ?: "",
+                                toId = doc.getString("toId") ?: "",
+                                toName = doc.getString("toName") ?: "",
+                                status = "pending",
+                                gameUrl = doc.getString("gameUrl") ?: "",
+                                opponentUrl = doc.getString("opponentUrl") ?: "",
+                                lichessGameId = doc.getString("lichessGameId") ?: "",
+                                fromColor = doc.getString("fromColor") ?: "white",
+                                resultChecked = doc.getBoolean("resultChecked") ?: false,
+                                timeControl = doc.get("timeControl")?.toString() ?: "rapid_10",
+                                timestamp = doc.getLong("timestamp") ?: 0L
+                            ))
+                        }
+                        // Sender cancelled / modified the challenge elsewhere — drop
+                        // it so the receiver's UI doesn't stay stuck on the prompt.
+                        com.google.firebase.firestore.DocumentChange.Type.REMOVED,
+                        com.google.firebase.firestore.DocumentChange.Type.MODIFIED -> {
+                            onChallengeRemoved(change.document.id)
+                        }
                     }
                 }
             }
