@@ -1,0 +1,32 @@
+{
+  "parameters": {
+    "ads_enabled": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "valueType": "BOOLEAN",
+      "description": "Master switch for AdMob banners and interstitials. Keep false until the app is live on Google Play and the AdMob app is linked to the Play listing (required for certified traffic + higher eCPM)."
+    },
+    "sideload_block_enabled": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "valueType": "BOOLEAN",
+      "description": "When true, non-Play-Store installs of v2.2+ are hard-blocked on launch with a dialog linking to the Play listing. Flip to true after the app is live on Play + AdMob is linked, to migrate sideloaded users to certified traffic. Debug builds always bypass."
+    },
+    "maintenance_enabled": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "valueType": "BOOLEAN",
+      "description": "Flip to true to broadcast a blocking announcement dialog to every user on launch (outages, SIS down, API issues, emergency notice, etc). Pair with `maintenance_message` for the body text."
+    },
+    "maintenance_message": {
+      "defaultValue": {
+        "value": ""
+      },
+      "valueType": "STRING",
+      "description": "Body text shown in the maintenance dialog when `maintenance_enabled` is true. Empty defaults to a generic maintenance message. Edit freely to re-use as a generic announcement channel."
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # Keep data classes for Gson serialization/deserialization
--keep class com.example.attendancewidgetlaudea.data.model.** { *; }
--keep class com.example.attendancewidgetlaudea.data.update.** { *; }
+-keep class com.justpass.app.data.model.** { *; }
+-keep class com.justpass.app.data.update.** { *; }
 
 # Keep ALL classes/methods annotated with @JavascriptInterface (anonymous objects in WebView)
 -keepclassmembers class * {
@@ -9,8 +9,8 @@
 -keepattributes JavascriptInterface
 
 # Keep WebViewAuthenticator and all its inner/anonymous classes
--keep class com.example.attendancewidgetlaudea.data.webview.WebViewAuthenticator { *; }
--keep class com.example.attendancewidgetlaudea.data.webview.WebViewAuthenticator$** { *; }
+-keep class com.justpass.app.data.webview.WebViewAuthenticator { *; }
+-keep class com.justpass.app.data.webview.WebViewAuthenticator$** { *; }
 
 # General Android Compose rules (usually handled by R8, but good to be safe)
 -keepattributes *Annotation*

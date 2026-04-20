@@ -1,0 +1,70 @@
+package com.justpass.app.ui.viewmodel
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.justpass.app.data.model.CourseMarks
+import com.justpass.app.data.repository.AttendanceRepository
+import com.justpass.app.data.repository.Result
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+data class CAMarksUiState(
+    val isLoading: Boolean = false,
+    val courseMarksList: List<CourseMarks> = emptyList(),
+    val errorMessage: String? = null,
+    val selectedCourse: CourseMarks? = null
+)
+
+class CAMarksViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val repository = AttendanceRepository.getInstance(application)
+
+    private val _uiState = MutableStateFlow(CAMarksUiState())
+    val uiState: StateFlow<CAMarksUiState> = _uiState.asStateFlow()
+
+    init {
+        // Load from cache instantly, then refresh in background
+        repository.cachedCourseMarks?.let {
+            _uiState.value = _uiState.value.copy(courseMarksList = it)
+        }
+        fetchCAMarks()
+    }
+
+    fun fetchCAMarks() {
+        viewModelScope.launch {
+            // Only show loading if no cached data
+            if (_uiState.value.courseMarksList.isEmpty()) {
+                _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            }
+
+            when (val result = repository.fetchCAMarks()) {
+                is Result.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        courseMarksList = result.data,
+                        errorMessage = null
+                    )
+                }
+                is Result.Error -> {
+                    // Only show error if we have no cached data to show
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = if (_uiState.value.courseMarksList.isEmpty()) result.message else null
+                    )
+                }
+                is Result.Loading -> {}
+            }
+        }
+    }
+
+    fun selectCourse(course: CourseMarks?) {
+        _uiState.value = _uiState.value.copy(selectedCourse = course)
+    }
+
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+}

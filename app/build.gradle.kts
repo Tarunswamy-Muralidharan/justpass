@@ -9,15 +9,15 @@ plugins {
 }
 
 android {
-    namespace = "com.example.attendancewidgetlaudea"
+    namespace = "com.justpass.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.attendancewidgetlaudea"
+        applicationId = "com.justpass.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "2.1"
+        versionCode = 7
+        versionName = "2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

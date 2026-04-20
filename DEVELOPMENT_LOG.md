@@ -5538,6 +5538,212 @@ T+30s: all data cached
 
 ---
 
+### Challenge 123: Play Store Prep — Package Rename + Sideload Hard-Blocker
+
+**Date:** 2026-04-20
+
+**Context:**
+Google Play developer account verification was submitted (the $25 one-time fee), verification is in progress. Before uploading the first build, we had to clean up two legacies from the earliest prototype days: the application ID was still `com.example.attendancewidgetlaudea`, which is both an unprofessional identifier for a public Play Store listing and one that doesn't match the rebrand to **JustPass**. Play Store's applicationId is a permanent, immutable identity once the first build is published, so this window before first upload was the only safe time to change it.
+
+**Problem (part 1 — package rename):**
+Every file under `app/src/main/java/com/example/attendancewidgetlaudea/` (and the androidTest equivalent) had to move to `com/justpass/app/`, with every `package`/`import` line rewritten. The namespace and applicationId in `app/build.gradle.kts`, the widget `ACTION_REFRESH` intent filter in `AndroidManifest.xml`, and the `-keep` rules in `proguard-rules.pro` all referenced the old package. Missing any one of them causes runtime `ClassNotFoundException`, widget dead drops, or silently obfuscated Gson models that crash in release builds.
+
+**Problem (part 2 — the Play App Signing gotcha):**
+The friend group currently has the old v2.0.1 APK installed, signed with the developer's upload keystore. Google Play App Signing is default-on since 2021 — Google holds a separate *app signing key* distinct from the upload key. That means APKs distributed outside Play Store (signed with the upload key) will not seamlessly upgrade to APKs from the Play Store (signed by Google's key) because Android's package manager rejects signature mismatches. Users will have to uninstall before installing from Play. Additionally, because applicationId changed, old `com.example.attendancewidgetlaudea` installs are a different app entirely in Android's eyes — the Play Store build will appear alongside it, not as an update. Two separate migration problems stacked on top of each other.
+
+**Problem (part 3 — sideloaded post-launch = revenue leak):**
+Once Play is live and AdMob is linked to the Play listing, AdMob classifies traffic as *certified* (higher fill rate, higher eCPM) vs *uncertified* (sideloaded, ~30–50% lower payout). Friends who stay on sideloaded v2.2 would still earn revenue, just less than they could. We wanted a way to nudge sideloaded users to reinstall from Play on a toggle we control.
+
+**Solution:**
+1. **Package rename.** All 78 Kotlin files moved `com.example.attendancewidgetlaudea/` → `com.justpass.app/` (main source, androidTest, internal imports). `app/build.gradle.kts` namespace + applicationId both changed. `proguard-rules.pro` `-keep class com.justpass.app.data.model.**` rules updated so Gson-serialized models survive R8. `AndroidManifest.xml` widget action renamed to `com.justpass.app.ACTION_REFRESH`. `versionCode` 6 → 7, `versionName` 2.1 → 2.2 (first Play-bound build). Verified with `./gradlew assembleDebug` — 1m 23s, clean compile.
+2. **Hard sideload gate.** Added a new `sideload_block_enabled` Firebase Remote Config boolean (default `false`). On every app launch, `MainActivity` reads `PackageManager.getInstallSourceInfo(packageName).installingPackageName` (API 30+) or the deprecated `getInstallerPackageName` fallback, and checks if the flag is on. If the installer is anything other than `com.android.vending` (Play Store), it shows a non-dismissible `AlertDialog` pinned via `DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)` — title "Install from Play Store", body explaining the rebrand, single confirm button that launches `market://details?id=com.justpass.app` (falling back to the https Play URL if the Play Store app isn't installed). Debug builds bypass the gate via `ApplicationInfo.FLAG_DEBUGGABLE` so local development isn't affected.
+3. **Migration messaging plan (human side):** After Play goes live, flip `sideload_block_enabled = true` in Firebase to force-migrate sideloaded v2.2 users via the in-app dialog. The older v2.0.1 (`com.example.attendancewidgetlaudea`) installs still exist as a separate legacy app — they won't get this block unless a final kill-switch build is shipped under the old package name, which is deferred until demand warrants.
+
+**Why the blocker is safe even if Play is unavailable:**
+The gate only trips when the Remote Config flag is explicitly on AND the installer isn't Play. Flipping the flag is a deliberate operator action. If Play Store is ever pulled and the flag is still on, users are locked out — so the playbook is "flip the flag off before unpublishing". Documented in the commit message.
+
+**Files Modified:**
+- `app/build.gradle.kts` — `namespace` + `applicationId` + versionCode/name bump
+- `app/src/main/AndroidManifest.xml` — widget `ACTION_REFRESH` action name
+- `app/proguard-rules.pro` — all `-keep class` rules repathed
+- `app/src/main/java/com/justpass/app/MainActivity.kt` — added sideload-gate Remote Config fetch + blocking `AlertDialog`; debug-build bypass via `FLAG_DEBUGGABLE`
+- 78 Kotlin files renamed from `com/example/attendancewidgetlaudea/` to `com/justpass/app/`
+
+**Lessons:**
+- **Rename before first Play upload, never after.** ApplicationId is immutable on Play; this is the one-shot window.
+- **Package rename ≠ upgrade.** Android treats different applicationIds as totally different apps, even with identical code. Plan user-communication ahead of the switch.
+- **Install source is the cheapest certified-traffic filter** you can wire — no backend, no FCM, just a string comparison against `com.android.vending`. Keep `ads_enabled = false` until you can pair the flag flip with AdMob's Play-linking.
+
+---
+
+### Challenge 124: Remote Config as an Operator Broadcast Channel
+
+**Date:** 2026-04-20
+
+**Context:**
+With the sideload blocker already using Firebase Remote Config, it became obvious the app needed a second, general-purpose *broadcast channel* — something the operator (me) could flip on at any time to interrupt every running app with an announcement. Concrete need: the SIS backend goes down for maintenance regularly, and users who open the app during a window just see cryptic "failed to fetch" errors. A proactive "SIS is under maintenance, try again later" notice would cut confused support pings by a lot. The same channel could reuse for any one-off announcement (feature launches, incident reports, manual migration asks).
+
+**Problem:**
+Firebase already offers three mechanisms that nearly fit this use case, each with tradeoffs:
+- **Firebase Cloud Messaging (FCM):** Shows as a system notification, great for reach, but dismissible and outside the app. Not a hard stop.
+- **Firebase In-App Messaging (FIAM):** Rich in-app banners with a visual editor and no code-per-message, but requires adding the `firebase-inappmessaging-display` dependency (~200KB APK bloat) for what's essentially one dialog.
+- **Remote Config:** Already wired, zero extra SDK weight, and a value change propagates via `fetchAndActivate` on the next app open.
+
+We picked Remote Config and built the dialog inline in `MainActivity` using the same pattern as `forceUpdate` and the sideload gate.
+
+**Solution:**
+Two new Remote Config parameters:
+- `maintenance_enabled` (boolean, default `false`) — master switch for the dialog.
+- `maintenance_message` (string, default `""`) — body text, editable live. Blank falls back to "The app is currently under maintenance. Please try again later." so the operator can fire the dialog from mobile without typing a message in a rush.
+
+`MainActivity` reads both on launch. If `enabled` is true, an un-dismissable `AlertDialog` renders (same styling as the other gates — dark `Color(0xFF1E2A3A)` surface, `androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)`, green primary action). The one difference: the action button is **"Check Again"**, which bumps a `maintenanceRetryKey` state and reruns the `LaunchedEffect`. On retry the fetch uses `remoteConfig.fetch(0L)` (bypassing the 1-hour cache) so the user can force a re-check once the operator flips the flag off — otherwise they'd be stuck for up to 60 minutes for cache expiry.
+
+**Firebase CLI wiring (new):**
+Historically Remote Config changes were done manually in the Firebase Console. To script deploys, added `firebase.json` pointing to `remoteconfig.template.json` and `.firebaserc` pointing at the `attendacewidget` project. The template became the single source of truth for all four flags with descriptions, and `firebase deploy --only remoteconfig --force` pushes the full state atomically. This means config diffs now live in git alongside code changes — no more "what was that flag again?" moments.
+
+**Current flag inventory after this change:**
+- `ads_enabled` — AdMob master switch (default `false`).
+- `sideload_block_enabled` — hard-blocks non-Play installs (default `false`).
+- `maintenance_enabled` — maintenance/announcement dialog master (default `false`).
+- `maintenance_message` — body text for the dialog (default `""`).
+- Plus the existing `min_version_code` for forced updates.
+
+**Files Modified:**
+- `app/src/main/java/com/justpass/app/MainActivity.kt` — maintenance `LaunchedEffect(maintenanceRetryKey)`, retry button, uncached refetch path
+- `firebase.json` (new) — Remote Config template location
+- `.firebaserc` (new) — default project `attendacewidget`
+- `remoteconfig.template.json` (new) — all four parameters with descriptions
+
+**Lessons:**
+- **The "Check Again" button matters.** Without it, turning maintenance off leaves users stuck in the dialog until `minimumFetchIntervalInSeconds` (1 hour) expires. A free retry that does a fresh fetch is worth the 5 lines of code.
+- **CLI-deployable Remote Config beats clicking through the Console.** Especially once you have more than two flags; the template file becomes self-documenting via `description` fields and diffs cleanly in PRs.
+
+---
+
+### Challenge 125: AdMob App Already Exists, But Can't Link Package Yet
+
+**Date:** 2026-04-20
+
+**Context:**
+With the sideload gate and ads toggle both wired, the final piece was to make sure AdMob would actually serve real ads once `ads_enabled` flipped on. Two risks going in: (a) the AdMob App ID in `AndroidManifest.xml` might have been registered against the old package name `com.example.attendancewidgetlaudea`, in which case ads wouldn't load for `com.justpass.app` at all, and (b) old legacy sideloaded installs were still pinging AdMob with ad requests, cluttering the "Apps to confirm" queue.
+
+**Problem:**
+Logging into AdMob Console revealed a more specific picture:
+- A **"JustPass" Android app** already existed, with App ID `ca-app-pub-4936276228225156~9342992412` — **identical to the value in `AndroidManifest.xml`**. Two ad units (banner + interstitial) were already active under this app.
+- The **Package name column was literally empty (`—`)**. Status "Requires review / Limited ad serving / Add store to lift limit". This is AdMob's way of saying "we don't know which Android app this is yet, so we'll throttle ads until you link it to a store listing".
+- The **"Apps to confirm"** tab had one entry: package `com.example.attendancewidgetlaudea`, 3 ad requests in the last 7 days (test-device traffic while `ads_enabled` was briefly flipped during dev). AdMob wanted us to either claim it ("Finish setup") or disown it ("Not my app").
+
+**Solution (what was possible now):**
+1. **Disowned the old package.** Clicked "Not my app" on `com.example.attendancewidgetlaudea` in Apps to confirm → checked the acknowledgment checkbox ("ads will stop showing") → confirmed with "Block ads". The legacy package is now blocked from serving ads forever. Since the old APK is being phased out anyway and `ads_enabled` is currently `false` for it, this costs zero actual revenue.
+2. **Confirmed the AdMob App ID matches.** The manifest already points to `~9342992412`, so no manifest change needed. The two existing ad units (`/4108831863` banner, `/3208220090` interstitial) carry over unchanged.
+
+**Solution (what's blocked on Play):**
+The JustPass AdMob app's package name is set through **App settings → App store details → Add**, which opens a modal titled "Add stores to app". The modal's Google Play section requires either a package name lookup against live Play Store data or a Play Store URL — both of which require the app to actually exist on Play. Since Play verification is still in progress, this step can't complete today. **Until Play is live, AdMob will serve ads as "uncertified" traffic** (real money, but lower fill rate and lower eCPM vs certified).
+
+**Post-Play playbook (documented here so it's not forgotten):**
+1. Wait for Google Play verification + first listing to go live.
+2. In AdMob → Apps → JustPass → App settings → App store details → Add → Google Play → search "JustPass" or paste the Play URL → confirm package name is `com.justpass.app`.
+3. Approval status will flip from "Requires review" to "Ready" within a few hours.
+4. Flip `sideload_block_enabled = true` in Firebase to push sideloaded users to reinstall from Play.
+5. Flip `ads_enabled = true` in Firebase. Ads start serving to everyone at full certified eCPM.
+6. Tell friends to not tap ads out of curiosity — AdMob bans on invalid-traffic patterns are permanent.
+
+**Confirmed on-file values (unchanged, no code edits needed):**
+- `APPLICATION_ID` meta-data in `AndroidManifest.xml`: `ca-app-pub-4936276228225156~9342992412`
+- Banner unit in `AdBanner.kt`: `ca-app-pub-4936276228225156/4108831863`
+- Interstitial unit in `InterstitialAdManager.kt`: `ca-app-pub-4936276228225156/3208220090`
+- None of these are test units (test publisher ID is `3940256099942544`, ours is `4936276228225156`).
+
+**Files Modified:**
+- None. This was entirely an AdMob Console operation. The app's code is already aligned.
+
+**Lessons:**
+- **AdMob apps can pre-exist with matching IDs** but still serve in limited mode until they're linked to a store listing. The "Requires review" status is specifically about the package-store link, not about code review or app review.
+- **Sideloaded traffic is real revenue.** "Uncertified" does not mean "unpaid" — fill and eCPM are just worse. No reason to gate `ads_enabled` on Play going live *except* that the UX gain from certified traffic is large enough to wait.
+- **"Not my app" is irreversible.** Only click it when you're sure you'll never want to monetize that package again. In our case the legacy applicationId is being retired, so it's the right call.
+
+---
+
+### Challenge 126: Chess Challenge-Send Latency + Countdown Desync
+
+**Date:** 2026-04-20
+
+**Context:**
+After Challenges 123–125 landed the Play Store prep and Remote Config broadcast channel, live cross-platform testing between the Android app and the PWA surfaced two quality-of-UX bugs in the chess challenge flow that had been dismissed as "Firestore being slow" for weeks:
+
+1. **Noticeable delay between tapping a time control and seeing the "waiting for opponent" UI.** User taps "Bullet" in the picker. Dialog closes. Then several hundred milliseconds of empty state before the waiting-ring appears. Feels broken.
+2. **Sender and receiver countdown timers visibly out of sync.** On a 15-second challenge window, the opponent's ring often hit zero ~1 second before the sender's did. Small but noticeable when both players can see each other's screens.
+
+**Root Causes:**
+
+1. **ChessViewModel.sendChallenge was all-await, no optimistic state.** The flow was:
+   ```
+   repo.checkExistingChallenge(...)       // round trip 1
+   repo.sendChallenge(...)                // round trip 2
+   _uiState.value = _uiState.value.copy(  // UI finally updates
+       sentChallengeId = id, senderCountdown = 15, ...
+   )
+   ```
+   The picker in `ChessScreen.kt` closes synchronously on tap (`challengeTarget = null` fires immediately after the viewModel call returns from launch), but the `sentChallengeName` / `senderCountdown` state fields that drive the "waiting" UI stay blank until both Firestore round-trips complete. The dialog closes, user stares at a blank spot for 400–800 ms, then the waiting ring appears. Classic async-without-optimism bug.
+
+2. **Sender countdown started with `timeLeft = 15` hardcoded, ignoring the elapsed time already consumed by the Firestore write.** The sender countdown job was:
+   ```kotlin
+   var timeLeft = 15
+   while (timeLeft > 0 && isActive) {
+       delay(1000L); timeLeft--
+       _uiState.value = _uiState.value.copy(senderCountdown = timeLeft)
+   }
+   ```
+   Meanwhile the receiver derives `remaining` from `challenge.timestamp` (set on the server when the write landed). If the Firestore write took 700 ms, the receiver sees `15 - 0.7s = 14.3s` on first render, but the sender starts from a hard 15. The sender ring now leads the receiver ring by ~0.7 s. Compounding: `delay(1000L)` on Android is approximate, not strict — it can drift 20–50 ms per tick. Over 15 seconds that's another ~300 ms of drift. Final visible gap: ~1 second.
+
+**Solutions:**
+
+1. **Optimistic sender state.** Moved the state-set to *before* the coroutine launch:
+   ```kotlin
+   _uiState.value = _uiState.value.copy(
+       sentChallengeId = "pending", sentChallengeName = player.displayName,
+       sentChallengeToId = player.id, senderCountdown = 15
+   )
+   ```
+   The placeholder ID `"pending"` gets overwritten with the real server-assigned challenge ID once `repo.sendChallenge` returns. The `if (sentChallengeId == challengeId)` guards inside the countdown loop and listener callback still work correctly — they only match the real ID, so they're correctly inert during the "pending" window. If the Firestore write fails, the new `else` branch at the end of `sendChallenge` clears the optimistic state and surfaces a "Couldn't send challenge — please try again" error instead of leaving the user stuck in a fake waiting UI.
+
+2. **Anchor the sender countdown to an absolute start timestamp.** Captured `val startMs = System.currentTimeMillis()` right before the coroutine launches (i.e., at roughly the same moment the server will stamp the challenge doc's `timestamp` field). Rewrote the countdown loop to recompute `timeLeft` from `startMs` every tick instead of decrementing a local variable:
+   ```kotlin
+   while (isActive) {
+       val elapsedSec = ((System.currentTimeMillis() - startMs) / 1000).toInt()
+       val timeLeft = (15 - elapsedSec).coerceAtLeast(0)
+       if (_uiState.value.sentChallengeId == challengeId) {
+           _uiState.value = _uiState.value.copy(senderCountdown = timeLeft)
+       }
+       if (timeLeft <= 0) break
+       delay(1000L)
+   }
+   ```
+   Now even if `delay(1000L)` oversleeps, the next tick reads the actual elapsed time and renders the correct countdown. Receiver's countdown (already anchored to `challenge.timestamp`) stays within ~100 ms of sender's. Cross-device sync is effectively visually indistinguishable.
+
+**Companion fix on PWA (same day):** The PWA had the mirror of Bug 1 in a much worse form — a double-tap race that created orphan challenge docs when the sender got impatient and tapped the time control multiple times. Detailed in the PWA's `DEVELOPMENT_LOG.md` Challenge 19. Android's `ChessScreen.kt` doesn't have the same race because the picker's `onSelect` unconditionally sets `challengeTarget = null` *synchronously* right after dispatching to the view model, so subsequent taps can't re-open the dialog. Android's UI dispatch model makes the race physically impossible in a way the PWA's didn't.
+
+**Known Issue — Deferred (not yet reproducible):**
+The developer reported a one-off glitch where the Android chess lobby header briefly showed a friend's display name ("Poornesh") and Poornesh's rating, instead of the signed-in user's own profile. Clearing the app's data resolved it. No repro on demand. Possible causes to chase when it recurs:
+- **`SecurePreferences.displayName` stale from a previous login** during dual-app testing (`project_dual_app_testing.md`). If `logout()` doesn't clear the display-name key, the next sign-in initially reads the previous account's name until the profile listener overwrites.
+- **`getPlayerId(rollNumber)` collision or reuse** if a rollNumber mid-bootstrap was briefly empty or wrong, the hash could match Poornesh's player doc. Listener attached to the wrong doc.
+- **Race between login and the profile `onSnapshot` first fire.** If the UI renders `uiState.myProfile` before the listener's initial callback, and the previous session's `myProfile` wasn't cleared on logout, it'd paint the old name for one frame. Adding `myProfile = null` to the logout path would cover this.
+
+Adding instrumentation when it next happens: log `myPlayerId` + `myProfile?.id` at chess-lobby entry, plus every profile-listener callback with the doc ID. First reproduction should pinpoint the cause.
+
+**Files Modified:**
+- `app/src/main/java/com/justpass/app/ui/viewmodel/ChessViewModel.kt` — optimistic sender state pre-launch, `startMs` anchor before coroutine, recomputed-every-tick countdown loop, error-branch clearing when `repo.sendChallenge` returns null, decline-error path clears optimistic state.
+
+**Build:** `./gradlew assembleDebug` clean in 12s.
+
+**Lessons:**
+- **Every Firestore-backed UI action needs an optimistic front.** The pattern "launch coroutine → await write → update state" is a guaranteed lag bug. "Update state → launch coroutine → confirm-or-revert" is the right shape for any toggle, send, or submit action.
+- **Sync timers across devices by using a server-stamped timestamp**, not local counters. Each client derives `timeLeft = max(0, deadline - now())` where `deadline = challenge.timestamp + windowMs`. Drift vanishes.
+- **Placeholder IDs are fine for optimistic state as long as downstream guards key off the real ID.** The sender countdown loop's `if (sentChallengeId == challengeId)` guard already gates against the "pending" placeholder naturally — no extra null-checks needed.
+- **When a bug doesn't reproduce, log generously before fixing.** The Poornesh-name glitch could be state bleed, cache staleness, or a view-model lifecycle bug, and guessing wrong wastes more time than adding instrumentation and waiting for the next occurrence.
+
+---
+
 ### Current Token Flow (Post-Challenge 119-120)
 
 ```
