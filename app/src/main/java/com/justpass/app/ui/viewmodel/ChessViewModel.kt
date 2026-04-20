@@ -198,9 +198,14 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             loadMatchHistory()
 
             heartbeatJob = viewModelScope.launch {
+                // Heartbeat-then-delay so a freshly mounted ViewModel writes its
+                // first timestamp immediately instead of waiting a full 90s —
+                // defensive against the (rare) case where goOnline's initial
+                // write lands but state churn causes a re-mount before the loop
+                // would otherwise fire.
                 while (isActive) {
-                    delay(90_000L) // heartbeat every 90s (stale threshold is 150s) — longer interval cuts Firestore read/write cost ~3.6× vs 25s at the UX cost of ~2min before a closed-tab user disappears
                     repo.heartbeat(myPlayerId)
+                    delay(90_000L) // heartbeat every 90s (stale threshold is 150s)
                 }
             }
 
@@ -350,13 +355,17 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendChallenge(player: OnlinePlayer, timeControl: String = "rapid_10") {
         val profile = _uiState.value.myProfile ?: return
-        if (_uiState.value.sentChallengeId != null) return
+        // Guard against double-send: either a real outgoing challenge exists,
+        // OR the optimistic "waiting" UI is already showing.
+        if (_uiState.value.sentChallengeId != null || _uiState.value.sentChallengeName != null) return
 
-        // Optimistic UI: flip "waiting for opponent" state immediately so the user
-        // sees feedback even while the Firestore write is in flight. The real
-        // challengeId arrives a moment later and replaces the placeholder.
+        // Optimistic UI — show "Waiting for opponent…" instantly. IMPORTANT: keep
+        // sentChallengeId null during this window. The incoming-challenge listener
+        // at line ~134 uses `sentChallengeId != null` to detect a mutual-challenge
+        // scenario; if we set a placeholder ID here, a stale pending inbound doc
+        // would auto-accept and open Lichess before the real opponent responded.
         _uiState.value = _uiState.value.copy(
-            sentChallengeId = "pending", sentChallengeName = player.displayName,
+            sentChallengeName = player.displayName,
             sentChallengeToId = player.id, senderCountdown = 15
         )
 
