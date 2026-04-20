@@ -199,7 +199,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
             heartbeatJob = viewModelScope.launch {
                 while (isActive) {
-                    delay(25_000L) // heartbeat every 25s (stale threshold is 45s)
+                    delay(90_000L) // heartbeat every 90s (stale threshold is 150s) — longer interval cuts Firestore read/write cost ~3.6× vs 25s at the UX cost of ~2min before a closed-tab user disappears
                     repo.heartbeat(myPlayerId)
                 }
             }
