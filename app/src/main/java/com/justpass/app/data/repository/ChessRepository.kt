@@ -26,7 +26,7 @@ class ChessRepository {
 
     companion object {
         private const val TAG = "ChessRepo"
-        private const val ONLINE_TIMEOUT_MS = 45_000L // 45 seconds stale (heartbeat is 25s)
+        private const val ONLINE_TIMEOUT_MS = 150_000L // 150 seconds stale (heartbeat is 90s) — ~1.6× buffer lets one missed tick slide without falsely hiding the user
     }
 
     // ─── Identity ───────────────────────────────────────────────────────────
