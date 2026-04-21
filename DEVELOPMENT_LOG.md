@@ -5764,3 +5764,91 @@ Tier 4: Full WebView login (browser session + cookies)
         → Always works but slowest (~15-30s)
         → Used as login fallback when all tiers fail
 ```
+
+---
+
+### Challenge 127: v2.2.1 — Exam Seat Finder Regression + Play Store Closed Testing Submission
+
+**Date:** 2026-04-21
+
+**Context:**
+Two stacked problems converged on the same day. A friend group test of the v2.2 release surfaced a regression: the **Exam Seat Finder** (Apache POI Excel parsing, introduced in v2.1) silently returned empty results in release builds but worked fine in debug. Separately, the Play Store closed testing submission for the Friends alpha track was pending — blocked on store-listing assets, a foreground-service declaration, and a tester list. The v2.2 AAB that had already been uploaded to Play as a draft contained the broken exam-seat feature, so the fix, a version bump, and a fresh upload all had to happen before the submission could go out.
+
+**Problem (part 1 — R8 stripping Apache POI reflection):**
+Apache POI (for XLSX parsing) reaches into XmlBeans schema classes via reflection at runtime to instantiate parser objects. Under R8/ProGuard with `isMinifyEnabled = true`, the schema classes and their no-arg constructors look dead-code to the shrinker because no Kotlin/Java source references them directly — they're reached only through reflection lookups driven by strings in POI's runtime. R8 removed them, so in release builds `Sheet sheet = workbook.getSheetAt(0)` returned a handle whose type-system backing objects had been stripped. POI swallowed the `ClassNotFoundException` internally and returned zero rows. User saw "0 exams found" with no error. Debug builds ship unshrunken, so the bug was invisible during dev and manifested only post-release.
+
+**Problem (part 2 — Analytics carrying PII to Play Data Safety):**
+The pre-rebrand `Analytics.setUser()` was writing `setUserId(rollNumber)` + user properties `roll_number`, `display_name` to Firebase. Closed testing review would likely flag this as undisclosed PII collection under Play's stricter 2024 data-safety rules. Safest move was to strip identity data from analytics entirely and re-declare on the Data Safety form as anonymous event telemetry only.
+
+**Problem (part 3 — chess-lobby visual polish regressions):**
+Two small-but-visible UX bugs in v2.2 were flagged: (a) after tapping "Send challenge" in the chess lobby, there was a 400–800 ms dead zone before the countdown ring appeared because the optimistic state keyed off `sentChallengeId` (set *after* the Firestore write) instead of `sentChallengeName` (known up-front). (b) The dashboard's slot-machine stat-card digits snapped-shrink-fade at the integer tick boundary because the prev-digit and next-digit alpha/scale interpolation formulas didn't agree on the `frac=1` → `frac=0` handoff state.
+
+**Problem (part 4 — the Play Console store-listing rabbit hole):**
+Play Console's UI flagged "7-inch tablet screenshots *" and "10-inch tablet screenshots *" as required fields on the default store listing, and trying to save without them produced an error banner. But the actual validator message on save attempt read "**Upload at least 2 phone OR tablet screenshots**" — the "OR" was buried and the asterisks on the tablet sections misled for a full diagnostic hour. No clean opt-out exists in Play Console's formFactors/release-types settings for a phone-only app; the only reliable path is to upload phone screenshots and leave tablet slots empty.
+
+**Problem (part 5 — the foreground-service declaration blind spot):**
+The Release Review page showed the error "You must let us know whether your app uses any Foreground Service permissions" with a "Go to declaration" button. The declaration page loaded empty — heading "Your app uses the following undeclared foreground service permissions" followed by a blank list and a disabled Save button. First theory was "the AAB has no FGS, the review error is stale." Wrong. The page loads contextually: navigating to it from the Review page's deep link (which carries `?releaseId=X&trackId=Y`) populates the form, but direct `/app-content/foreground-services` does not. Once navigated correctly, the form revealed the app's `FOREGROUND_SERVICE_DATA_SYNC` permission (from the on-device LLM model downloader) and required a category selection + a YouTube video demonstrating the permission's use.
+
+**Problem (part 6 — Chrome automation's Angular-event gap):**
+Driving Play Console via the Claude-in-Chrome extension, the `form_input` helper that sets a checkbox's `checked` state doesn't fire Angular's Material `(change)` event. So checking the "Other" checkbox via `form_input` updated the visual DOM state but left the conditional `*ngIf` for the video-link field in its hidden/disabled branch. Value typed into the hidden textarea was never read by the form, Save button stayed greyed, lost ~20 minutes guessing why. Switching to a real `computer.left_click` on the checkbox's coordinates fired the proper gesture pipeline and unlocked the video field.
+
+**Solutions:**
+
+1. **ProGuard rules for Apache POI reflection.** Added 32 lines of `-keep` directives to `app/proguard-rules.pro`:
+   ```proguard
+   -keep class org.apache.commons.compress.** { *; }
+   -keepclassmembers class org.apache.commons.compress.** { <init>(...); }
+   -keep class org.etsi.** { *; }
+   -keep class com.microsoft.schemas.** { *; }
+   -keep class schemaorg_apache_xmlbeans.** { *; }
+   -keepclassmembers class ** extends org.apache.xmlbeans.impl.schema.SchemaTypeSystemImpl { <init>(); }
+   -keepclassmembers class ** implements org.apache.xmlbeans.XmlObject { <init>(); }
+   -keep class org.apache.logging.log4j.** { *; }
+   -keepclassmembers class org.apache.logging.log4j.** { <init>(...); }
+   ```
+   The critical bit is the `<init>(...)` pattern, not just `{ *; }` — R8 can keep a class but still strip the constructors it thinks are unreferenced. POI uses `Class.forName(...).newInstance()` so the no-arg ctor must be explicitly kept.
+
+2. **Strip PII from Analytics.** Emptied the bodies of `setUser()` and `clearUser()` in `Analytics.kt`; `logLogin()` now sends only `method=keycloak` with no identifying properties. The app still logs event names (screen views, feature taps) but the "who" is gone. Matches the "does not collect personal information" declaration on the Play Data Safety form.
+
+3. **Chess-lobby optimistic render fix.** In `ChessScreen.kt`, switched the countdown UI's visibility predicate from `sentChallengeId != null` to `sentChallengeName != null`. The name is set *before* the Firestore write launches, so the countdown ring appears within one frame of the tap. The `sentChallengeId` guard is still used downstream inside the countdown loop (to ignore replies meant for a different challenge), so the mutual-challenge auto-accept check is unaffected.
+
+4. **Slot-machine digit interpolation fix.** Rewrote the prev/next digit alpha + scale formulas in `DashboardScreen.kt::SlotMachineNumber` so the state at `frac=1` of one digit exactly matches the state at `frac=0` of the adjacent digit. Old: `prev alpha = 0.3f * (1f - frac)`, new: `1f - frac`. Old: `prev scale = 0.85f`, new: `1f - 0.15f * frac`. Removes the visible snap-correction at integer ticks.
+
+5. **Version bump + AAB replacement.** `versionCode` 7→8, `versionName` "2.2"→"2.2.1", rebuilt `./gradlew bundleRelease`, signed with the release keystore, uploaded to the Play Console Friends alpha track replacing the broken v7 AAB. Play keeps the same release name ("7 (2.2)" from first upload) even after the bundle is swapped — the actual version code inside the release now reads 8 under the summary expand, cosmetic-only mismatch.
+
+6. **Phone-only store listing.** Uploaded 3 phone screenshots to the Phone slot, left 7-inch and 10-inch tablet slots empty. Store listing saved cleanly. Tablet preview on Play Store for tablet users falls back to upscaled phone screenshots — acceptable for a phone-only app.
+
+7. **Foreground-service declaration.** Navigated via the contextual deep link (`/app-content/foreground-services?releaseId=1&trackId=...`), selected **Network processing → Other**, recorded a 35-second screen capture of the LLM-model download (user taps Download → foreground notification appears → user backgrounds app → notification persists → user reopens → progress continues), uploaded to YouTube as Unlisted, pasted the link into the declaration's video field. Saved. Fixed the Chrome-automation Angular-event issue by using real coordinate clicks for checkboxes instead of `form_input`.
+
+8. **Tester list + submission.** Created the `JustPass alpha testers` email list (24 addresses), attached it to the Friends alpha track, hit **Send 12 changes for review** from Publishing overview. Google's typical review window is 1–7 days for a first-release closed-testing submission on a personal developer account.
+
+**Files Modified:**
+- `app/build.gradle.kts` — `versionCode` 7 → 8, `versionName` "2.2" → "2.2.1"
+- `app/proguard-rules.pro` — Apache POI / XmlBeans / Log4j / Commons Compress keep rules
+- `app/src/main/java/com/justpass/app/data/analytics/Analytics.kt` — PII removed from setUser/clearUser/logLogin
+- `app/src/main/java/com/justpass/app/ui/screens/ChessScreen.kt` — optimistic countdown render using `sentChallengeName`
+- `app/src/main/java/com/justpass/app/ui/screens/DashboardScreen.kt` — slot-machine digit alpha/scale interpolation
+- Minor: `drawable/*.xml` and `layout/widget_attendance.xml` unmodified-by-intent edits from IDE, `widget_preview.xml` — noise, not shipping.
+
+**Commit:** `07210de Fix exam seat finder on release builds + v2.2.1 polish`
+
+**Build:** `./gradlew bundleRelease` produces a 70.9 MB signed AAB, `./gradlew assembleDebug` produces the debug APK used for the FGS demo recording (`app/build/outputs/apk/debug/app-debug.apk`, installed on the Moto G54 after uninstalling the previous build so the LLM download could be demonstrated fresh).
+
+**Play Store state at end of day:**
+- Track: Closed testing — Friends alpha
+- Release label: "7 (2.2)" (display-only; actual bundle is versionCode 8 / v2.2.1)
+- Testers: "JustPass alpha testers" email list, 24 addresses, selected
+- Status: 12 changes submitted for Google review on 2026-04-21 evening
+- Path to production: 14-day closed test minimum + ≥12 active opt-in testers required (personal developer account policy), *then* apply for production access (another 1–7 day review)
+
+**Lessons:**
+- **Never minify-only debug.** `isMinifyEnabled = true` should also run in at least one debug-variant config during feature development so reflection-driven libraries blow up in dev, not post-release. A `minifiedDebug` buildType that inherits from release but is debuggable costs 30 seconds to add and catches R8 regressions weeks earlier.
+- **POI's reflection surface is larger than it looks.** The library pulls in XmlBeans schema types, Log4j providers, Commons Compress encoders, and Microsoft-authored schema packages, any of which can be stripped independently. `-keep` rules have to cover every transitive package that gets instantiated by string name.
+- **"Required *" asterisks in Play Console are aspirational, not enforced.** The save validator is the ground truth — upload the minimum the validator actually rejects, not what the field labels advertise.
+- **Play Console's deep-linked declaration pages carry state only when entered via the context URL.** A direct URL visit to `/app-content/foreground-services` loads an empty shell. Always follow the Release Review page's "Go to declaration" buttons (or preserve the query string when navigating programmatically).
+- **Angular Material checkboxes ignore DOM-level `input.checked = true`.** Browser automation that sets values through direct property assignment bypasses the framework's event pipeline. Always use real coordinate clicks or dispatch a full synthetic event chain (`mousedown` + `mouseup` + `click` + `change`) when driving Material components from a script.
+- **The FGS declaration video needs to demonstrate *persistence across backgrounding*, nothing more.** Reviewers aren't validating feature quality — they're validating that the foreground-service permission is actually used for a user-perceivable task that must continue while the app is backgrounded. 30–45 seconds of: tap → notification shown → home button → notification still there → reopen → progress continues. Skip the chat responding, skip the feature demo, skip narration.
+- **For a personal dev account, the 14-day closed-test minimum is the binding constraint**, not the review time. Collect testers in parallel with the review submission — day 1 of the 14 starts when Google approves, not when you hit Send.
+
+---
+
