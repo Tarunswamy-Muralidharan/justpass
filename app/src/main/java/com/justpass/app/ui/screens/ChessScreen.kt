@@ -548,8 +548,11 @@ fun ChessScreen(
             }
         }
 
-        // Waiting for response with sender countdown
-        if (uiState.sentChallengeId != null) {
+        // Waiting for response with sender countdown. Use sentChallengeName
+        // (set optimistically) so the UI shows instantly — sentChallengeId is
+        // deliberately null until the Firestore write returns, to avoid fooling
+        // the mutual-challenge auto-accept check.
+        if (uiState.sentChallengeName != null) {
             Spacer(Modifier.height(4.dp))
             val senderCountdown = uiState.senderCountdown ?: 15
             GlassListCard(modifier = Modifier.fillMaxWidth(), shape = GlassCardShapeSmall,
@@ -625,7 +628,7 @@ fun ChessScreen(
                 items(uiState.onlinePlayers, key = { it.id }) { player ->
                     PlayerCard(
                         player = player,
-                        canChallenge = uiState.sentChallengeId == null && uiState.pendingChallenge == null,
+                        canChallenge = uiState.sentChallengeId == null && uiState.sentChallengeName == null && uiState.pendingChallenge == null,
                         onChallenge = { challengeTarget = player },
                         onAddFriend = { viewModel.sendFriendRequest(player) }
                     )

@@ -45,6 +45,10 @@
 -dontwarn org.apache.poi.**
 -dontwarn org.apache.xmlbeans.**
 -dontwarn org.apache.commons.**
+-keep class org.apache.commons.compress.** { *; }
+-keepclassmembers class org.apache.commons.compress.** {
+    <init>(...);
+}
 -dontwarn org.openxmlformats.**
 -dontwarn org.etsi.**
 -dontwarn org.w3.**
@@ -53,10 +57,38 @@
 -keep class org.apache.poi.** { *; }
 -keep class org.apache.xmlbeans.** { *; }
 -keep class org.openxmlformats.** { *; }
+-keep class org.etsi.** { *; }
+-keep class org.w3.** { *; }
+-keep class com.microsoft.schemas.** { *; }
+-keep class schemaorg_apache_xmlbeans.** { *; }
+-keep class schemasMicrosoftComOfficeExcel.** { *; }
+-keep class schemasMicrosoftComOfficeOffice.** { *; }
+-keep class schemasMicrosoftComVml.** { *; }
+# XmlBeans loads schema types via reflection (Class.newInstance) — keep no-arg ctors
+-keepclassmembers class ** extends org.apache.xmlbeans.impl.schema.SchemaTypeSystemImpl {
+    <init>();
+}
+-keepclassmembers class ** implements org.apache.xmlbeans.XmlObject {
+    <init>();
+}
+-keepclassmembers class ** extends org.apache.xmlbeans.XmlObject {
+    <init>();
+}
+-keep class ** extends org.apache.xmlbeans.impl.values.XmlObjectBase { *; }
+-keep class ** implements org.apache.xmlbeans.impl.schema.TypeSystemHolder { *; }
+-keep public class ** extends org.apache.poi.POIXMLDocumentPart
 
 # OSGI framework (referenced by Log4j but not used on Android)
 -dontwarn org.osgi.framework.**
 -dontwarn org.apache.logging.log4j.**
+
+# Log4j — Apache POI's logger; AbstractLogger reflectively instantiates
+# DefaultFlowMessageFactory and other providers via Class.newInstance().
+# R8 strips the no-arg ctor unless we keep it.
+-keep class org.apache.logging.log4j.** { *; }
+-keepclassmembers class org.apache.logging.log4j.** {
+    <init>(...);
+}
 
 # AWT classes (referenced by Apache POI/graphbuilder but not available on Android)
 -dontwarn java.awt.**

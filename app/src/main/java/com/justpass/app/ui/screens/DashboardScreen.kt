@@ -1759,19 +1759,30 @@ private fun SlotMachineNumber(
                     val prev = (curr - 1 + 10) % 10
                     val next = (curr + 1) % 10
 
-                    // Three digits stacked: prev (above), current (center), next (below)
-                    // Previous digit — scrolling out the top
+                    // Three digits stacked: prev (above), current (center), next (below).
+                    // Scale + alpha formulas on prev/next are designed so the state of a
+                    // digit at frac=1 matches its state at frac=0 one position up the
+                    // stack — that way the integer tick (e.g. scrollPos 26.999 → 27.000)
+                    // renders no visible jump. Previously `prev` was fixed at scale 0.85
+                    // and alpha 0.3, while `curr` was 1.0/1.0 — so the moment a digit
+                    // transitioned from curr to prev you'd see it snap-shrink and snap-fade
+                    // ("correction after settling" complaint).
+
+                    // Previous digit — scrolling out the top. Starts as a clone of the
+                    // prior curr (scale 1, alpha 1) at frac=0 and fades/shrinks as it
+                    // rolls away.
                     Text(
                         prev.toString(),
                         fontSize = fontSize, fontWeight = fontWeight,
-                        color = color.copy(alpha = (0.3f * (1f - frac)).coerceIn(0f, 1f)),
+                        color = color.copy(alpha = (1f - frac).coerceIn(0f, 1f)),
                         letterSpacing = letterSpacing,
                         modifier = Modifier.graphicsLayer {
                             translationY = (-digitHeightDp) - (frac * digitHeightDp)
-                            scaleX = 0.85f; scaleY = 0.85f
+                            val s = 1f - 0.15f * frac
+                            scaleX = s; scaleY = s
                         }
                     )
-                    // Current digit — center, full opacity
+                    // Current digit — center, full opacity.
                     Text(
                         curr.toString(),
                         fontSize = fontSize, fontWeight = fontWeight,
@@ -1781,16 +1792,17 @@ private fun SlotMachineNumber(
                             translationY = -(frac * digitHeightDp)
                         }
                     )
-                    // Next digit — coming from below
+                    // Next digit — coming up from below. Reaches scale 1 / alpha 1 at
+                    // frac=1, matching the curr state it's about to become.
                     Text(
                         next.toString(),
                         fontSize = fontSize, fontWeight = fontWeight,
-                        color = color.copy(alpha = (0.3f + 0.7f * frac).coerceIn(0f, 1f)),
+                        color = color.copy(alpha = frac.coerceIn(0f, 1f)),
                         letterSpacing = letterSpacing,
                         modifier = Modifier.graphicsLayer {
                             translationY = digitHeightDp - (frac * digitHeightDp)
-                            scaleX = 0.85f + 0.15f * frac
-                            scaleY = 0.85f + 0.15f * frac
+                            val s = 0.85f + 0.15f * frac
+                            scaleX = s; scaleY = s
                         }
                     )
                 }
