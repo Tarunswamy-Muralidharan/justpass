@@ -1,4 +1,4 @@
-package com.example.attendancewidgetlaudea
+package com.justpass.app
 
 import org.junit.Test
 

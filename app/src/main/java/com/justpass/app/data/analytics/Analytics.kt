@@ -17,13 +17,7 @@ object Analytics {
         firebaseAnalytics = FirebaseAnalytics.getInstance(context)
     }
 
-    /** Set the logged-in user's roll number and name */
     fun setUser(rollNumber: String, displayName: String? = null) {
-        firebaseAnalytics?.setUserId(rollNumber)
-        firebaseAnalytics?.setUserProperty("roll_number", rollNumber)
-        displayName?.let {
-            firebaseAnalytics?.setUserProperty("display_name", it)
-        }
     }
 
     /** Extract display name from a Keycloak JWT token */
@@ -47,16 +41,11 @@ object Analytics {
     }
 
     fun clearUser() {
-        firebaseAnalytics?.setUserId(null)
-        firebaseAnalytics?.setUserProperty("roll_number", null)
-        firebaseAnalytics?.setUserProperty("display_name", null)
     }
 
     fun logLogin(rollNumber: String, displayName: String? = null) {
         firebaseAnalytics?.logEvent(FirebaseAnalytics.Event.LOGIN, Bundle().apply {
             putString(FirebaseAnalytics.Param.METHOD, "keycloak")
-            putString("roll_number", rollNumber)
-            displayName?.let { putString("display_name", it) }
         })
     }
 
