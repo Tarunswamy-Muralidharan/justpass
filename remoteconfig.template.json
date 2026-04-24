@@ -27,6 +27,13 @@
       },
       "valueType": "STRING",
       "description": "Body text shown in the maintenance dialog when `maintenance_enabled` is true. Empty defaults to a generic maintenance message. Edit freely to re-use as a generic announcement channel."
+    },
+    "chess_backend_v2": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "valueType": "BOOLEAN",
+      "description": "When true, the chess lobby uses the Cloudflare Durable Objects WebSocket backend (v3.0+). When false (default), it uses the Firestore backend that has shipped since v2.0. Flip on per-cohort via conditional targeting (not random %) — users on different backends can't see each other in the lobby. Rollback is instant: flip back to false and every V2 user is on Firestore at next fetch."
     }
   }
 }

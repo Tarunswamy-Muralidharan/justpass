@@ -26,3 +26,12 @@ keystore.properties
 *.apk
 *.aab
 nul
+
+# Cloudflare Worker
+chess-lobby/node_modules/
+chess-lobby/.wrangler/
+
+# Tooling artifacts
+.playwright-mcp/
+.claude/scheduled_tasks.lock
+build_log.txt

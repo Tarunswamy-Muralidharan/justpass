@@ -19,7 +19,6 @@ import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,7 +42,6 @@ import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.core.content.FileProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.justpass.app.data.analytics.Analytics
@@ -401,33 +399,6 @@ fun ProfileScreen(
         // Menu — real liquid glass
         LiquidGlassCard(cardState = cardState, modifier = Modifier.fillMaxWidth()) {
             Column {
-                ListItem(headlineContent = { Text("Share App (APK)") }, leadingContent = { Icon(Icons.Default.Share, null) },
-                    modifier = Modifier.clickable {
-                        Analytics.logProfileAction("share_app")
-                        try {
-                            val sourceApk = File(context.applicationInfo.sourceDir)
-                            val shareDir = File(context.cacheDir, "apk_share")
-                            shareDir.mkdirs()
-                            val destApk = File(shareDir, "JustPass-v$appVersion.apk")
-                            sourceApk.copyTo(destApk, overwrite = true)
-                            val apkUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", destApk)
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "application/vnd.android.package-archive"
-                                putExtra(Intent.EXTRA_STREAM, apkUri)
-                                putExtra(Intent.EXTRA_TEXT, "Check out JustPass — track your PSG iTech attendance right from your home screen!")
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share APK via"))
-                        } catch (_: Exception) {
-                            // Fallback to link sharing
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, "Check out JustPass — track your PSG iTech attendance right from your home screen!\n\nhttps://github.com/Tarunswamy-Muralidharan/-AttendanceWidgetLaudea/releases/latest")
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share via"))
-                        }
-                    }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 ListItem(
                     headlineContent = { Text("Check for Updates") },
                     leadingContent = { Icon(Icons.Default.SystemUpdate, null) },
