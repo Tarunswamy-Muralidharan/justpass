@@ -1,0 +1,22 @@
+name = "chess-lobby"
+main = "src/worker.ts"
+compatibility_date = "2026-04-01"
+
+# Durable Object binding. The Lobby class is a single global DO
+# (addressed by idFromName("global")) that tracks live presence +
+# in-flight challenges via the WebSocket Hibernation API.
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "Lobby"
+
+# New DOs in 2026 must use the SQLite-backed storage class.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Lobby"]
+
+# NOTE: FIREBASE_PROJECT_ID is intentionally NOT set here.
+# Configure it as a secret on deploy:
+#   npx wrangler secret put FIREBASE_PROJECT_ID
+# It must match the Firebase project ID the Android app uses
+# (see google-services.json -> project_info.project_id).
+[vars]

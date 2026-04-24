@@ -16,8 +16,8 @@ android {
         applicationId = "com.justpass.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "2.2.1"
+        versionCode = 9
+        versionName = "3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -112,6 +112,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.firestore)
+    implementation(libs.firebase.auth)
     implementation("com.google.firebase:firebase-config")
 
     // Apache POI (Excel parsing)

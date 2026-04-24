@@ -4,7 +4,11 @@ package com.justpass.app.ui.screens
 import com.justpass.app.ui.components.AdBanner
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -125,7 +129,17 @@ private fun CourseCard(course: CourseMarks) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, if (expanded) "Collapse" else "Expand")
                 }
-                AnimatedVisibility(expanded, enter = expandVertically(), exit = shrinkVertically()) {
+                AnimatedVisibility(
+                    visible = expanded,
+                    enter = expandVertically(
+                        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                        expandFrom = Alignment.Top
+                    ) + fadeIn(animationSpec = tween(durationMillis = 250, delayMillis = 50)),
+                    exit = shrinkVertically(
+                        animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+                        shrinkTowards = Alignment.Top
+                    ) + fadeOut(animationSpec = tween(durationMillis = 150))
+                ) {
                     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                         course.testDetails.components.forEach { ComponentCard(it) }
@@ -158,7 +172,17 @@ private fun ComponentCard(component: Component) {
                     }
                 }
             }
-            if (hasSub) AnimatedVisibility(expanded, enter = expandVertically(), exit = shrinkVertically()) {
+            if (hasSub) AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(
+                    animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+                    expandFrom = Alignment.Top
+                ) + fadeIn(animationSpec = tween(durationMillis = 220, delayMillis = 40)),
+                exit = shrinkVertically(
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                    shrinkTowards = Alignment.Top
+                ) + fadeOut(animationSpec = tween(durationMillis = 140))
+            ) {
                 Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     component.subComponents?.forEach { s ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

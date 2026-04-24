@@ -9,9 +9,12 @@ import com.justpass.app.data.model.ChessChallenge
 import com.justpass.app.data.model.ChessProfile
 import com.justpass.app.data.model.FriendRequest
 import com.justpass.app.data.model.OnlinePlayer
+import com.justpass.app.data.repository.ChessLobby
 import com.justpass.app.data.repository.ChessRepository
-import com.google.firebase.firestore.FirebaseFirestore
+import com.justpass.app.data.repository.ChessRepositoryV2
+import com.justpass.app.data.repository.FirestoreChessLobby
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Job
@@ -21,7 +24,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 
 data class MatchHistoryEntry(
     val opponentName: String,
@@ -58,6 +60,20 @@ data class ChessUiState(
 class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repo = ChessRepository()
+
+    // Lobby backend selected at construction time from Remote Config.
+    // Flag OFF (default) → FirestoreChessLobby (byte-identical to v2.2.1 behaviour — delegates to repo).
+    // Flag ON              → ChessRepositoryV2 (Cloudflare Durable Objects over WebSocket).
+    // Flip the flag in Firebase Console to switch every client on next Remote Config activation.
+    // The constructor-time capture is intentional: switching mid-session without tearing down listeners
+    // would mix backends inside one VM instance. Instead the switch takes effect on the next lobby entry.
+    private val lobby: ChessLobby = run {
+        val useV2 = try {
+            FirebaseRemoteConfig.getInstance().getBoolean("chess_backend_v2")
+        } catch (_: Exception) { false }
+        if (useV2) ChessRepositoryV2.getInstance() else FirestoreChessLobby(repo)
+    }
+
     private val securePrefs = SecurePreferences.getInstance(application)
     private val prefs = application.getSharedPreferences("chess_history", 0)
 
@@ -107,16 +123,16 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.value = _uiState.value.copy(showNameSetup = true)
             }
 
-            repo.goOnline(myPlayerId, profile.visibleName)
+            lobby.goOnline(myPlayerId, profile.visibleName)
             _uiState.value = _uiState.value.copy(isOnline = true)
 
             friendIds = repo.getFriendIds(myPlayerId)
 
-            onlineListener = repo.listenOnlinePlayers(myPlayerId, friendIds) { players ->
+            onlineListener = lobby.listenOnlinePlayers(myPlayerId, friendIds) { players ->
                 _uiState.value = _uiState.value.copy(onlinePlayers = players)
             }
 
-            incomingListener = repo.listenIncomingChallenges(
+            incomingListener = lobby.listenIncomingChallenges(
                 myId = myPlayerId,
                 onChallengeRemoved = { removedId ->
                     // Challenger cancelled on their side (e.g. from the PWA) — clear the prompt
@@ -141,8 +157,8 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     // Cancel our outgoing challenge and accept theirs
                     viewModelScope.launch {
-                        repo.declineChallenge(ourChallengeId)
-                        val urls = repo.acceptChallenge(challenge.id, challenge.timeControl.toString())
+                        lobby.declineChallenge(ourChallengeId)
+                        val urls = lobby.acceptChallenge(challenge.id, challenge.timeControl.toString())
                         if (urls != null) {
                             _uiState.value = _uiState.value.copy(
                                 acceptedChallenge = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first),
@@ -178,7 +194,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     // Auto-decline when countdown reaches 0
                     if (_uiState.value.pendingChallenge?.id == challenge.id) {
-                        repo.declineChallenge(challenge.id)
+                        lobby.declineChallenge(challenge.id)
                         _uiState.value = _uiState.value.copy(
                             pendingChallenge = null,
                             challengeCountdown = null
@@ -192,7 +208,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.value = _uiState.value.copy(friendRequests = requests)
             }
 
-            repo.cleanupExpiredChallenges()
+            lobby.cleanupExpiredChallenges()
 
             // Load local match history
             loadMatchHistory()
@@ -204,8 +220,8 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                 // write lands but state churn causes a re-mount before the loop
                 // would otherwise fire.
                 while (isActive) {
-                    repo.heartbeat(myPlayerId)
-                    delay(90_000L) // heartbeat every 90s (stale threshold is 150s)
+                    lobby.heartbeat(myPlayerId)
+                    delay(90_000L) // heartbeat every 90s (stale threshold is 150s) — V2 no-ops
                 }
             }
 
@@ -222,7 +238,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 while (isActive) {
                     delay(60_000L)
-                    repo.cleanupExpiredChallenges()
+                    lobby.cleanupExpiredChallenges()
                 }
             }
         }
@@ -230,16 +246,13 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     fun goOffline() {
         cleanup()
-        // NonCancellable so the delete completes even if scope is cancelled
+        // NonCancellable so the backend cleanup completes even if scope is cancelled.
+        // Delegates to whichever lobby is active: FirestoreChessLobby → deletes the
+        // presence doc, ChessRepositoryV2 → closes the WebSocket (server sees onClose
+        // and broadcasts PRESENCE_DIFF removal to other clients).
         if (myPlayerId.isNotBlank()) {
             viewModelScope.launch(Dispatchers.IO + NonCancellable) {
-                try {
-                    FirebaseFirestore.getInstance()
-                        .collection("chess_online")
-                        .document(myPlayerId)
-                        .delete()
-                        .await()
-                } catch (_: Exception) {}
+                try { lobby.goOffline(myPlayerId) } catch (_: Exception) {}
             }
         }
         _uiState.value = ChessUiState()
@@ -260,7 +273,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             repo.updateProfile(profile.id, nickname, mode)
             val updated = profile.copy(nickname = nickname, nameMode = mode)
             _uiState.value = _uiState.value.copy(myProfile = updated, showNameSetup = false)
-            repo.goOnline(profile.id, updated.visibleName)
+            lobby.goOnline(profile.id, updated.visibleName)
         }
     }
 
@@ -377,7 +390,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             // Mutual challenge prevention: check if they already challenged us
-            val existingChallenge = repo.checkExistingChallenge(player.id, myPlayerId)
+            val existingChallenge = lobby.checkExistingChallenge(player.id, myPlayerId)
             if (existingChallenge != null) {
                 // They already sent us a challenge — auto-show it instead
                 _uiState.value = _uiState.value.copy(
@@ -388,13 +401,13 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            val challengeId = repo.sendChallenge(profile.id, profile.visibleName, player.id, player.displayName, timeControl)
+            val challengeId = lobby.sendChallenge(profile.id, profile.visibleName, player.id, player.displayName, timeControl)
             if (challengeId != null) {
                 _uiState.value = _uiState.value.copy(
                     sentChallengeId = challengeId, sentChallengeName = player.displayName,
                     sentChallengeToId = player.id
                 )
-                sentChallengeListener = repo.listenChallengeStatus(challengeId) { challenge ->
+                sentChallengeListener = lobby.listenChallengeStatus(challengeId) { challenge ->
                     when (challenge.status) {
                         "accepted" -> {
                             senderCountdownJob?.cancel()
@@ -444,7 +457,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                             errorMessage = "${player.displayName} didn't respond"
                         )
                         sentChallengeListener?.remove()
-                        repo.declineChallenge(challengeId)
+                        lobby.declineChallenge(challengeId)
                         // Auto-clear after 3 seconds
                         viewModelScope.launch {
                             delay(3000L)
@@ -470,7 +483,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         val challenge = _uiState.value.pendingChallenge ?: return
         countdownJob?.cancel()
         viewModelScope.launch {
-            val urls = repo.acceptChallenge(challenge.id, challenge.timeControl.toString())
+            val urls = lobby.acceptChallenge(challenge.id, challenge.timeControl.toString())
             if (urls != null) {
                 _uiState.value = _uiState.value.copy(
                     acceptedChallenge = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first),
@@ -486,7 +499,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         val challenge = _uiState.value.pendingChallenge ?: return
         countdownJob?.cancel()
         viewModelScope.launch {
-            repo.declineChallenge(challenge.id)
+            lobby.declineChallenge(challenge.id)
             _uiState.value = _uiState.value.copy(pendingChallenge = null, challengeCountdown = null)
         }
     }
@@ -556,9 +569,9 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(
             sentChallengeId = null, sentChallengeName = null, sentChallengeToId = null, senderCountdown = null
         )
-        // Clean up in Firestore
+        // Clean up on whichever backend is active
         if (challengeId != null) {
-            viewModelScope.launch { repo.declineChallenge(challengeId) }
+            viewModelScope.launch { lobby.declineChallenge(challengeId) }
         }
     }
 
@@ -690,16 +703,11 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
-        // NonCancellable so delete completes even after ViewModel destruction
+        // NonCancellable so the backend cleanup completes even after ViewModel destruction.
+        // Routes through the active lobby (Firestore delete for V1, WS close for V2).
         if (myPlayerId.isNotBlank()) {
             viewModelScope.launch(Dispatchers.IO + NonCancellable) {
-                try {
-                    FirebaseFirestore.getInstance()
-                        .collection("chess_online")
-                        .document(myPlayerId)
-                        .delete()
-                        .await()
-                } catch (_: Exception) {}
+                try { lobby.goOffline(myPlayerId) } catch (_: Exception) {}
             }
         }
         cleanup()

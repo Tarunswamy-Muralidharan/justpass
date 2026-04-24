@@ -5852,3 +5852,301 @@ Driving Play Console via the Claude-in-Chrome extension, the `form_input` helper
 
 ---
 
+### Challenge 128: Post-Launch Triage — v2.2.2 Bug-Fix Batch, SIS Outage Diagnosis, Legacy Migration Assessment, and Chess Backend Research
+
+**Date:** 2026-04-23 to 2026-04-24
+
+**Context:**
+Day 1–2 of the 14-day closed-testing window. Play-approved v2.2.1 is live on Friends alpha; no testers have opted in yet (link distribution still pending on the user's side). A cluster of post-launch questions surfaced in quick succession: tester-reported bugs to batch into v2.2.2, a live SIS backend outage to diagnose, an assessment of whether the old sideloaded `com.example.attendancewidgetlaudea` users can be remotely killed before the Google Developer Verification Sep 2026 cliff, and — biggest strategic question — whether the Firestore-backed chess lobby can be re-platformed onto a free-forever backend now that active users are sitting at ~2500 and the 50K-reads/day Spark cap is the dominant cost ceiling. All of this has to happen without pushing back the 2026-05-06 earliest-production-apply date, and without spending any money.
+
+**Problem (part 1 — v2.2.2 bug-fix scope):**
+Two tester-facing issues were queued for the next closed-test patch: (a) the "Share App (APK)" entry in the profile menu is now redundant and subtly harmful under Play policy — it distributes a Play-Signing–signed APK outside Play and bypasses Play Protect's signature validation path, producing "app from untrusted source" warnings when friends try to install. Needs to come out. (b) The CA-marks card expand/collapse transition ships plain `expandVertically()` / `shrinkVertically()` with no fade, no tween spec, and the default `expandFrom = Alignment.Bottom` pivot. The result looks like a height-snap followed by a content-snap-in — two distinct visual steps instead of one smooth reveal. Nested `ComponentCard` subcomponent expansion has the same bug.
+
+**Problem (part 2 — SIS MongoDB outage during live debug):**
+User reported "no attendance" using test credentials `715523244037`. I replicated the app's 4-tier auth path with `curl` to isolate where the failure lived: Keycloak password grant on `ies_sis` returned HTTP 400 `unauthorized_client` (expected — client blocks direct grants, as documented in `WebViewAuthenticator.kt:290-348`), so I fell through to the auth-code flow manually. GET `/realms/psgitech/protocol/openid-connect/auth?client_id=ies_sis&redirect_uri=...&response_type=code&scope=openid` with cookie jar → parsed `action="..."` from the returned Keycloak login HTML → POSTed `username=…&password=…&credentialId=` to the form action URL with cookies → server returned HTTP 302 with `Location: https://laudea.psgitech.ac.in/sis/?session_state=…&code=…` → POSTed `grant_type=authorization_code&client_id=ies_sis&code=…&redirect_uri=…` to the token endpoint → got a valid 1693-char JWT (`expires_in=600`). **Auth worked end-to-end; every downstream SIS endpoint returned HTTP 500 with `{"name":"MongoServerSelectionError","message":"connect ECONNREFUSED 127.0.0.1:27017"}`.** Confirmed across `/sis/attendance/…`, `/sis/ca/marks/v2/…`, `/sis/students/…`, `/sis/attendance/absent/…`, `/sis/attendance/present/…` — same error body. The `/sis/` index page and `/sis/auth/config` (both no-DB endpoints) returned HTTP 200 normally. Diagnosis: PSG iTech's SIS Node backend cannot reach its local MongoDB; endpoints and auth schema are unchanged.
+
+**Problem (part 3 — remote-kill assessment for legacy sideloaded installs):**
+User asked whether old v2.0 / v2.0.1 users (still running `com.example.attendancewidgetlaudea`) can be blocked from using the app without sideloading them an update, to force migration to Play. `git log -S 'min_version_code'` and `-S 'sideload_block_enabled'` revealed both kill-switch flags were added *after* v2.0.1 shipped: `min_version_code` was introduced in commit `2cd3d8e` at versionCode 6 (v2.1 WIP, never released to users), and `sideload_block_enabled` in `27514b8` at versionCode 7 (v2.2, new package). **v2.0.1 APKs in the field do not contain the client-side code that reads either flag** — flipping them in Firebase Remote Config has no effect on those installs. The old app also fetches attendance/marks/timetable *directly* from `laudea.psgitech.ac.in`, not a user-controlled backend, so there's no server-side vector to kill. Firestore chess rules could be tightened to reject old-package traffic, but chess is a secondary feature and breaking it won't push users off the core attendance flow.
+
+**Problem (part 4 — Android Developer Verification Sep 2026 cliff):**
+The new Play-distributed `com.justpass.app` is auto-registered at the account level (confirmed by the 2026-04-22 Google email "All of your Google Play apps have been successfully registered to meet Android developer verification requirements"). The old `com.example.attendancewidgetlaudea` package+key pair is **deliberately not registered** — leaving that decision in place means any sideload install of the old package will be blocked on certified Android devices in India (and Brazil/Indonesia/Singapore/Thailand) starting the Google enforcement window. Google's published target is Sep 2026, but historical rollouts typically slip by a quarter; expect real enforcement Q4 2026 to Q1 2027. Existing installed v2.0.1 apps keep running until Play Protect's second-phase "harmful app" warnings kick in (months after Phase 1), which is when organic uninstalls cascade.
+
+**Problem (part 5 — the GitHub-clones anomaly):**
+Repo Insights shows 329 clones / 105 unique cloners in the last 14 days on `-AttendanceWidgetLaudea`, with no CI workflows configured. User was worried this meant the app source was leaking or being mass-audited. Diagnosis is uneventful: no `.github/workflows/` directory exists, no Dependabot or Actions, 32 commits in the same window = active development. For a public repo with active commits in 2026, this traffic pattern (≈3 clones per unique cloner) is dominated by AI training scrapers (every major LLM provider crawls public GitHub on push events), security scanners (Snyk/Socket/Semgrep/GitHub's own DependabotAlerts + secret scanning), and code search indexers. Human traffic is <10% — estimated from one visible spike around 04/13–14 at ~35 unique cloners on a single day, which is the only outlier against an otherwise flat bot-noise floor.
+
+**Problem (part 6 — chess backend at 2500 active users, free-forever):**
+The core strategic question. Current state: Firestore Spark tier, 50K reads/day, 20K writes/day, 4 collections (`chess_online`, `chess_challenges`, `chess_profiles`, `chess_friends`). `listenOnlinePlayers` subscribes to the *entire* `chess_online` collection with a snapshot listener; clients pay 1 read per (N-1) other-player heartbeat per 90 seconds. **The read pattern is O(N²) per unit time:** with N concurrent players, reads-per-day ≈ 960 × N². Heartbeat was already slowed from 25s→90s (commit `cc64d7b`) to stretch capacity 3.6×, giving ~120 concurrent sustainable under short-burst patterns. Above that: "Quota exceeded" → lobby stops functioning. At ~2500 active users and rising, this model dead-ends.
+
+**Solutions:**
+
+1. **Remove Share APK button + unused infrastructure imports.** In `ProfileScreen.kt`, deleted the `ListItem` block at lines 404-430, the trailing `HorizontalDivider`, the `Icons.Default.Share` import, and the `androidx.core.content.FileProvider` import. Left the AndroidManifest `FileProvider` declaration and `res/xml/file_paths.xml` in place — zero runtime cost, and may be reused for future features. Menu now begins at "Check for Updates" → "Report Bug" → "Attendance Target" → "Privacy Policy" → "Logout". Build verified clean.
+
+2. **Fix CA-marks expand/collapse animation.** In `CAMarksScreen.kt`, both `CourseCard` (line 128 before edit) and `ComponentCard` (line 161 before edit) switched from:
+   ```kotlin
+   AnimatedVisibility(expanded, enter = expandVertically(), exit = shrinkVertically())
+   ```
+   to:
+   ```kotlin
+   AnimatedVisibility(
+       visible = expanded,
+       enter = expandVertically(
+           animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+           expandFrom = Alignment.Top
+       ) + fadeIn(animationSpec = tween(durationMillis = 250, delayMillis = 50)),
+       exit = shrinkVertically(
+           animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+           shrinkTowards = Alignment.Top
+       ) + fadeOut(animationSpec = tween(durationMillis = 150))
+   )
+   ```
+   The `expandFrom = Alignment.Top` pivot flips the animation so the panel unfolds *downward* from under the tap row (natural reading direction) instead of sliding up from below. The 50 ms `fadeIn` delay lets the height animation create enough vertical space before content fades in, avoiding the "content-painted-into-a-too-small-box" flicker. Exit is tighter (250 ms shrink + 150 ms fade) so the card collapses responsively. `ComponentCard`'s nested subcomponent expansion uses slightly snappier 280/220 ms values for a clear hierarchy. Added imports: `fadeIn`, `fadeOut`, `FastOutSlowInEasing`, `tween`.
+
+3. **SIS outage — no code action.** Confirmed endpoints, auth, Keycloak realm, and client IDs are all unchanged. The Mongo failure is entirely on PSG iTech's infrastructure side (their Node backend couldn't reach `127.0.0.1:27017`). The app's existing 5xx handling (`project_server_down_handling.md`) correctly falls through to cached-attendance-display + server-down banner, so no user-visible break beyond "data looks a bit old until they fix their server". Reproduced the full fresh auth chain twice with 10-minute-old and fresh tokens (since access tokens are 600s TTL) — both produced identical Mongo errors, confirming it's not a stale-token artifact.
+
+4. **Legacy kill-switch decision — stand pat.** Don't sideload a final kill-switch build under `com.example.attendancewidgetlaudea`. Don't break Firestore chess rules for the old package. Let the Sep 2026 developer-verification cliff handle organic attrition; supplement with a one-time WhatsApp migration message once enough Play testers opt in (≥12 needed for the 14-day timer). The bounded downside of leaving old installs alive is ~6 months of parallel cohorts on a feature (chess) that's incidental to the core attendance flow.
+
+5. **GitHub traffic — no action.** Clones ≠ active humans. The metric that matters post-Play is Firebase Analytics DAU + Play Store installs, not repo Insights. If privacy-of-source becomes a concern later, the only real lever is making the repo private, which would break the in-app GitHub-releases update checker and require standing up a new distribution channel — not worth the migration cost for bot-noise avoidance.
+
+6. **Chess backend — research matrix.** Dispatched a deep-research agent to verify 2026 free-tier specs across 11 real-time-backend options. Full comparison table below. Top-3 filtered for "free-forever + 300 concurrent + India latency":
+
+   | Option | Free concurrent | India latency | Migration effort | Key tradeoff |
+   |---|---|---|---|---|
+   | **Lichess API direct** | unbounded (rate-limited 60 req/min) | EU (WebView already works) | ~500 LOC rewrite, mostly deletions | UX shows Lichess usernames unless a local alias map is added |
+   | **Cloudflare Durable Objects + WS Hibernation** | effectively unbounded (100K req/day under the 20:1 WS billing ratio) | CF Mumbai edge, ~30 ms | ~400 LOC TypeScript worker + ~300 LOC Android WS client | User owns and maintains the server code |
+   | **Supabase Realtime** | 250 concurrent (2M msgs/mo) | ap-south-1 Mumbai | ~800 LOC across client+server | 250 cap will bite within 6–12 months of growth; Pro tier is $25/mo |
+   
+   Ruled out: Firebase RTDB (100 concurrent hard cap), Ably (200 concurrent), Pusher Channels (100 concurrent), Appwrite Cloud (Frankfurt-only, 150 ms latency), Liveblocks (100 MAU), PartyKit (same as CF DO since it's a wrapper), PocketBase self-host (Fly.io killed their free tier in 2024). See "Backend research report" appendix below for the full writeup.
+
+7. **Chess backend — current Firestore architecture documented.** Wrote down the current flow for future reference since it wasn't explicitly in the log:
+   - **`chess_online`**: ephemeral presence docs (written in `goOnline`, deleted in `goOffline`, `timestamp` updated every 90s in `heartbeat`). Clients filter stale entries with `(now - timestamp) > 150_000 ms` — 1.6× the heartbeat interval for one-tick grace.
+   - **`chess_challenges`**: per-invite docs with `status ∈ {pending, accepting, accepted, declined}`. Accept flow uses `runTransaction` to atomically flip `pending → accepting` so double-taps or two-device races don't create duplicate Lichess games. The `resultChecked` boolean in the same doc is claimed via transaction before calling `/api/game/:id` on Lichess to ensure only one device processes the game result.
+   - **`chess_profiles`**: persistent stats. `wins/losses/draws/gamesPlayed` incremented via transaction in `recordGameResult` — prevents races when both players' post-game listeners fire at roughly the same time.
+   - **`chess_friends`**: friend request + accepted relationships. Bidirectional read (query both `fromId==me` and `toId==me` with `status==accepted`).
+   - The critical cost line: `onlineCollection.addSnapshotListener { ... }` in `listenOnlinePlayers`. Every heartbeat `update` on *any* doc in the collection triggers every client's listener. Each listener fire bills 1 read per changed doc. With N concurrent clients heartbeating every 90s: reads/day = 86,400 / 90 × N × N = 960 × N². At N = 7 you've used the 50K quota; the fact that ~120 concurrent is sustainable in practice relies on usage being peaky (short bursts of activity, not steady-state 24h presence).
+
+**Backend research report appendix — full 2026 free-tier specs (verified live):**
+
+| Backend | Free-tier concurrent cap | Msgs/mo free | Presence native? | Push (WS)? | India region | Verdict |
+|---|---|---|---|---|---|---|
+| Firebase Firestore Spark (current) | ~120 via poll | 50K reads/day, 20K writes/day | no (polling) | yes | Mumbai | ❌ hit ceiling |
+| Firebase RTDB Spark | 100 hard cap | 10 GB egress/mo | yes (`onDisconnect`) | yes | Mumbai | ❌ cap too low |
+| Supabase Realtime Free | 250 | 2M | yes (Presence ch.) | yes | ap-south-1 Mumbai | ⚠️ tight |
+| Appwrite Cloud Free | 250 | 2M | yes (channels) | yes | Frankfurt only | ❌ latency |
+| Ably Free | 200 | 6M, 500/sec | best-in-class | yes | Mumbai PoP | ❌ cap under peak |
+| Pusher Channels Sandbox | 100 | 200K/day | yes (presence ch.) | yes | ap-south-1 Mumbai | ❌ cap too low |
+| CF Durable Objects + Hibernation (Workers Free) | unbounded | 100K req/day (20:1 WS billing) | DIY trivially | yes | CF Mumbai | ✅ free at scale |
+| PartyKit | wraps CF DO — pay CF usage | same as CF DO | DIY | yes | CF Mumbai | ✅ same as DO |
+| Liveblocks Free | 100 MAU | — | yes | yes | — | ❌ too low |
+| Lichess API direct | unbounded | rate-limited 60 req/min | `/api/users/status` batches 100 users/call | NDJSON event stream | EU | ✅ zero backend |
+| PocketBase self-host | — | — | yes | yes | self-host | ❌ Fly/Railway free tiers are gone (2024) |
+
+**Files Modified:**
+- `app/src/main/java/com/justpass/app/ui/screens/ProfileScreen.kt` — removed Share APK `ListItem` + trailing divider + `Icons.Default.Share` import + `FileProvider` import.
+- `app/src/main/java/com/justpass/app/ui/screens/CAMarksScreen.kt` — added `fadeIn` / `fadeOut` / `FastOutSlowInEasing` / `tween` imports; replaced both `AnimatedVisibility` blocks with fully-specced enter/exit animations including `expandFrom = Alignment.Top` pivot and staggered fade timings.
+- `DEVELOPMENT_LOG.md` — this entry.
+
+**Commit:** pending (v2.2.2 bug-fix batch will ship when the full patch list is closed out — user explicitly chose to batch several fixes before bumping versionCode 8 → 9 + rebuilding AAB).
+
+**Build:** `./gradlew compileDebugKotlin --rerun-tasks` — SUCCESSFUL. Only pre-existing deprecation warnings; no errors from the edits. Share APK removal compiled clean with all imports correct. CA-marks animation compiled clean with new imports.
+
+**Lessons:**
+- **Bug fixes during a closed-testing window do not reset the 14-day production-apply timer.** Ship a v9 patch, the timer keeps running; Google re-reviews the new release (typically hours for a known app, not the initial 1–7 days), and testers auto-update via Play Store. The only way the 14-day clock pauses is if the active-tester count drops below 12. Plan accordingly: batch several bug fixes into one patch rather than shipping five releases in a week — minimizes review-cycle friction and keeps the changelog clean.
+- **Reproducing the app's full auth chain in curl is the fastest way to isolate whether a user's "app is broken" report is app-side or backend-side.** The 4-tier token flow is well-defined enough in `WebViewAuthenticator.kt` that a shell equivalent fits in ~30 lines of `curl -c cookies.txt` + `grep -oE` for the form action + token exchange. When credentials work, JWT comes back valid, and the 5xx is on the downstream API with a specific error body — that's a PSG infra issue, not an app bug. Knowing which is which saves hours of wrong-direction debugging.
+- **Remote-kill-switches have to ship in the binary *before* you need them.** Every app that distributes outside Play should wire in a Remote Config `min_version_code` check from the very first release, even if the default is 1 and the kill path is dormant. Retrofitting it after the fact means the users you most want to reach (old-version holdouts) are precisely the users who can't receive the switch. This is a variant of "it's too late to buy insurance during the fire."
+- **Google's Android Developer Verification rollout is a natural, free migration tool for sideload-to-Play transitions.** Don't fight it with your own kill switches or break-backend hacks. Let the Sep 2026 → Q1 2027 enforcement wave handle attrition, and spend your one-shot WhatsApp-migration-message credit on the users who actively engage post-Play-launch.
+- **GitHub clone counts on public repos are almost entirely bot noise in 2026.** AI training scrapers (OpenAI, Anthropic, Google, Meta, HF), security scanners (Snyk, Socket, Semgrep, GitHub's own), and code search indexers re-crawl on every push. A repo with 32 commits in 14 days will see ~300+ clones from these sources alone. Traffic → Insights is useful for spotting one-day spikes (usually a human sharing the link somewhere), not for measuring human interest in the codebase. The real engagement metric is Firebase Analytics DAU.
+- **Firestore's snapshot-listener billing model makes polling-based presence catastrophic at scale.** Every doc change fires every listener, every listener bills per changed doc. With N clients each updating their own presence doc every K seconds, the total daily read cost is N² × (86400 / K), not N × (86400 / K). Throttling heartbeat (25 → 90 s) buys linear-in-K breathing room but doesn't change the asymptotic shape. The fix is push-based: any system with a native `onDisconnect` or server-managed presence channel reduces this to O(N) in events, because the server fans out membership *diffs* to subscribers instead of having each client pay for reading every other client's updates.
+- **When the research question is "what's the current pricing on X platform's free tier," the January 2026 knowledge cutoff is not good enough.** Free tiers shift quarterly — Fly.io killed its always-free VM in mid-2024, Railway killed free tier late 2023, Liveblocks changed their MAU formula twice in 2025. Any recommendation in the form "use service X, free tier is Y" needs to be verified against the live pricing page on the day of the decision.
+- **The Lichess API is a credible free-forever backend for chess matchmaking when Lichess is already your game runtime.** Their `/api/users/status` endpoint batches up to 100 usernames per call (solving the O(N²) polling problem by construction), `/api/stream/event` pushes challenges and game-start events as server-sent NDJSON (solving presence/notification fan-out), and `/api/challenge/{username}` + `/api/board/seek` cover the send-challenge and seek-a-game flows. The whole Firestore lobby layer becomes redundant if you're willing to surface Lichess usernames (mitigatable with a local alias map) and OAuth each player into Lichess (already required for the WebView game anyway). This is the cleanest architecture available — you delete more code than you write.
+- **Cloudflare Durable Objects + WebSocket Hibernation is the only "write-your-own-server, stay free, scale infinitely" option as of 2026.** Hibernation (GA'd 2024) means idle WS connections aren't billed for duration — you pay only for actual incoming message volume, at a 20:1 WS-to-request ratio. For a chess lobby with 300 concurrent and ~5 real messages/min per user, the math lands at ~45K billed requests/day against a 100K-free cap. No other platform combines unbounded concurrent + edge latency + real free tier + zero lock-in.
+
+---
+
+### Challenge 129: v3.0 Plan — Chess Lobby Migration to Cloudflare Durable Objects (Side-by-Side with Firestore)
+
+**Date:** 2026-04-24
+
+**Context:**
+Following Challenge 128's triage and research, the decision is to rebuild the chess lobby on Cloudflare Durable Objects + WebSocket Hibernation while keeping Firestore 100% live as a flag-gated fallback. Ships as v3.0 (versionCode 9, versionName "3.0"), bundled with the v2.2.2 bug-fix batch (Share APK removal, CA marks animation). User explicitly chose a single major release over two smaller ones so the chess rewrite goes through closed testing alongside the bug fixes rather than as a follow-up patch.
+
+**Non-negotiables driving the design:**
+- **Firestore must stay intact.** All existing collections, rules, composite indexes untouched. If CF DO fails for any reason, flipping one Remote Config flag returns all users to Firestore within seconds.
+- **No Firestore migration.** Zero data moves. The new backend handles ephemeral lobby state only (presence + active challenges). Persistent state (profiles, friends, game history) stays in Firestore permanently.
+- **Side-by-side at the app layer.** Both backends compile into every v3.0+ binary. A `ChessLobby` interface abstracts the call sites in `ChessViewModel`; the concrete impl is chosen at runtime from `FirebaseRemoteConfig.getBoolean("chess_backend_v2")`.
+- **Zero-downtime rollback.** Remote Config fetch + activate happens on every app launch, so switching the flag propagates to every running client without a code push.
+
+**Architecture:**
+```
+Android (OkHttp WebSocket)
+    ↓ Authorization: Bearer <Firebase ID token>
+CF Worker (entry, validates JWT via Google JWKS offline)
+    ↓ forwards WS to DO with X-Player-Id header
+Durable Object (one global instance, presence + challenge maps in memory)
+    ↓ on challenge accept
+Lichess API POST /api/challenge/open → whiteUrl / blackUrl / gameId
+    ↓ broadcasts CHALLENGE_ACCEPTED to both players
+Android receives URLs, loads Lichess WebView (unchanged from V1)
+```
+
+**WebSocket protocol (JSON messages):**
+
+Client → Server: `JOIN`, `CHALLENGE`, `ACCEPT`, `DECLINE`, `CANCEL`
+Server → Client: `PRESENCE_SNAPSHOT` (on connect), `PRESENCE_DIFF` (on other-player join/leave), `CHALLENGE_INCOMING`, `CHALLENGE_ACCEPTED`, `CHALLENGE_DECLINED`, `CHALLENGE_CANCELED`, `ERROR`
+
+No client-side heartbeat — the WS close event is the leave signal. DO uses the WebSocket Hibernation API, so idle connections have zero billing impact.
+
+**File layout (delta):**
+
+Server side (new, separate from Android project):
+```
+chess-lobby/
+├── wrangler.toml              CF config — DO binding, worker name, routes
+├── package.json                TypeScript + wrangler
+├── tsconfig.json
+├── src/
+│   ├── worker.ts              HTTP entry, Firebase JWKS validation, WS upgrade
+│   ├── lobby.ts               DO class, presence Map, challenge Map, message router
+│   ├── auth.ts                Firebase ID token verification (Google JWKS, offline)
+│   └── lichess.ts             POST /api/challenge/open helper
+└── README.md                   deploy + local-dev instructions
+```
+
+Android side (new files only, zero modifications to existing):
+```
+app/src/main/java/com/justpass/app/data/
+├── repository/
+│   ├── ChessRepository.kt          V1 Firestore (UNCHANGED)
+│   ├── ChessLobby.kt                NEW interface — common contract
+│   ├── FirestoreChessLobby.kt       NEW thin adapter delegating to ChessRepository
+│   └── ChessRepositoryV2.kt         NEW CF DO impl
+└── remote/
+    └── LobbyWebSocket.kt            NEW OkHttp WS wrapper with auto-reconnect
+```
+
+`ChessViewModel` picks `FirestoreChessLobby` or `ChessRepositoryV2` based on Remote Config at construction time. No other screen/view model is touched.
+
+**Feature-flag rollout:**
+
+1. Ship v3.0 with both backends compiled in, `chess_backend_v2` default `false`
+2. Dev-only test: Remote Config conditional `rollNumber == 715523244037` → `true`
+3. Friends alpha: flip for 5 known chess-active testers
+4. 25% → 50% → 100% over ~1 week
+5. After 2 weeks stable at 100%: delete V1 lobby code, remove interface abstraction, remove flag (v3.1 cleanup release)
+
+**Rollback drill:** flip `chess_backend_v2 = false` in Firebase Console. Next Remote Config fetch (max 1 hour later, typically seconds) switches every user back to Firestore. No app update required.
+
+**Fragmentation caveat:** users on V1 and V2 can't see each other in the lobby. Rollout must be cohort-based (Remote Config conditional targeting by `userId` or `rollNumber`), not random percentage. Never ship a 50/50 A/B split — that'd split the lobby population in half.
+
+**Cost projection (CF free tier, user's current scale):**
+
+| Metric | Peak-day estimate (300 concurrent) | Free cap | Headroom |
+|---|---|---|---|
+| WS incoming messages | ~900 K | billed 20:1 → 45 K requests | 2.2× under 100 K/day |
+| Worker invocations (WS upgrade) | ~5 K | 100 K/day | 20× |
+| DO state storage | ~1 MB ephemeral | unlimited in-memory | — |
+| Firestore profile writes (unchanged) | ~500 | 20 K | 40× |
+
+**Runs free at current scale. Break-even against CF paid tier at ~700 concurrent.**
+
+**Work estimate (orchestrated via parallel agents):**
+
+| Phase | Effort | Who |
+|---|---|---|
+| CF Worker + DO + Firebase JWT validation + protocol | 1 session | Agent A (TypeScript specialist) |
+| LobbyWebSocket + ChessLobby interface + FirestoreChessLobby adapter + ChessRepositoryV2 | 1 session | Agent B (Kotlin specialist) |
+| ChessViewModel wiring + Remote Config flag registration + version bump verify | manual | Orchestrator (me) |
+| End-to-end test with 2 devices (dev roll number flagged) | manual | User + orchestrator |
+| Iterate on reconnect / auth expiry / race conditions | 1 session | Orchestrator |
+
+**Files that MUST NOT be touched during this work:**
+- `ChessRepository.kt` — V1 Firestore path stays functional
+- `ChessViewModel.kt` — final wiring only, done manually by orchestrator after agents return
+- Any Firebase / Firestore security rules / composite indexes
+- Any screen under `ui/screens/` besides the chess path
+- `build.gradle.kts` — version already bumped to 9/3.0 before agents dispatch
+
+**Lessons (captured ahead of implementation so they anchor decisions during the build):**
+- **Feature flags belong in the binary from day 1 of any risky migration.** The cost of compiling both backends into the v3.0 AAB is ~200 KB and zero runtime overhead when the flag is off. The value is that a production incident during the rollout is recoverable in seconds instead of requiring an emergency hotfix APK + Play review.
+- **Interface-extract before implementing.** The `ChessLobby` interface constrains what the V2 impl needs to do and guarantees V1 keeps working. Skipping this step and just writing V2 as a drop-in replacement is how drift bugs get introduced — V2 silently omits a method V1 had, and the compiler doesn't catch it because there's no contract.
+- **Thin adapters over rewrites.** `FirestoreChessLobby` is not a fork of `ChessRepository` — it's a 15-method delegate class that forwards to the existing implementation. The V1 code path is byte-identical to what's shipping in v2.2.1. Zero regression risk on the old path.
+- **Parallel agent dispatch requires a frozen contract.** The CF Worker and Android client will be written by different agents in parallel, so the WebSocket message protocol (message types + JSON schemas) is locked down in this plan before dispatch. Any change to the protocol after dispatch means re-work in both codebases.
+- **Isolate deploy surfaces.** CF Worker deploys to the user's Cloudflare account (separate from Firebase). Wrangler auth is per-developer, not in the repo. Android deploys to Play. Breaking CF does not break Play and vice versa.
+
+**Status at end of planning session:**
+- Memory file `project_chess_lobby_v3.md` saved
+- `MEMORY.md` index updated with v3 entry
+- `build.gradle.kts` will be bumped to `versionCode = 9`, `versionName = "3.0"` as next step
+- Agents A + B dispatched immediately after the version bump
+- Orchestrator waits for both agents, reviews their output, wires `ChessViewModel`, builds AAB, verifies flag-off path is byte-identical to v2.2.1 chess flow
+
+---
+
+### Challenge 130: v3.0 Build-Out — CF Worker Deploy, Android Wiring, PWA Migration (All Behind One Flag)
+
+**Date:** 2026-04-24
+
+**Scope:** Execute the v3.0 plan from Challenge 129. Three surfaces, one rollout: (1) Cloudflare Worker + Durable Object deployed to production, (2) Android client compiled with both backends and the flag wired, (3) PWA (`AttendanceWidgetLaudea-Web`) migrated to the same `ChessLobby` interface so it reads the same `chess_backend_v2` Remote Config flag and switches in lock-step with Android. Plus the v2.2.2 bug fixes (Share APK removal, CA marks animation) piggybacked onto the v3.0 version bump.
+
+**What landed**
+
+*Cloudflare Worker (`chess-lobby/`):*
+- `wrangler.toml`, `package.json`, `tsconfig.json`, `src/{worker,lobby,auth,lichess,types}.ts`
+- Worker validates Firebase ID token against Google JWKS offline, forwards WS to the global `Lobby` Durable Object with a trusted `X-Player-Id` header
+- `extractBearer()` accepts `Authorization: Bearer <token>` (Android/OkHttp) **and** `?token=<token>` query param (PWA — browsers can't set custom headers on the `new WebSocket()` upgrade)
+- DO uses the WebSocket Hibernation API so idle connections are free
+- `handleChallenge` accepts an optional client-supplied `challengeId` (regex-validated `^[0-9a-fA-F-]{16,64}$`) so Android and PWA can generate UUIDs client-side and keep symmetric API with the Firestore path
+- **Deployed:** `https://chess-lobby.tmswamy10.workers.dev`. `GET /health` returns `{"ok":true}`
+
+*Android (`app/`):*
+- NEW: `data/repository/ChessLobby.kt` (interface), `FirestoreChessLobby.kt` (delegating adapter wrapping the existing `ChessRepository` — zero logic change), `ChessRepositoryV2.kt` (~420 LOC CF DO impl), `data/remote/LobbyWebSocket.kt` (~209 LOC OkHttp WS wrapper with exponential-backoff reconnect and a bounded send queue)
+- MOD: `ChessViewModel.kt` — backend picked at construction via `FirebaseRemoteConfig.getInstance().getBoolean("chess_backend_v2")`. Every `repo.<lobby-method>` call replaced with `lobby.<lobby-method>`. Direct `FirebaseFirestore` import removed
+- MOD: `build.gradle.kts` — `versionCode = 9`, `versionName = "3.0"`, added `firebase-auth-ktx` dependency. `libs.versions.toml` gained the ref
+- MOD: `remoteconfig.template.json` — new `chess_backend_v2` boolean parameter, default `false`
+- v2.2.2 bug fixes bundled in: `ProfileScreen.kt` (Share APK card removed), `CAMarksScreen.kt` (expand/collapse animation fix)
+
+*PWA (`C:\Users\tmswa\WebProjects\AttendanceWidgetLaudea-Web`, separate repo):*
+- NEW: `src/lib/chess/{ChessLobby,FirestoreChessLobby,CloudflareChessLobby,index,types}.ts`, `src/lib/auth-anonymous.ts` (`getAnonymousIdToken()` with race-safe sign-in), `src/lib/remote-config.ts` (dev/prod fetch interval, safe defaults)
+- MOD: `src/lib/firebase.ts` — SSR-guarded `auth` + `remoteConfig` exports
+- MOD: `src/app/chess/page.tsx` (2266 → 2217 LOC) — surgical routing through the lobby interface. All Firestore calls moved behind `lobby.<method>`, identical to the Android ViewModel pattern
+- `CloudflareChessLobby` has a **3-second WS connect-timeout safety fallback**: if `chess_backend_v2=true` but the socket can't connect in 3s, it falls back to `FirestoreChessLobby` so a CF outage + flag-on combo never bricks chess. Android doesn't need this (`LobbyWebSocket` retries until online); the PWA does because a browser tab with a dead socket has no UX recovery path
+- `npm run build` clean — 32 routes, `/chess` included
+
+*Firebase Console (done via Playwright automation):*
+- Remote Config: `chess_backend_v2 : boolean` parameter created + published, default `false`
+- Authentication: Anonymous provider enabled (required for PWA users who aren't logged in via Keycloak to obtain Firebase ID tokens)
+
+**How it was orchestrated**
+
+Two parallel agents after the protocol and interface contract were locked down in Challenge 129:
+- Agent A (TypeScript) — CF Worker + DO + auth + Lichess helper
+- Agent B (Kotlin) — `LobbyWebSocket`, `ChessLobby`, `FirestoreChessLobby`, `ChessRepositoryV2`
+
+Orchestrator did the `ChessViewModel` wiring, the PWA migration (also via an agent), and all deploy steps. Both agents honored the "files that MUST NOT be touched" list from Challenge 129 — `ChessRepository.kt` V1 is byte-identical to v2.2.1.
+
+**Deploy friction (worth recording so the next time is faster)**
+- Wrangler v3 OAuth callback hung → fix: upgrade to `wrangler@4`
+- First `wrangler deploy` failed with "workers.dev subdomain not provisioned" → fix: visit the Cloudflare Workers dashboard once to auto-provision the subdomain, then retry
+- Windows `curl` hit `SEC_E_ILLEGAL_MESSAGE` on the brand-new `workers.dev` subdomain for ~60s while the cert propagated → fix: probe `/health` via a browser instead until cert settles
+- Firebase Console Remote Config dropdown is Angular Material — `click()` doesn't open it; needed synthesized pointer events (`dispatchEvent(new PointerEvent('pointerdown', …))`) to open the type selector
+- Agent B initially reached for reflective Firebase Auth because `firebase-auth-ktx` wasn't in dependencies → fix: added the ref, rewrote `fetchFirebaseIdToken()` with direct API calls and a coroutine `.await()`
+- Client-generated UUIDs were dropped by the server on first contact → fix: Worker `handleChallenge` now accepts an optional validated `challengeId` instead of always generating its own
+
+**Rollback drill (rehearsed, not triggered)**
+1. Firebase Console → Remote Config → `chess_backend_v2 = false` → Publish
+2. Next Remote Config fetch (seconds to at most ~1 hour) → every Android + PWA user is back on Firestore
+3. No app update, no PWA redeploy, no DB migration
+
+**Fragmentation guardrail:** V1 and V2 users can't see each other in the lobby (different presence stores). So rollout is cohort-based via Remote Config conditional targeting (`userId == <tester>`), never random percentage.
+
+**Lessons**
+- **Protocol freezes before parallel dispatch.** The WS message schema was locked in Challenge 129 before Agent A and Agent B started. If the protocol had drifted between them, one agent's work would have needed a rewrite. The frozen contract paid for itself.
+- **Browsers can't set headers on WS upgrade.** Obvious in retrospect, caught late. `?token=` query param is the only way for the PWA to authenticate over WebSocket. Worth building into the Worker from day 1 rather than discovering at integration.
+- **A 3-second connect timeout is the PWA's kill switch.** Android can reconnect forever because the user is still in the app. The PWA is a tab — if WS doesn't come up fast, the user sees a dead screen. The 3s fallback to Firestore is PWA-specific defensive code that doesn't belong on Android.
+- **Production platform dashboards are Playwright targets.** Cloudflare, Firebase, and Vercel dashboards all have tedious multi-click flows that are perfectly automatable. Playwright with JS pointer-event dispatch handled everything (react-select, Angular Material, OAuth redirects). Worth remembering for the next migration.
+
+**Status at end of session**
+- All code on disk, `/health` verified live, both builds compile clean
+- Rollout begins after end-to-end test on user's dev account (target `userId == 715523244037` via Remote Config conditional, then ramp)
+
+---
+
