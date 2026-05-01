@@ -18,7 +18,7 @@ data class TestDetails(
     val components: List<Component>,
 
     @SerializedName("total")
-    val total: MarksValue
+    val total: Marks
 )
 
 data class Component(

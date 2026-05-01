@@ -806,7 +806,7 @@ class AttendanceRepository(private val context: Context) {
                             if (subs.isNotEmpty()) "${comp.name}(${subs.joinToString(", ")})" else null
                         } else null
                     }
-                    val total = course.testDetails.total
+                    val total = course.testDetails.total.scaled
                     val totalStr = if (!total.isNotEntered()) " Total: ${total.getSecuredDisplay()}/${total.getMaxAsDouble().toInt()}" else ""
                     if (componentMarks.isNotEmpty()) {
                         "${course.courseTitle}: ${componentMarks.joinToString(", ")}$totalStr"

@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -87,8 +88,8 @@ fun CAMarksScreen(cardState: LiquidState, viewModel: CAMarksViewModel = viewMode
 @Composable
 private fun CourseCard(course: CourseMarks) {
     var expanded by remember { mutableStateOf(false) }
-    val secured = course.testDetails.total.getSecuredAsDouble()
-    val max = course.testDetails.total.getMaxAsDouble()
+    val secured = course.testDetails.total.scaled.getSecuredAsDouble()
+    val max = course.testDetails.total.scaled.getMaxAsDouble()
     val accentColor = getMarksAccentColor(secured, max)
     val tintColor = accentColor.copy(alpha = 0.06f)
 
@@ -100,34 +101,91 @@ private fun CourseCard(course: CourseMarks) {
                 .fillMaxHeight()
                 .background(accentColor))
             Column(modifier = Modifier.weight(1f)) {
-                Row(modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(course.courseCode, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
-                        Text(course.courseTitle, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f, fill = true).padding(end = 12.dp)) {
+                        Text(
+                            course.courseCode,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            course.courseTitle,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            lineHeight = 14.sp
+                        )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
                     if (max <= 0.0 && (secured == null || secured <= 0.0)) {
-                        // Check if any components have marks even if total is 0
                         val hasAnyMarks = course.testDetails.components.any { c ->
                             c.marks?.scaled?.getSecuredAsDouble()?.let { it > 0 } == true ||
                             (c.hasSubComponent && c.subComponents?.any { s ->
                                 s.marks?.scaled?.getSecuredAsDouble()?.let { it > 0 } == true
                             } == true)
                         }
-                        Text(
-                            if (hasAnyMarks) "Tap to expand" else "Awaiting marks",
-                            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
+                        Box(
+                            modifier = Modifier.width(132.dp),
+                            contentAlignment = Alignment.CenterEnd
+                        ) {
+                            Text(
+                                if (hasAnyMarks) "Tap to expand" else "Awaiting marks",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.End
+                            )
+                        }
                     } else {
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(course.testDetails.total.getSecuredDisplay(), fontWeight = FontWeight.Bold, fontSize = 22.sp,
-                                color = accentColor)
-                            Text("/ ${max.toInt()}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val tabularStyle = androidx.compose.ui.text.TextStyle(
+                            fontFeatureSettings = "tnum"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .width(160.dp)
+                                .background(
+                                    accentColor.copy(alpha = 0.15f),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+                                )
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    course.testDetails.total.scaled.getSecuredDisplay(),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 20.sp,
+                                    color = accentColor,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                    style = tabularStyle,
+                                    modifier = Modifier.width(78.dp)
+                                )
+                                Text(
+                                    " / ${max.toInt()}",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+                                    style = tabularStyle,
+                                    modifier = Modifier.width(56.dp)
+                                )
+                            }
                         }
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, if (expanded) "Collapse" else "Expand")
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        if (expanded) "Collapse" else "Expand",
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
                 AnimatedVisibility(
                     visible = expanded,

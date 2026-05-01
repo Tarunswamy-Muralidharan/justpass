@@ -6150,3 +6150,85 @@ Orchestrator did the `ChessViewModel` wiring, the PWA migration (also via an age
 
 ---
 
+## Challenge 131 — CA Marks summary alignment + v3.0 chess flag flipped to global default
+
+**Date:** 2026-05-01
+
+**Scope:** Two threads in one session: (1) hidden bug in CA Marks where every subject's "Summary" total was silently swallowed because the API response shape didn't match the Kotlin model — fixed end-to-end and rebuilt the score row into a true grid that aligns across all subjects on every screen size, and (2) promoted the `chess_backend_v2` flag from "default off, opt-in cohort" to "default on for everyone" across server + Android + PWA, the configuration the v3.0 production rollout actually wants to ship under.
+
+**(1) CA Marks summary fix + alignment redesign**
+
+The bug: `CourseMarks.testDetails.total` was modeled as `MarksValue` (`{max, secured}`) but the SIS API returns `Marks` (`{actual: {max, secured}, scaled: {max, secured}}`). Gson silently parsed the wrapper as a `MarksValue` with both fields null/0 and never threw. Result: `total.getMaxAsDouble()` always returned `0.0`, so the screen condition `if (max <= 0.0 && secured == null)` ate the score and rendered "Tap to expand" / "Awaiting marks" for every row that *did* have marks.
+
+Discovered by adding a one-line `Log.d("CAMarksRaw", "FULL_JSON=$jsonData")` at the deserialize site and reading the raw response over `adb logcat` — the response clearly shows `"total":{"actual":{"max":40,"secured":33.09},"scaled":{"max":40,"secured":33.09}}`, identical actual + scaled because the summary row already has the final-score scaling baked in.
+
+Fix:
+- `CAMarksResponse.kt` — `total: MarksValue` → `total: Marks`
+- `CAMarksScreen.kt`, `DashboardViewModel.kt`, `AttendanceRepository.kt` — read `total.scaled.getSecuredAsDouble()` / `total.scaled.getMaxAsDouble()` (use `scaled` because the website's "Final Score" column is what users recognize as "the mark out of 40")
+
+Then the layout went through five iterations as the user pushed for tighter alignment:
+
+| iter | tactic                                                              | failure mode user caught                                                                                              |
+| ---  | ---                                                                 | ---                                                                                                                   |
+| v1   | Two-line column (big number top, "/max" below)                      | Misaligned across rows — different decimal-point positions shifted columns                                            |
+| v2   | Inline `AnnotatedString` with mixed-size spans, fixed-width 110.dp  | "69.00 / 100" truncated — slot too narrow for 3-digit max                                                             |
+| v3   | Two `Text` widgets in a Row, fixed widths 72.dp + 54.dp             | Optical drift across rows because proportional font glyph widths varied: "1" sits narrower than "8"                   |
+| v4   | Add `fontFeatureSettings = "tnum"` (tabular numerals) to both Texts | Pill background was content-wrap, so each pill had a different x-position — `/100` pill wider than `/40` pill         |
+| v5   | Wrap the two-column Row in a fixed-width 160.dp pill                | **Final.** All slashes land on identical x. Verified with a Python-overlaid cyan vertical line on a real screenshot.  |
+
+The pill itself uses the row's `accentColor.copy(alpha = 0.15f)` so the green/yellow/red coding from the percentage threshold tints the pill, not just the text. Fixed inner widths (78.dp + 56.dp) plus tabular numerals plus `softWrap = false` give pixel-identical alignment regardless of phone size or font scaling — a non-negotiable since the app is shared across phones with very different display settings.
+
+**(2) Promoting `chess_backend_v2` to default-on across all surfaces**
+
+Challenge 130 shipped the flag with default `false` everywhere (Android `setDefaultsAsync`, PWA `defaultConfig`, Firebase Console default, `remoteconfig.template.json`). The plan was opt-in cohort rollout. After bench-testing on the dev device, we want this build to be *the* production build — meaning V2 is the default and V1 is only the rollback path.
+
+Three layers had to flip in lockstep. Get the order wrong and you ship a build that contradicts the server.
+
+| layer                    | path                                                       | before  | after  | propagation                          |
+| ---                      | ---                                                        | ---     | ---    | ---                                  |
+| Android in-code default  | `ChessViewModel.kt` `setDefaultsAsync({...v2: true})`      | (none)  | `true` | next `installDebug`                  |
+| PWA in-code default      | `src/lib/remote-config.ts` `defaultConfig`                 | `false` | `true` | next Vercel deploy on master         |
+| Firebase server default  | `remoteconfig.template.json` + `firebase deploy`           | `false` | `true` | propagates to all clients < 1h       |
+
+Why all three matter:
+- **In-code defaults** decide what the very first launch sees, before `fetchAndActivate` has hit the network. If the server says one thing and the in-code default says another, brand-new users flicker between backends until the first fetch settles. Worse, if the WS connect-timeout fallback fires (PWA-only, 3s), having an in-code `false` default means a slow-network user permanently lands on Firestore on session 1.
+- **Server default** is the source of truth that all 1k+ existing users converge to within an hour. Without flipping this, the in-code change only helps freshly-installed users — every existing v2.2.1 user is still pinned to V1 by their cached Remote Config.
+
+The Firebase Console UI was a dead end for this flip — `click()`, `dispatchEvent`, hovering, finding "edit" buttons, all failed against the Angular Material grid. After 4–5 dead-end attempts via the Claude-in-Chrome MCP, switched to `firebase deploy --only remoteconfig` which is the supported automation path. Caught a 384/256-char description-length validation error on first try; trimmed the description down to a one-liner that names the rollback action ("Flip off for instant rollback to Firestore.") and redeployed. Verified live with `firebase remoteconfig:get -o ... | python -c "..."` printing `{'value': 'true'}`. Took less time than fighting the Console.
+
+PWA deploy: committed to `master`, Vercel auto-built and aliased the new build to `justpass-eta.vercel.app` (the stable production alias) within ~30s of push. Verified the alias points to the new deployment by `vercel inspect`-ing the unique URL.
+
+**End-to-end test attempted, blocked by SSO**
+
+After deploying, attempted to simulate a chess match between two accounts (715523244037, 715523244039) by opening two PWA tabs in the same Chrome profile. Both logged in successfully and reached the lobby, but **after a refresh both tabs read the same roll number** — Keycloak SSO cookies on `accounts.psgitech.ac.in` are scoped per Chrome profile, so the second login overwrote the first session globally. The lobby correctly showed "no other players" because there *was* effectively only one user. Two-account simulation needs separate browser contexts (phone + PWA, or two Chrome profiles), not two tabs in the same profile. End-to-end test deferred to next session.
+
+**What changed in code/infra**
+
+*Android (`app/`):*
+- MOD: `data/model/CAMarksResponse.kt` — `TestDetails.total: MarksValue → Marks`
+- MOD: `ui/screens/CAMarksScreen.kt` — score row redesigned to fixed-width pill + two-column tabular-numeral grid
+- MOD: `ui/viewmodel/DashboardViewModel.kt` — read `total.scaled.*` instead of `total.*` for AI prefetch
+- MOD: `data/repository/AttendanceRepository.kt` — same correction in cached AI summary string
+- MOD: `ui/viewmodel/ChessViewModel.kt` — `rc.setDefaultsAsync(mapOf("chess_backend_v2" to true))`, exception fallback also `true`
+
+*PWA (`AttendanceWidgetLaudea-Web/`):*
+- MOD: `src/lib/remote-config.ts` — `defaultConfig.chess_backend_v2: false → true`
+- Commit `12a4ccf`, deployed to `justpass-eta.vercel.app`
+
+*Firebase Console:*
+- MOD: `remoteconfig.template.json` — `chess_backend_v2.defaultValue.value: "false" → "true"` (description trimmed to 256-char limit), deployed via `firebase deploy --only remoteconfig`
+- `firebase remoteconfig:get` confirms server default is now `true`
+
+**Rollback path (unchanged)**
+1. Firebase Console (or `firebase deploy` after editing the template) → `chess_backend_v2 = false`
+2. Next Remote Config fetch (max ~1h, instant in dev) → every Android + PWA user back on Firestore
+3. No app update needed
+
+**Lessons**
+- **Verify model shape against the wire, not the docs.** The CA Marks bug had been latent for months because Gson silently absorbs shape mismatches into nullable defaults rather than throwing. One `Log.d` of the raw response would have caught this on day 1. Add the same diagnostic to any future endpoint that introduces a new model.
+- **Pixel-perfect alignment requires three things, not one.** Fixed-width column + tabular numerals + matching outer pill width. Skipping any one of them produces drift the user *will* notice. The `tnum` font feature is the cheapest of the three and the easiest to forget.
+- **`firebase deploy --only remoteconfig` is faster than the Console for any non-trivial flag change.** The Console UI has automation-hostile interactions (Angular Material dropdowns, value-cell editors that don't respond to synthesized clicks). The CLI takes the same JSON the Console uses and ships it in one command. From now on, default to CLI for flag flips.
+- **SSO-bound auth defeats multi-tab testing.** Cannot simulate two users from one Chrome profile when the auth provider scopes its session per-profile. Plan two-account testing around two distinct browser contexts (or phone + PWA) from the start, not as an afterthought.
+
+---
+
