@@ -30,10 +30,10 @@
     },
     "chess_backend_v2": {
       "defaultValue": {
-        "value": "false"
+        "value": "true"
       },
       "valueType": "BOOLEAN",
-      "description": "When true, the chess lobby uses the Cloudflare Durable Objects WebSocket backend (v3.0+). When false (default), it uses the Firestore backend that has shipped since v2.0. Flip on per-cohort via conditional targeting (not random %) — users on different backends can't see each other in the lobby. Rollback is instant: flip back to false and every V2 user is on Firestore at next fetch."
+      "description": "Cloudflare Durable Objects chess lobby. When true, presence+challenges use WebSocket to chess-lobby.tmswamy10.workers.dev instead of Firestore. Flip off for instant rollback to Firestore."
     }
   }
 }

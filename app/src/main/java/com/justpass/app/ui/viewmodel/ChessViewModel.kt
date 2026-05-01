@@ -69,8 +69,12 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     // would mix backends inside one VM instance. Instead the switch takes effect on the next lobby entry.
     private val lobby: ChessLobby = run {
         val useV2 = try {
-            FirebaseRemoteConfig.getInstance().getBoolean("chess_backend_v2")
-        } catch (_: Exception) { false }
+            val rc = FirebaseRemoteConfig.getInstance()
+            rc.setDefaultsAsync(mapOf("chess_backend_v2" to true))
+            // If Remote Config has fetched a server value, that wins; otherwise the local
+            // default above (true) is used so v3.0 ships on V2 backend out of the box.
+            rc.getBoolean("chess_backend_v2")
+        } catch (_: Exception) { true }
         if (useV2) ChessRepositoryV2.getInstance() else FirestoreChessLobby(repo)
     }
 
