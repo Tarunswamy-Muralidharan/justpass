@@ -37,7 +37,7 @@ object AdConfig {
         //    appear immediately even on a fresh install. Server flip true→false
         //    causes a one-launch flicker, then prefs cache catches up.
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        _adsEnabled.value = prefs.getBoolean(KEY_ADS_ENABLED, true)
+        _adsEnabled.value = prefs.getBoolean(KEY_ADS_ENABLED, false)
 
         val remoteConfig = FirebaseRemoteConfig.getInstance()
         remoteConfig.setConfigSettingsAsync(
