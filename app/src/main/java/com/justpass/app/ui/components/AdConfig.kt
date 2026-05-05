@@ -1,5 +1,6 @@
 package com.justpass.app.ui.components
 
+import android.content.Context
 import androidx.compose.runtime.mutableStateOf
 import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.RequestConfiguration
@@ -8,6 +9,7 @@ import com.google.firebase.remoteconfig.remoteConfigSettings
 
 object AdConfig {
     private const val KEY_ADS_ENABLED = "ads_enabled"
+    private const val PREFS = "ad_config_cache"
 
     // OFF by default. Flip the `ads_enabled` parameter in Firebase Remote Config
     // (Firebase Console → Engage → Remote Config) to true when you're ready to
@@ -16,7 +18,7 @@ object AdConfig {
     private val _adsEnabled = mutableStateOf(false)
     val adsEnabled: Boolean get() = _adsEnabled.value
 
-    fun init(context: android.content.Context) {
+    fun init(context: Context) {
         // Register test devices (MobileAds.initialize called in MainActivity)
         MobileAds.setRequestConfiguration(
             RequestConfiguration.Builder()
@@ -27,6 +29,16 @@ object AdConfig {
                 .build()
         )
 
+        // Eliminate the first-frame race: read the LAST-KNOWN value from a
+        // sync SharedPreferences cache and seed the UI state with it BEFORE
+        // Firebase Remote Config's async fetch runs. Result: every launch
+        // after the first-ever shows ads instantly with no flicker. The
+        // first-ever launch (no cache yet) still shows nothing for ~500ms
+        // until fetchAndActivate completes — unavoidable without baking the
+        // value into the APK.
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        _adsEnabled.value = prefs.getBoolean(KEY_ADS_ENABLED, false)
+
         val remoteConfig = FirebaseRemoteConfig.getInstance()
         remoteConfig.setConfigSettingsAsync(
             remoteConfigSettings {
@@ -35,7 +47,10 @@ object AdConfig {
         )
         remoteConfig.setDefaultsAsync(mapOf(KEY_ADS_ENABLED to false))
         remoteConfig.fetchAndActivate().addOnCompleteListener {
-            _adsEnabled.value = remoteConfig.getBoolean(KEY_ADS_ENABLED)
+            val fresh = remoteConfig.getBoolean(KEY_ADS_ENABLED)
+            _adsEnabled.value = fresh
+            // Persist for next launch's pre-render seed.
+            prefs.edit().putBoolean(KEY_ADS_ENABLED, fresh).apply()
         }
     }
 }
