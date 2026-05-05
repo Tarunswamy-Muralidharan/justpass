@@ -70,14 +70,14 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     private val lobby: ChessLobby = run {
         val useV2 = try {
             val rc = FirebaseRemoteConfig.getInstance()
-            // Cloudflare Worker chess lobby is killing every WebSocket immediately
-            // after upgrade (close 1006) — both clients show "online" optimistically
-            // but neither sees the other. Default flipped to false until the worker
-            // is fixed/redeployed; the Firebase Remote Config server value still
-            // wins if it's set.
-            rc.setDefaultsAsync(mapOf("chess_backend_v2" to false))
+            // Cloudflare Durable Object chess lobby. The Worker now rehydrates
+            // its in-memory `players` map from state.getWebSockets() on
+            // hibernation wake (chess-lobby/src/lobby.ts), so post-hibernation
+            // joiners can see existing peers again. Server RC value still wins
+            // — flip it false to roll back to Firestore without an APK update.
+            rc.setDefaultsAsync(mapOf("chess_backend_v2" to true))
             rc.getBoolean("chess_backend_v2")
-        } catch (_: Exception) { false }
+        } catch (_: Exception) { true }
         if (useV2) ChessRepositoryV2.getInstance() else FirestoreChessLobby(repo)
     }
 
