@@ -231,17 +231,22 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             // Load local match history
             loadMatchHistory()
 
-            heartbeatJob = viewModelScope.launch {
-                // Heartbeat-then-delay so a freshly mounted ViewModel writes its
-                // first timestamp immediately instead of waiting a full 90s —
-                // defensive against the (rare) case where goOnline's initial
-                // write lands but state churn causes a re-mount before the loop
-                // would otherwise fire.
-                while (isActive) {
-                    lobby.heartbeat(myPlayerId)
-                    delay(90_000L) // heartbeat every 90s (stale threshold is 150s) — V2 no-ops
+            if (lobby.requiresHeartbeat) {
+                heartbeatJob = viewModelScope.launch {
+                    // Heartbeat-then-delay so a freshly mounted ViewModel writes its
+                    // first timestamp immediately instead of waiting a full 90s —
+                    // defensive against the (rare) case where goOnline's initial
+                    // write lands but state churn causes a re-mount before the loop
+                    // would otherwise fire.
+                    while (isActive) {
+                        lobby.heartbeat(myPlayerId)
+                        delay(90_000L) // heartbeat every 90s (stale threshold is 150s)
+                    }
                 }
             }
+            // V2 (Cloudflare DO) infers presence from WebSocket liveness, so
+            // requiresHeartbeat=false and we skip the tick entirely — saves a
+            // CPU wakeup every 90s on every online user's phone.
 
             // Periodic result checker — polls every 30s for unchecked game results
             resultCheckerJob?.cancel()

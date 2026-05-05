@@ -13,6 +13,10 @@ import com.justpass.app.data.model.OnlinePlayer
  */
 class FirestoreChessLobby(private val repo: ChessRepository) : ChessLobby {
 
+    // Firestore presence is doc-based; without periodic timestamp bumps a
+    // user looks online forever to other clients (until 150s stale window).
+    override val requiresHeartbeat: Boolean = true
+
     override suspend fun goOnline(playerId: String, displayName: String) =
         repo.goOnline(playerId, displayName)
 

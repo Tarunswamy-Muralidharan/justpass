@@ -18,6 +18,14 @@ import com.justpass.app.data.model.OnlinePlayer
  */
 interface ChessLobby {
 
+    /**
+     * True if the client must call [heartbeat] periodically to keep its
+     * presence alive. False for backends where presence is bound to a live
+     * transport (e.g. WebSocket liveness on Cloudflare DOs) — the ViewModel
+     * skips the periodic tick to save battery.
+     */
+    val requiresHeartbeat: Boolean
+
     // ─── Presence ───────────────────────────────────────────────────────────
 
     suspend fun goOnline(playerId: String, displayName: String)
