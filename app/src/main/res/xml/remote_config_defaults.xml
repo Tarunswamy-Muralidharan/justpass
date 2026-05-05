@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bundled Firebase Remote Config defaults. Loaded sync from APK on app
+  start (10ms) so first-ever launches show the right ad state without
+  waiting for fetchAndActivate (~500ms). Server values still override
+  whenever they arrive.
+-->
+<defaultsMap>
+    <entry>
+        <key>ads_enabled</key>
+        <value>true</value>
+    </entry>
+    <entry>
+        <key>chess_backend_v2</key>
+        <value>true</value>
+    </entry>
+    <entry>
+        <key>maintenance_enabled</key>
+        <value>false</value>
+    </entry>
+    <entry>
+        <key>maintenance_message</key>
+        <value></value>
+    </entry>
+    <entry>
+        <key>sideload_block_enabled</key>
+        <value>false</value>
+    </entry>
+</defaultsMap>
