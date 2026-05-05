@@ -80,8 +80,13 @@ class LobbyWebSocket(
             ws = webSocket
             webSocket = null
             sendQueue.clear()
-            messageListeners.clear()
-            stateListeners.clear()
+            // NOTE: keep the listener lists intact. ChessRepositoryV2 is a
+            // singleton that registers listeners ONCE in its `init` block, and
+            // a goOffline → goOnline cycle (very common — chess screen mount/
+            // unmount or app foreground/background) calls disconnect() then
+            // connect() on the same socket. Clearing listeners here meant the
+            // user looked online optimistically but the repo never received a
+            // single PRESENCE_DIFF after the second connect.
         }
         try { ws?.close(1000, "client disconnect") } catch (_: Exception) {}
         emitState(ConnectionState.DISCONNECTED)
