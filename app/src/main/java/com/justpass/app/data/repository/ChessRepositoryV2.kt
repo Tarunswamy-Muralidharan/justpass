@@ -26,6 +26,11 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class ChessRepositoryV2 private constructor() : ChessLobby {
 
+    // Cloudflare DO infers presence from WebSocket liveness — no client
+    // tick needed. Skipping the 90s heartbeat coroutine saves battery and
+    // CPU wakeups for the whole user base.
+    override val requiresHeartbeat: Boolean = false
+
     companion object {
         private const val TAG = "ChessRepoV2"
 

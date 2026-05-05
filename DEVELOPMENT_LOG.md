@@ -6347,3 +6347,65 @@ Deployed (`6220be1`), flipped `chess_backend_v2` back to `true` on the server, f
 - **Always stash the actor's identity onto socket attachments, not just the player id.** `serializeAttachment({ playerId })` was incomplete; we needed `serializeAttachment({ playerId, displayName })` so hibernation-driven rehydration doesn't lose names. CF's hibernation API rewards stashing redundant context.
 
 ---
+
+## 2026-05-05 — Firestore (V1) vs Cloudflare DO (V2): the chess lobby cost + architecture comparison
+
+After the V2 hibernation fix landed, the user asked: "the heartbeat throttling we did to keep Firestore reads/writes down — that's not needed on Cloudflare, right?" Right. Worth writing down the actual cost shape and architecture difference because the difference is bigger than just "one is free."
+
+### V1 — Firestore-backed lobby (active until 2026-05-01, fallback today)
+
+**Presence model:** Each online user owns a doc at `chess_online/<playerId>` with `{ displayName, timestamp, wins, losses, draws, gamesPlayed }`. To stay "alive," the client bumps `timestamp = Date.now()` every 90 s. Other clients run a `onSnapshot` listener on the whole `chess_online` collection and filter out anyone whose `timestamp` is more than 150 s old.
+
+**Cost shape (5k DAU baseline, 100 concurrent online):**
+- Heartbeat writes: 100 × (3600 / 90) = 4,000 writes/hour, **96k writes/day** — 4.8× over Spark free tier (20k/day) on heartbeats alone.
+- Presence reads: every other online user's tab gets a snapshot delivery on every doc change; ~100 × 100 = 10k reads/min during peak. Hits Spark's 50k reads/day in 5 minutes.
+- We had to throttle hard: 90 s heartbeat with 150 s stale window (1.6× ratio so one missed tick doesn't show false-offline) was the highest acceptable interval before users see "active 4 m ago" labels constantly.
+
+**Failure modes inherent to V1:**
+- Tab close: `pagehide` fires `deleteDoc` on `chess_online/<id>`, but browsers cancel pending fetches on unload — the doc lingers. Other clients see the user "online" for the full 150 s stale window before the heartbeat-timeout filter hides them.
+- Backgrounded tab: iOS Safari freezes `setInterval`. The user's heartbeat stops; they look offline to others within 150 s. We added a `visibilitychange` immediate-heartbeat to recover.
+- Stat write: read-modify-write transaction. Two concurrent results landing on the same profile race; one drops. Audit-fixed today using `FieldValue.increment()`.
+
+**Why the 90 s cadence was a forced choice, not a design choice:** Going lower would've blown the free tier. Going higher would've made the "is X online?" UX feel like AIM in 2003.
+
+### V2 — Cloudflare Durable Object lobby (production since 2026-05-01, fixed today)
+
+**Presence model:** Each client opens a single WebSocket to `wss://chess-lobby.tmswamy10.workers.dev/ws?token=<firebase-id-token>`. The Worker forwards the upgraded socket to a single global Durable Object (`idFromName("global")`). The DO holds an in-memory `Map<playerId, PlayerState>` and broadcasts `PRESENCE_DIFF` events to all live sockets. **Liveness IS the WebSocket.** Tab close → TCP FIN → `webSocketClose` event → `PRESENCE_DIFF removed=[playerId]` broadcast in <1 s. No periodic write anywhere.
+
+**Cost shape (5k DAU baseline, 100 concurrent online):**
+- Free tier: 100k Worker requests/day, 13M GB-s of DO time/month, all WS messages free.
+- Per online session: 1 request (the `/ws` upgrade). 100 concurrent users connecting once a day = 100 requests. Comfortably under the 100k/day budget — 100× headroom.
+- DO compute: hibernates when idle (CF reattaches sockets on next message). At-rest cost is essentially zero. The only billable wake is when a JOIN/CHALLENGE/etc. message arrives. Even at 5k DAU sending dozens of messages each, you'd consume <1% of the monthly budget.
+- Firestore is now used **only** for: `chess_profiles` (~1 read + 1 write per game), `chess_friends` (read on friends list open), `chess_match_history` (1 write per game end), the result-claim atomic op. ~200 reads + 200 writes/day at 50 games/day. **0.4% of Spark's read quota, 1% of write quota.**
+
+**Why no heartbeat is needed:** TCP itself handles liveness. NAT idle timeouts are handled by `setWebSocketAutoResponse("ping", "pong")` (registered in the DO constructor) — the runtime auto-replies without waking the DO from hibernation. Free, instant, no quota.
+
+**Stale detection isn't a thing on V2:** Presence is exact. A user is online iff their socket is open. No `STALE_THRESHOLD`, no "active 2m ago" labels — `Active now` for everyone visible.
+
+### The diff in one table
+
+| Concern | V1 (Firestore) | V2 (Cloudflare DO) |
+|---|---|---|
+| Liveness signal | `chess_online.timestamp` bumped every 90 s | TCP-level socket alive |
+| Stale window | 150 s before user disappears | <1 s (TCP FIN propagates immediately) |
+| Tab-close cleanup | `pagehide` `deleteDoc` (often cancelled by browser) | `webSocketClose` always fires server-side |
+| Backgrounded tab | iOS freezes setInterval; recover on visibilitychange | OS keeps socket alive; nothing to recover |
+| Cross-device clock skew | Sender's `Date.now()` vs receiver's `Date.now()` (drift) | DO uses one clock; clients anchor to server timestamp |
+| Per-user cost | ~40 writes/hour heartbeat | ~0 |
+| Reads scale | O(N²) without scoping (audit #3 fix needed) | O(1) — only diffs to interested sockets |
+| Failure-tier cost at 5k DAU | Spark blown by mid-morning | <1% of Workers free tier |
+| Code complexity | Heartbeat tick + visibilitychange + stale filter + tab-close beacon | One WS connect + JOIN message |
+
+### Battery impact of dropping the V2 heartbeat tick
+
+The Android `ChessViewModel.heartbeatJob` was a coroutine that woke every 90 s, called `lobby.heartbeat()` (no-op on V2), and went back to sleep. That's a CPU wakeup every 90 s on every online user's phone — ~40 wakeups/hour for nothing. Across 5k DAU averaging 2 hours online/day, that's ~400k pointless wakeups/day across all users. Skipping the loop entirely when `lobby.requiresHeartbeat == false` is purely battery saving — no other behavior changes. Same change applied to PWA's `useEffect` heartbeat.
+
+Implemented today via a `requiresHeartbeat: boolean` field on the `ChessLobby` interface. `FirestoreChessLobby.requiresHeartbeat = true`; `ChessRepositoryV2.requiresHeartbeat = false`. ViewModel + page.tsx skip the tick when the flag is false. The `heartbeat()` method itself stays no-op on V2 in case anyone calls it directly.
+
+### Lessons
+
+- **Cost optimizations that exist purely because of free-tier limits are technical debt against a paid tier.** The 90 s heartbeat + 150 s stale buffer existed entirely because Firestore reads/writes are billed per-event. On Cloudflare, the same architecture would have used 1 s heartbeats with a 3 s buffer for instant-feel presence — or none at all, like we did. When migrating to a different cost model, audit the throttles.
+- **Presence is the wrong job for a document database.** Every Firestore-as-presence implementation eventually adds a stale window, a heartbeat, a beacon, a visibilitychange handler. They're all working around the fact that a doc doesn't know when its owner is gone. A persistent connection (WS, SSE) does, natively, with one event.
+- **WebSocket Hibernation API is the missing piece for free-tier real-time.** Without it, a global DO with 100 idle sockets bills you for 100 idle compute-seconds. With it, the DO sleeps; sockets stay attached; you pay for nothing until a message arrives. CF undersells this in the docs.
+
+---
