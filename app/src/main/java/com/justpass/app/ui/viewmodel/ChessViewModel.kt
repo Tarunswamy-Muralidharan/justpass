@@ -178,7 +178,12 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                     return@listenIncomingChallenges
                 }
 
-                val elapsed = System.currentTimeMillis() - challenge.timestamp
+                // Prefer the server-anchored timestamp so sender + receiver
+                // count from the same instant (no network latency / clock skew
+                // gap). Falls back to the local timestamp when the sender is
+                // on an older client that didn't write `serverTs`.
+                val anchor = if (challenge.serverTimestamp > 0L) challenge.serverTimestamp else challenge.timestamp
+                val elapsed = System.currentTimeMillis() - anchor
                 val remaining = ((15_000L - elapsed) / 1000).toInt().coerceIn(0, 15)
                 if (remaining <= 0) return@listenIncomingChallenges // already expired
 
@@ -389,11 +394,11 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             sentChallengeToId = player.id, senderCountdown = 15
         )
 
-        // Anchor point for the sender countdown. Captured *before* the Firestore
-        // write so the sender and receiver timers start at the same absolute
-        // moment — the receiver derives its countdown from challenge.timestamp,
-        // which is set to roughly this same instant on the server.
-        val startMs = System.currentTimeMillis()
+        // Anchor point for the sender countdown. Seeded with the local clock
+        // so the optimistic UI shows 15s instantly; refreshed below with the
+        // server-anchored timestamp the moment Firestore confirms the write,
+        // so sender and receiver tick from the exact same instant.
+        var anchorMs = System.currentTimeMillis()
 
         viewModelScope.launch {
             // Mutual challenge prevention: check if they already challenged us
@@ -415,6 +420,11 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                     sentChallengeToId = player.id
                 )
                 sentChallengeListener = lobby.listenChallengeStatus(challengeId) { challenge ->
+                    // Re-anchor to server-anchored timestamp once it lands so
+                    // the sender countdown matches the receiver's exactly.
+                    if (challenge.serverTimestamp > 0L) {
+                        anchorMs = challenge.serverTimestamp
+                    }
                     when (challenge.status) {
                         "accepted" -> {
                             senderCountdownJob?.cancel()
@@ -442,13 +452,14 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
-                // Sender countdown: anchor every tick to startMs instead of a
+                // Sender countdown: anchor every tick to anchorMs instead of a
                 // local counter. Keeps sender + receiver in sync even if the
-                // coroutine is briefly suspended.
+                // coroutine is briefly suspended; the server-confirmation path
+                // above re-points anchorMs at the server-anchored timestamp.
                 senderCountdownJob?.cancel()
                 senderCountdownJob = viewModelScope.launch {
                     while (isActive) {
-                        val elapsedSec = ((System.currentTimeMillis() - startMs) / 1000).toInt()
+                        val elapsedSec = ((System.currentTimeMillis() - anchorMs) / 1000).toInt()
                         val timeLeft = (15 - elapsedSec).coerceAtLeast(0)
                         if (_uiState.value.sentChallengeId == challengeId) {
                             _uiState.value = _uiState.value.copy(senderCountdown = timeLeft)
