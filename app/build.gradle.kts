@@ -16,8 +16,8 @@ android {
         applicationId = "com.justpass.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "3.0"
+        versionCode = 10
+        versionName = "3.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
