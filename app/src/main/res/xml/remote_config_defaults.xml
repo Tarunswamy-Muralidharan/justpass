@@ -7,8 +7,13 @@
 -->
 <defaultsMap>
     <entry>
+        <!-- Default false. Flip the server-side `ads_enabled` flag in
+             Firebase Console → Remote Config to true when ready to
+             monetise. Every existing client picks it up within the 1h
+             fetch interval; new installs see a ~500ms blank then ads
+             appear after fetchAndActivate. No APK update required. -->
         <key>ads_enabled</key>
-        <value>true</value>
+        <value>false</value>
     </entry>
     <entry>
         <key>chess_backend_v2</key>
