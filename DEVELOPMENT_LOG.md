@@ -6232,3 +6232,118 @@ After deploying, attempted to simulate a chess match between two accounts (71552
 
 ---
 
+
+## 2026-05-03 to 2026-05-05 — SIS attendance outage + Chess V2 hibernation bug + module-wide audit
+
+This three-day arc starts with the user reporting "PWA can't fetch attendance for RITHEESH (715523244037)" and ends with the entire chess module on Cloudflare Durable Objects, properly observable, and audited end-to-end.
+
+### Day 1 (2026-05-03) — SIS attendance microservice down
+
+**Symptom:** PWA's `/api/attendance` proxy returned `500 {"error":"Server error"}` for every roll number. Other endpoints (`/api/student`, `/api/marks`, `/api/results`) worked fine.
+
+**Investigation chain:**
+
+1. The proxy's catch block was `catch {` with no error binding — completely opaque. Patched it to surface `errCause`, `elapsedMs`, `bodySnippet`, `upstreamStatus`, `upstreamContentType`. Pushed `df8d0fe`, `02e6448`.
+2. With cause visible: every attendance call failed with `SocketError: other side closed` after ~700ms — the upstream was closing the TCP socket without sending any HTTP response. Tried real Chrome User-Agent header (`559c01c`) — no change.
+3. Verified from outside the PWA: `curl -sS https://laudea.psgitech.ac.in/sis/attendance/715523244037` → `curl: (56) schannel: server closed abruptly (missing close_notify)` after ~250ms. Same failure mode from the SIS Angular SPA itself. So this wasn't a Vercel/proxy issue at all — `/sis/attendance/*` was completely down.
+4. The user's Android v3.0 app was hitting the same wall: `OkHttp GET failed for https://laudea.psgitech.ac.in/sis/attendance/<roll>: unexpected end of stream`.
+5. Pulled the SIS bundle (`/sis/dist/edu-erp-student.js`) and grep'd the `attendanceServices` factory for any renamed routes. Confirmed the only paths the SPA uses are `attendance/<roll>`, `attendance/absent/<roll>`, `attendance/present/<roll>`, `attendance/old/<roll>`, `attendance/old/absent/<roll>` — and every single one closed connection at ~250ms. No alternate endpoint. Just college IT having an outage.
+
+**Outcome:** Couldn't fix server-side. Kept the diagnostic patches in (`df8d0fe`, `02e6448`, `559c01c`) — next outage will surface in the response body within seconds.
+
+**Lessons:**
+- Empty `catch {}` is technical debt that becomes a multi-hour debug session. Always capture `err.cause`, `err.message`, elapsed, and the upstream response shape.
+- When every variant of a path namespace fails identically, it's gateway/microservice down — not auth, not middleware, not your client.
+
+### Day 2 (2026-05-04 to 2026-05-05) — Chess V2 backend completely broken
+
+**Symptom user reported:** "PWA detects when I come online but I'm not getting him being online on my phone."
+
+**Investigation chain:**
+
+1. Both clients showed "online" optimistically but neither saw the other's PRESENCE event.
+2. Hooked the PWA WebSocket constructor: every connect went `create → open → close 1006` with **zero messages** in between. Server was killing the WS immediately after handshake.
+3. Verified the Worker code on disk by running `wrangler dev --local` against a 2-client test harness. Local DO worked perfectly: A and B exchanged PRESENCE_SNAPSHOT/PRESENCE_DIFF cleanly. **The deployed code was identical to local code that worked.**
+4. Couldn't `wrangler tail` the deployed Worker because no Cloudflare API token. Pivoted: flipped the `chess_backend_v2` Remote Config flag to `false` server-side and in-source on PWA + Android. Cleared Android's FRC cache via `adb run-as ... rm files/frc_*_firebase_activate.json`. Both clients fell back to V1 (Firestore) and could see each other again.
+5. Pushed PWA flag flip (`2af216a`), Android flag flip (`d37b61e`), Firebase RC template version 9 deployed via `firebase deploy --only remoteconfig`.
+6. Black-box + white-box audit run against the chess module while V1 was active.
+
+**Day 2 follow-up — countdown sync fix:** User then reported "the timing isn't syncing between devices and PWA and browser". Sender wrote `timestamp: Date.now()` (sender's local clock); receiver computed countdown using its own `Date.now()`. Network latency + cross-device clock skew compounded into 0.5–2s drift on the 15s accept window.
+
+**Fix:** added `serverTs: serverTimestamp()` (Firestore) / `FieldValue.serverTimestamp()` (Android) to challenge writes. Both clients prefer the server-anchored value as the countdown anchor — same instant on both sides. Sender re-anchors as soon as the listener delivers the server-stamped doc. Verified via direct Firestore probe: `{timestamp: 1777955577884, serverTs: 1777955579863}` — the ~2s gap that was causing the visible drift.
+
+PWA: `c42e37e`. Android: `e716070`.
+
+**Day 2 follow-up — module audit:** Spawned a sub-agent to read every chess file and grade findings CRITICAL / HIGH / MEDIUM. Top three:
+
+1. **Firestore rules missing** from the repo entirely. Whatever was in the Console was permissive enough that any auth'd user could write to any other user's `chess_online`, `chess_profiles`, or `chess_friends` doc. Trivial offline-grief and stat-tampering attacks.
+2. **PWA listened to ALL pending challenges** in the database. The query was `where("status","==","pending")` with client-side filtering by `toId`. That meant every PWA tab streamed every match-up in the database — privacy leak + Firestore-cost amplifier on the order of O(N²).
+3. **V2 keyed players by Firebase UID, V1 by `p_<rollNumber-hash>`**. Friends, profiles, leaderboard, history — all keyed on the V1 hash. V2 connections were strangers to the V1 social graph. Architectural — deferred until V2 ID migration.
+
+Other audit items (#5 mutual challenge name comparison, #6 PWA-vs-Android mutual asymmetry, #9 Lichess gameId URL parsing, #10 non-atomic stat increment, #12 LobbyWebSocket clearing listeners on disconnect, #13 polling jobs not cancelled in `goOffline`) — all fixed in this batch.
+
+### Day 3 (2026-05-05 afternoon) — Authenticated Cloudflare, found the actual V2 bug
+
+User got upset that V2 was disabled despite us having said we'd run on Cloudflare's free tier. Did `wrangler login` (interactive OAuth) and got into the deployed Worker.
+
+**`wrangler tail` immediately revealed:**
+
+```
+[lobby.fetch] uid=shbO6... liveSockets=0 mapPlayers=0
+[lobby.fetch] acceptWebSocket OK uid=shbO6... ms=0
+[worker] DO returned status=101 totalMs=314
+[ws.close] uid=shbO6... code=1006 reason="WebSocket disconnected without sending Close frame."
+```
+
+The DO was accepting the WS in 314ms (well under the 3s client timeout), so the close-1006 wasn't a server-side reject. Then the Android receiver came in second:
+
+```
+[lobby.fetch] uid=ToOMdb... liveSockets=0 mapPlayers=0
+```
+
+`liveSockets=0 mapPlayers=0` even though the PWA had connected and was hibernating. **The DO had hibernated, dropped its in-memory `players` Map, but the WebSockets stayed attached to the runtime.** When the Android joiner came in, `handleJoin` ran against an empty map and broadcast `PRESENCE_SNAPSHOT players=[]` — the new joiner saw no peers, and the existing peer (still alive, hibernating) never got a `PRESENCE_DIFF added=[Android]` because it was nowhere in the now-empty `players` map to be broadcast to.
+
+Result: both clients showed "online" but neither saw the other. Exactly the symptom the user reported.
+
+**Fix in the DO constructor:**
+
+```ts
+for (const ws of this.state.getWebSockets()) {
+  const att = ws.deserializeAttachment() as { playerId, hintedName? };
+  if (!att?.playerId) continue;
+  this.players.set(att.playerId, {
+    ws, id: att.playerId,
+    displayName: (att.hintedName ?? "").trim() || `Player-${att.playerId.slice(0, 6)}`,
+    joinedAt: Date.now(),
+  });
+}
+```
+
+Plus: `handleJoin` now re-`serializeAttachment`s the resolved displayName so post-hibernation rehydration recovers the real name (Firebase anonymous tokens have no `name` claim — the `hintedName` is empty, so without the displayName persisted in the attachment we'd otherwise show "Player-abc123" for hibernated peers).
+
+Deployed (`6220be1`), flipped `chess_backend_v2` back to `true` on the server, flipped local defaults back to `true` (PWA `6e02dd4`, Android `598e794`). Verified end-to-end: PWA sees "TARUNSWAMY MURALIDHARAN N · Active now", Android sees "715523244037 · Active now". Both on Cloudflare DO. No more Firestore presence reads/writes — entirely free.
+
+**Mistake on the way:** Ran `sed -i 's/"value": "false"/"value": "true"/' remoteconfig.template.json` to flip the chess flag — without realizing that `ads_enabled`, `sideload_block_enabled`, and `maintenance_enabled` were ALL on `"value": "false"`. Deployed that. For ~30 seconds, every JustPass user who refreshed Remote Config had `sideload_block_enabled = true` (would brick every non-Play-Store install) and `maintenance_enabled = true` (would dialog-block every user on launch). Reverted immediately, but anyone whose RC fetch landed in that window has the bad values cached for up to 1 hour.
+
+### Day 3 — Audit fixes shipped
+
+- **#2 Firestore rules + indexes**: `firestore.rules` + `firestore.indexes.json` checked in for the first time (commit on `main`). Rules deny by default, restrict friend-request status transitions to addressee, and only allow `chess_profiles` updates that touch the four stat fields when not the owner. Composite indexes for `chess_challenges (toId, status)` + `(fromId, status)` + `chess_friends (toId, status)`. Deployed via `firebase deploy --only firestore:rules,firestore:indexes`.
+- **#3 Scoped PWA listenIncomingChallenges** to `where("toId", "==", myId)` — was streaming every pending challenge in the DB.
+- **#5 Mutual challenge ID comparison**: was `ourSent.toName === received.fromName` (display names collide for namesakes), now `ourSent.toId === received.fromId`.
+- **#6 PWA mutual auto-accept** to match Android's behavior (was declining).
+- **#9 Lichess gameId** sourced from `c.lichessGameId` first, with URL fallback that strips trailing color segment.
+- **#10 Atomic stat increment**: `recordGameResult` now uses `FieldValue.increment(1)` instead of read-modify-write transaction.
+- **#12 LobbyWebSocket disconnect**: stopped clearing listener lists on disconnect — they belong to the singleton repo, not the socket.
+- **#13 Polling job tracking**: `resultCheckerJob` and `challengeCleanupJob` now stored as fields and cancelled in `cleanup()` — were running forever after `goOffline` and burning Lichess API + Firestore quota on backgrounded tabs.
+
+### Lessons from the three-day arc
+
+- **Empty try/catch blocks turn 30-minute bugs into 3-hour bugs.** Both the SIS proxy debug and the V2 DO debug burned through hours that would have taken minutes if `err.cause` and `console.log` had been there from the start. Catch blocks must always capture: error name, message, cause, elapsed time, and any partial state (upstream status, body snippet).
+- **`wrangler dev --local` is not the deployed Worker.** Identical code; different environment. The hibernation bug couldn't reproduce locally because hibernation only happens after a long-enough idle period with the right runtime conditions. Tests against `wrangler dev` give false confidence — must also tail prod for any DO bug.
+- **Cloudflare Durable Object hibernation reseeds you with an empty class — not a saved snapshot.** WebSockets persist across hibernation, but in-memory class fields don't. Anything cached in `this.foo: Map` must either go through `state.storage` (durable) or be rebuilt from `state.getWebSockets()` + their serialized attachments on construction. The CF docs mention this but bury it.
+- **`sed` on a config file is regex, not semantics.** Always re-read the file before deploying — preferably do the JSON edit with `python -c "import json; ..."` so the diff is bound to a single key, not a string pattern.
+- **Server-anchored timestamps eliminate cross-device drift but require the receiver code to handle null briefly.** During the ~200ms before Firestore commits the write, `serverTs` reads as null on the sender; UI must seed with local time and re-anchor when the server confirmation arrives. Worth the complexity for the tighter sync.
+- **Firestore rules in source control or it didn't happen.** A rules file in the Firebase Console only is invisible to code review, history, and rollback. From now on every project starts with a deployed `firestore.rules` + `firestore.indexes.json` even if the rules are just "auth required, default deny."
+- **Always stash the actor's identity onto socket attachments, not just the player id.** `serializeAttachment({ playerId })` was incomplete; we needed `serializeAttachment({ playerId, displayName })` so hibernation-driven rehydration doesn't lose names. CF's hibernation API rewards stashing redundant context.
+
+---
