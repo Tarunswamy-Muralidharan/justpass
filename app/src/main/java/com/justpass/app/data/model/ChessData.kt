@@ -26,7 +26,11 @@ data class ChessChallenge(
     val fromColor: String = "",     // "white" or "black" — challenger's color
     val resultChecked: Boolean = false,
     val timeControl: Any = "rapid", // bullet, blitz, rapid, classical — Any to handle Firestore type mismatches
-    val timestamp: Long = 0L
+    val timestamp: Long = 0L,
+    /** Server-anchored ms; preferred over [timestamp] for the 15s countdown so
+     * sender + receiver share the same start instant (no network-latency or
+     * clock-skew gap). 0 when missing — fall back to [timestamp]. */
+    val serverTimestamp: Long = 0L
 )
 
 /** Time control presets matching Lichess/chess.com conventions */

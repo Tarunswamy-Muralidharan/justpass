@@ -6,6 +6,8 @@ import com.justpass.app.data.model.ChessChallenge
 import com.justpass.app.data.model.ChessProfile
 import com.justpass.app.data.model.FriendRequest
 import com.justpass.app.data.model.OnlinePlayer
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
@@ -313,7 +315,11 @@ class ChessRepository {
                 "toId" to toId, "toName" to toName,
                 "status" to "pending", "gameUrl" to "", "opponentUrl" to "",
                 "lichessGameId" to "", "timeControl" to timeControl,
-                "timestamp" to System.currentTimeMillis()
+                // Local clock kept for backward-compat with users on builds that
+                // don't read serverTs. New clients use serverTs as the countdown
+                // anchor — same value on both sides, no clock-skew/latency gap.
+                "timestamp" to System.currentTimeMillis(),
+                "serverTs" to FieldValue.serverTimestamp()
             )).await()
             doc.id
         } catch (e: Exception) {
@@ -321,6 +327,10 @@ class ChessRepository {
             null
         }
     }
+
+    /** Decode a Firestore Timestamp field into ms since epoch. Returns 0 if missing. */
+    private fun DocumentSnapshot.serverTsMillis(field: String): Long =
+        getTimestamp(field)?.toDate()?.time ?: 0L
 
     /**
      * Check if there's an existing pending challenge from fromId to toId.
@@ -357,6 +367,7 @@ class ChessRepository {
                 toName = doc.getString("toName") ?: "",
                 status = "pending",
                 timestamp = doc.getLong("timestamp") ?: 0L,
+                serverTimestamp = doc.serverTsMillis("serverTs"),
                 timeControl = doc.get("timeControl")?.toString() ?: "rapid_10"
             )
         } catch (e: Exception) {
@@ -392,7 +403,8 @@ class ChessRepository {
                                 fromColor = doc.getString("fromColor") ?: "white",
                                 resultChecked = doc.getBoolean("resultChecked") ?: false,
                                 timeControl = doc.get("timeControl")?.toString() ?: "rapid_10",
-                                timestamp = doc.getLong("timestamp") ?: 0L
+                                timestamp = doc.getLong("timestamp") ?: 0L,
+                                serverTimestamp = doc.serverTsMillis("serverTs")
                             ))
                         }
                         // Sender cancelled / modified the challenge elsewhere — drop
@@ -498,7 +510,8 @@ class ChessRepository {
                     fromColor = doc.getString("fromColor") ?: "white",
                     resultChecked = doc.getBoolean("resultChecked") ?: false,
                     timeControl = doc.get("timeControl")?.toString() ?: "rapid_10",
-                    timestamp = doc.getLong("timestamp") ?: 0L
+                    timestamp = doc.getLong("timestamp") ?: 0L,
+                    serverTimestamp = doc.serverTsMillis("serverTs")
                 ))
             }
     }
