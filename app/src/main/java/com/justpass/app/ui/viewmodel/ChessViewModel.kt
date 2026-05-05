@@ -95,6 +95,12 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     private var heartbeatJob: Job? = null
     private var countdownJob: Job? = null
     private var senderCountdownJob: Job? = null
+    // The result checker + challenge cleanup loops run while online and were
+    // previously not tracked, so going offline left them running until the VM
+    // was destroyed — wasting Lichess API quota and Firestore reads on a tab
+    // the user thought was idle.
+    private var resultCheckerJob: Job? = null
+    private var challengeCleanupJob: Job? = null
     private var friendIds: Set<String> = emptySet()
     private var myPlayerId: String = ""
 
@@ -238,7 +244,8 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             // Periodic result checker — polls every 30s for unchecked game results
-            viewModelScope.launch {
+            resultCheckerJob?.cancel()
+            resultCheckerJob = viewModelScope.launch {
                 delay(5_000L) // initial delay
                 while (isActive) {
                     checkPendingResults()
@@ -247,7 +254,8 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             // Periodic challenge cleanup — expire stale challenges every 60s
-            viewModelScope.launch {
+            challengeCleanupJob?.cancel()
+            challengeCleanupJob = viewModelScope.launch {
                 while (isActive) {
                     delay(60_000L)
                     lobby.cleanupExpiredChallenges()
@@ -671,6 +679,8 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         heartbeatJob?.cancel()
         countdownJob?.cancel()
         senderCountdownJob?.cancel()
+        resultCheckerJob?.cancel()
+        challengeCleanupJob?.cancel()
     }
 
     private fun showChallengeNotification(fromName: String) {

@@ -95,21 +95,15 @@ class ChessRepository {
     suspend fun recordGameResult(playerId: String, result: String) {
         if (result !in listOf("win", "loss", "draw")) return
         try {
-            val docRef = profileCollection.document(playerId)
-            FirebaseFirestore.getInstance().runTransaction { txn ->
-                val snap = txn.get(docRef)
-                val wins = snap.getLong("wins")?.toInt() ?: 0
-                val losses = snap.getLong("losses")?.toInt() ?: 0
-                val draws = snap.getLong("draws")?.toInt() ?: 0
-                val games = snap.getLong("gamesPlayed")?.toInt() ?: 0
-                val updates = when (result) {
-                    "win" -> mapOf("wins" to wins + 1, "gamesPlayed" to games + 1)
-                    "loss" -> mapOf("losses" to losses + 1, "gamesPlayed" to games + 1)
-                    "draw" -> mapOf("draws" to draws + 1, "gamesPlayed" to games + 1)
-                    else -> return@runTransaction
-                }
-                txn.update(docRef, updates)
-            }.await()
+            // FieldValue.increment is atomic on the server, so two concurrent
+            // results landing on the same profile (e.g. both players in two
+            // games at once) can't drop an update the way the old read-modify-
+            // write transaction could.
+            val statField = when (result) { "win" -> "wins"; "loss" -> "losses"; else -> "draws" }
+            profileCollection.document(playerId).update(mapOf(
+                statField to FieldValue.increment(1),
+                "gamesPlayed" to FieldValue.increment(1),
+            )).await()
         } catch (e: Exception) {
             Log.e(TAG, "Record result error: ${e.message}")
         }
