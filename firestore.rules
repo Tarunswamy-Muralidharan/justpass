@@ -2,28 +2,26 @@ rules_version = '2';
 
 // JustPass Firestore security rules.
 //
-// Auth model: every authenticated user has a Firebase Anonymous UID
-// (request.auth.uid). The chess app derives a stable display-id from
-// the user's roll number — `getPlayerId(rollNumber) = "p_<hex-hash>"`
-// — and uses that as the document key in `chess_*` collections. We
-// don't have the original roll number on the server side, so these
-// rules accept any authenticated user as a valid actor on their own
-// playerId-keyed docs but deny cross-user writes.
+// Read model: chess_* collections + announcements are public-read so
+// clients work BEFORE Firebase Anonymous Auth completes (the SDK
+// signs in lazily on first connect; the chess profile load happens
+// before that, so a `request.auth != null` read rule here would 503
+// the chess screen on every cold launch). The data is anonymous chess
+// nicknames + ratings + game counts — already public-by-design.
 //
-// Practical consequence: a user can write to `chess_online/<myId>`,
-// `chess_profiles/<myId>`, etc. but not to anyone else's. Stat
-// updates from `recordGameResult` are still allowed because they
-// run as the OPPONENT writing to the WINNER/LOSER's profile — see
-// the per-collection comments below for how that's handled.
+// Write model: every write requires `request.auth != null`. We can't
+// bind playerId to the auth UID until v3 migrates `chess_profiles`
+// keys away from `p_<rollNumber-hash>`, so cross-user writes are
+// theoretically possible — the v3 plan tightens this. Until then the
+// per-collection rules below at least gate the write surface (status
+// transitions, doc shape, no client deletes on history, etc.).
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
     // ─── chess_online ────────────────────────────────────────────────
-    // Live presence. Owner can write; everyone authed can read so the
-    // lobby list works.
     match /chess_online/{playerId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if request.auth != null
         && request.resource.data.keys().hasOnly([
           "displayName", "timestamp", "wins", "losses",
@@ -34,53 +32,33 @@ service cloud.firestore {
     }
 
     // ─── chess_profiles ──────────────────────────────────────────────
-    // Persistent identity + stats. Profile owner can create/update.
-    // Stat-bump writes from `recordGameResult` come from the OPPOSITE
-    // player and only hit `wins | losses | draws | gamesPlayed`, so
-    // they're allowed when the request only touches those fields.
+    // Stat-bump writes from `recordGameResult` come from the OPPONENT
+    // and only touch the four numeric fields. Anything else requires
+    // auth (and we accept any authed writer because we can't yet bind
+    // the doc key to auth.uid).
     match /chess_profiles/{playerId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create: if request.auth != null;
-      allow update: if request.auth != null && (
-        // Stat-only update from the opponent's recordGameResult path:
-        // exactly two fields touched, both numeric increments.
-        (request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(["wins", "losses", "draws", "gamesPlayed"]))
-        // OR full profile update by the owner — we can't actually
-        // distinguish the owner without a custom claim, so we allow
-        // any auth'd writer to do everything and rely on the v3
-        // migration plan to bind playerId to the auth UID.
-      );
+      allow update: if request.auth != null;
+      allow delete: if false;
     }
 
     // ─── chess_challenges ────────────────────────────────────────────
-    // Challenge docs. Sender creates, receiver updates status to
-    // accepted/declined, sender can cancel (delete or status=cancelled).
     match /chess_challenges/{challengeId} {
-      // Anyone authed can read so listenIncomingChallenges (now scoped
-      // by toId) works.
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create: if request.auth != null
         && request.resource.data.fromId is string
         && request.resource.data.toId is string
         && request.resource.data.fromId != request.resource.data.toId
         && request.resource.data.status == "pending";
-      // Update is allowed for the opponent (accept/decline) or sender
-      // (cancel). We can't distinguish without a custom claim — accept
-      // for any authed user but constrain status transitions to known
-      // states only.
       allow update: if request.auth != null
         && request.resource.data.status in ["pending", "accepted", "declined", "cancelled"];
-      // Allow delete for stale-cleanup paths. Tighten once we have
-      // playerId-bound auth.
       allow delete: if request.auth != null;
     }
 
     // ─── chess_friends ───────────────────────────────────────────────
-    // Friend requests. To prevent unilateral "I'm now friends with X"
-    // attacks, status updates are restricted to the addressee.
     match /chess_friends/{requestId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create: if request.auth != null
         && request.resource.data.fromId is string
         && request.resource.data.toId is string
@@ -93,10 +71,8 @@ service cloud.firestore {
     }
 
     // ─── chess_match_history ─────────────────────────────────────────
-    // Per-player append-only history. Anyone can read (leaderboard /
-    // profile views), only authed users can write.
     match /chess_match_history/{historyId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create: if request.auth != null;
       allow update: if request.auth != null
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -104,9 +80,18 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Reject everything else. Future collections need an explicit rule.
+    // ─── announcements ───────────────────────────────────────────────
+    // Read-only for clients; written from the Firebase Console / Cloud
+    // Functions only. Public read because the app shows announcements
+    // before any auth flow runs.
+    match /announcements/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Catch-all for everything else.
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if request.auth != null;
     }
   }
 }
