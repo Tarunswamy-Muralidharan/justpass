@@ -37,6 +37,25 @@ class ChessRepository {
         return "p_${abs(rollNumber.hashCode()).toString(16)}"
     }
 
+    /**
+     * Ensure a Firebase Auth user exists before any Firestore read/write.
+     * The chess Firestore rules require `request.auth != null`, so without
+     * this the very first chess open fails with PERMISSION_DENIED. Idempotent:
+     * returns immediately if [com.google.firebase.auth.FirebaseAuth.getCurrentUser]
+     * is non-null. Caught/logged failures fall through — the caller still
+     * sees `null` from getOrCreateProfile and surfaces "Failed to connect".
+     */
+    private suspend fun ensureFirebaseAuth() {
+        try {
+            val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+            if (auth.currentUser == null) {
+                auth.signInAnonymously().await()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Anonymous Firebase sign-in failed: ${e.message}")
+        }
+    }
+
     fun generateRandomName(rollNumber: String): String {
         val hash = abs(rollNumber.hashCode())
         val name = CHESS_NAMES[hash % CHESS_NAMES.size]
@@ -48,6 +67,13 @@ class ChessRepository {
 
     suspend fun getOrCreateProfile(playerId: String, realName: String, rollNumber: String): ChessProfile? {
         return try {
+            // Firestore rules require request.auth != null. The V2 backend
+            // signs in anonymously when the WS connects, but the profile load
+            // path runs BEFORE that — so without this lazy sign-in the very
+            // first chess open fails with PERMISSION_DENIED ("Failed to
+            // connect" banner). Idempotent: skips if currentUser already
+            // exists.
+            ensureFirebaseAuth()
             val doc = profileCollection.document(playerId).get().await()
             if (doc.exists()) {
                 ChessProfile(
