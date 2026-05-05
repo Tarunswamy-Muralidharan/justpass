@@ -30,10 +30,10 @@
     },
     "chess_backend_v2": {
       "defaultValue": {
-        "value": "true"
+        "value": "false"
       },
       "valueType": "BOOLEAN",
-      "description": "Cloudflare Durable Objects chess lobby. When true, presence+challenges use WebSocket to chess-lobby.tmswamy10.workers.dev instead of Firestore. Flip off for instant rollback to Firestore."
+      "description": "Cloudflare Durable Objects chess lobby. ROLLED BACK 2026-05-05: Worker kills every WebSocket immediately after upgrade (close 1006). Flipped to false until the worker is fixed/redeployed; clients use Firestore."
     }
   }
 }
