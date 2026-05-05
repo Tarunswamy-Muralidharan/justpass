@@ -123,6 +123,11 @@ export default {
       forwarded.headers.set("X-Player-Name", verified.name);
     }
 
-    return stub.fetch(forwarded);
+    try {
+      return await stub.fetch(forwarded);
+    } catch (err) {
+      console.error(`[worker] DO fetch threw:`, err instanceof Error ? err.stack : err);
+      return jsonResponse(500, { error: "do_fetch_failed", reason: err instanceof Error ? err.message : String(err) });
+    }
   },
 };
