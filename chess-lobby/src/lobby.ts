@@ -53,6 +53,30 @@ export class Lobby implements DurableObject {
     } catch {
       // Older runtimes without the API — safe to ignore.
     }
+
+    // CRITICAL: rebuild the in-memory `players` map from the live WebSockets
+    // every time the DO wakes from hibernation. Without this, the next
+    // JOIN runs `handleJoin` against an empty map and sends a
+    // `PRESENCE_SNAPSHOT players=[]` even though there are still alive peers
+    // hibernating — so neither side ever shows the other online. The
+    // displayName we lost on hibernation is recovered from `hintedName` (the
+    // JWT name claim, set in `acceptWebSocket`); a real JOIN later will
+    // refine it to the user's chosen visibleName.
+    for (const ws of this.state.getWebSockets()) {
+      const att = ws.deserializeAttachment() as
+        | { playerId: string; hintedName?: string }
+        | null;
+      if (!att?.playerId) continue;
+      this.players.set(att.playerId, {
+        ws,
+        id: att.playerId,
+        displayName: (att.hintedName ?? "").trim() || `Player-${att.playerId.slice(0, 6)}`,
+        joinedAt: Date.now(),
+      });
+    }
+    if (this.players.size > 0) {
+      console.log(`[lobby.ctor] rehydrated ${this.players.size} players from hibernated sockets`);
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -70,13 +94,17 @@ export class Lobby implements DurableObject {
     const client = pair[0];
     const server = pair[1];
 
-    // Hibernation API: the runtime reattaches this WS to the DO
-    // automatically after hibernation.
-    this.state.acceptWebSocket(server);
-
-    // Stash the player id on the socket so future message/close
-    // handlers can find it without another JWT check.
-    server.serializeAttachment({ playerId, hintedName });
+    try {
+      // Hibernation API: the runtime reattaches this WS to the DO
+      // automatically after hibernation.
+      this.state.acceptWebSocket(server);
+      // Stash the player id on the socket so future message/close
+      // handlers can find it without another JWT check.
+      server.serializeAttachment({ playerId, hintedName });
+    } catch (err) {
+      console.error(`[lobby.fetch] accept failed uid=${playerId}:`, err instanceof Error ? err.stack : err);
+      throw err;
+    }
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -91,6 +119,7 @@ export class Lobby implements DurableObject {
       | { playerId: string; hintedName?: string }
       | null;
     if (!attachment) {
+      console.warn(`[ws.message] no attachment, closing 1008`);
       this.safeClose(ws, 1008, "no attachment");
       return;
     }
@@ -152,7 +181,9 @@ export class Lobby implements DurableObject {
     this.handleDisconnect(ws);
   }
 
-  async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
+  async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
+    const att = ws.deserializeAttachment() as { playerId?: string } | null;
+    console.error(`[ws.error] uid=${att?.playerId ?? "?"}:`, error instanceof Error ? error.stack : error);
     this.handleDisconnect(ws);
   }
 
@@ -196,6 +227,14 @@ export class Lobby implements DurableObject {
     }
 
     const joinedAt = existing?.joinedAt ?? Date.now();
+    // Persist the resolved displayName onto the attachment so post-hibernation
+    // rehydration in the constructor picks it up instead of falling back to
+    // hintedName (Firebase anonymous tokens have no `name` claim).
+    try {
+      ws.serializeAttachment({ playerId, hintedName: displayName });
+    } catch {
+      // Older runtime — best-effort.
+    }
     const player: PlayerState = {
       ws,
       id: playerId,
