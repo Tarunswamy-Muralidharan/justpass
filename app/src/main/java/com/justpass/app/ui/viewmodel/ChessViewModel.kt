@@ -70,11 +70,14 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     private val lobby: ChessLobby = run {
         val useV2 = try {
             val rc = FirebaseRemoteConfig.getInstance()
-            rc.setDefaultsAsync(mapOf("chess_backend_v2" to true))
-            // If Remote Config has fetched a server value, that wins; otherwise the local
-            // default above (true) is used so v3.0 ships on V2 backend out of the box.
+            // Cloudflare Worker chess lobby is killing every WebSocket immediately
+            // after upgrade (close 1006) — both clients show "online" optimistically
+            // but neither sees the other. Default flipped to false until the worker
+            // is fixed/redeployed; the Firebase Remote Config server value still
+            // wins if it's set.
+            rc.setDefaultsAsync(mapOf("chess_backend_v2" to false))
             rc.getBoolean("chess_backend_v2")
-        } catch (_: Exception) { true }
+        } catch (_: Exception) { false }
         if (useV2) ChessRepositoryV2.getInstance() else FirestoreChessLobby(repo)
     }
 
