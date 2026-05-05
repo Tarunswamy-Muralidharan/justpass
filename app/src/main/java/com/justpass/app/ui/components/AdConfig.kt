@@ -29,15 +29,15 @@ object AdConfig {
                 .build()
         )
 
-        // Eliminate the first-frame race: read the LAST-KNOWN value from a
-        // sync SharedPreferences cache and seed the UI state with it BEFORE
-        // Firebase Remote Config's async fetch runs. Result: every launch
-        // after the first-ever shows ads instantly with no flicker. The
-        // first-ever launch (no cache yet) still shows nothing for ~500ms
-        // until fetchAndActivate completes — unavoidable without baking the
-        // value into the APK.
+        // Eliminate the first-frame race. Two layers:
+        //  - SharedPreferences cache (sync, instant): every launch after the
+        //    first-ever reads the last activated value before any frame draws.
+        //  - Bundled XML defaults: first-ever launch (no cache) falls back to
+        //    `ads_enabled=true` from res/xml/remote_config_defaults.xml so ads
+        //    appear immediately even on a fresh install. Server flip true→false
+        //    causes a one-launch flicker, then prefs cache catches up.
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        _adsEnabled.value = prefs.getBoolean(KEY_ADS_ENABLED, false)
+        _adsEnabled.value = prefs.getBoolean(KEY_ADS_ENABLED, true)
 
         val remoteConfig = FirebaseRemoteConfig.getInstance()
         remoteConfig.setConfigSettingsAsync(
@@ -45,7 +45,7 @@ object AdConfig {
                 minimumFetchIntervalInSeconds = 3600 // 1 hour cache
             }
         )
-        remoteConfig.setDefaultsAsync(mapOf(KEY_ADS_ENABLED to false))
+        remoteConfig.setDefaultsAsync(com.justpass.app.R.xml.remote_config_defaults)
         remoteConfig.fetchAndActivate().addOnCompleteListener {
             val fresh = remoteConfig.getBoolean(KEY_ADS_ENABLED)
             _adsEnabled.value = fresh
