@@ -755,7 +755,10 @@ fun DashboardScreen(
 
             // Inline card — tap to expand
             GlassListCard(
-                modifier = Modifier.fillMaxWidth().clickable { showLeavePopup = true },
+                modifier = Modifier.fillMaxWidth().clickable {
+                    Analytics.logTileClicked("bunkometer")
+                    showLeavePopup = true
+                },
                 shape = GlassCardShapeSmall
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {

@@ -60,11 +60,15 @@ class CalendarViewModel : ViewModel() {
     }
 
     fun previousMonth() {
-        _uiState.value = _uiState.value.copy(selectedMonth = _uiState.value.selectedMonth.minusMonths(1))
+        val m = _uiState.value.selectedMonth.minusMonths(1)
+        _uiState.value = _uiState.value.copy(selectedMonth = m)
+        com.justpass.app.data.analytics.Analytics.logCalendarMonthViewed(m.monthValue, m.year)
     }
 
     fun nextMonth() {
-        _uiState.value = _uiState.value.copy(selectedMonth = _uiState.value.selectedMonth.plusMonths(1))
+        val m = _uiState.value.selectedMonth.plusMonths(1)
+        _uiState.value = _uiState.value.copy(selectedMonth = m)
+        com.justpass.app.data.analytics.Analytics.logCalendarMonthViewed(m.monthValue, m.year)
     }
 
     private fun fetchCalendarEvents(): List<CalendarEvent> {

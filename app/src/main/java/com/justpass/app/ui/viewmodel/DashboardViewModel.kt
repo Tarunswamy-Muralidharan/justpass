@@ -179,6 +179,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
             when (val result = repository.refreshAttendance()) {
                 is Result.Success -> {
+                    com.justpass.app.data.analytics.Analytics.logRefresh(success = true, method = "manual")
                     _uiState.value = _uiState.value.copy(
                         isRefreshing = false,
                         attendanceData = result.data,
@@ -198,6 +199,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     loadTargetCgpa()
                 }
                 is Result.Error -> {
+                    com.justpass.app.data.analytics.Analytics.logRefresh(success = false, method = "manual")
                     _uiState.value = _uiState.value.copy(
                         isRefreshing = false,
                         errorMessage = result.message

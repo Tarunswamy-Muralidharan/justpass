@@ -69,6 +69,7 @@ class CircularViewModel(application: Application) : AndroidViewModel(application
     fun loadCircularPdf(circularId: String) {
         viewModelScope.launch {
             _pdfState.value = PdfViewerState(isLoading = true)
+            com.justpass.app.data.analytics.Analytics.logCircularViewed(circularId, null)
 
             // Fetch circular detail
             val detailResult = repository.fetchCircularDetail(circularId)

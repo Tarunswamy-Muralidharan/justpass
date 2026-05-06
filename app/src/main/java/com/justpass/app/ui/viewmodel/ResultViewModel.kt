@@ -77,5 +77,6 @@ class ResultViewModel(application: Application) : AndroidViewModel(application) 
 
     fun selectSemester(semester: Int) {
         _uiState.value = _uiState.value.copy(selectedSemester = semester)
+        com.justpass.app.data.analytics.Analytics.logResultViewed(semester)
     }
 }

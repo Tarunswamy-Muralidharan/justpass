@@ -75,6 +75,12 @@ class CgpaViewModel(application: Application) : AndroidViewModel(application) {
         current[semester] = semGrades
         _uiState.value = _uiState.value.copy(semesterGrades = current)
         saveGrades()
+        // Fire only when the semester now has at least one grade — avoids
+        // flooding analytics on every clear/reset tap.
+        if (grade != null) {
+            val sgpa = calculateSGPA(semGrades)
+            com.justpass.app.data.analytics.Analytics.logGpaCalculated(semester, sgpa)
+        }
     }
 
     fun setElectiveName(semester: Int, subjectIndex: Int, name: String) {
