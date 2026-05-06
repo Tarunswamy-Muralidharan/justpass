@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.crashlytics)
 }
 
 android {
@@ -20,6 +21,13 @@ android {
         versionName = "3.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildFeatures {
+        // Generates BuildConfig.DEBUG / BuildConfig.VERSION_NAME etc.
+        // Off by default in AGP 8+ — needed by Crashlytics opt-out toggle.
+        buildConfig = true
+        compose = true
     }
 
     signingConfigs {
@@ -63,9 +71,6 @@ android {
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
         }
-    }
-    buildFeatures {
-        compose = true
     }
 }
 
@@ -114,6 +119,7 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.auth)
     implementation("com.google.firebase:firebase-config")
+    implementation(libs.firebase.crashlytics)
 
     // Apache POI (Excel parsing)
     implementation(libs.poi)

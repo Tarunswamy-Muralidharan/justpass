@@ -74,6 +74,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         Analytics.init(this)
+        // Crashlytics: disabled in debug so dev-time crashes don't pollute the
+        // production crash list. Release builds opt-in by default.
+        com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance()
+            .setCrashlyticsCollectionEnabled(!com.justpass.app.BuildConfig.DEBUG)
+        // Group crashes per user using the same hashed playerId pattern that
+        // chess uses (p_${rollHash}). Lets us see "47 users affected" in the
+        // Crashlytics console without leaking the raw roll number.
+        try {
+            val roll = com.justpass.app.data.local.SecurePreferences
+                .getInstance(this).rollNumber
+            if (!roll.isNullOrBlank()) {
+                val pid = "p_${kotlin.math.abs(roll.hashCode()).toString(16)}"
+                com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance()
+                    .setUserId(pid)
+            }
+        } catch (_: Exception) {}
         com.justpass.app.ui.components.AdConfig.init(this)
         MobileAds.initialize(this) {
             com.justpass.app.ui.components.InterstitialAdManager.preload(this)
