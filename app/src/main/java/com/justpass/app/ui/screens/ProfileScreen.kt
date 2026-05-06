@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Feedback
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
@@ -66,7 +67,9 @@ fun ProfileScreen(
     displayName: String = "",
     onLogout: () -> Unit,
     onPrivacyPolicyClick: () -> Unit,
-    onTournamentApprovalClick: () -> Unit = {}
+    onTournamentApprovalClick: () -> Unit = {},
+    onBugReportClick: () -> Unit = {},
+    onBugReportInboxClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val securePrefs = SecurePreferences.getInstance(context)
@@ -423,10 +426,10 @@ fun ProfileScreen(
                 ListItem(
                     headlineContent = { Text("Report Bug / Feature Request") },
                     leadingContent = { Icon(Icons.Default.Feedback, null) },
-                    supportingContent = { Text("Help us improve JustPass", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    supportingContent = { Text("Tell me what's broken — text + screenshot", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     modifier = Modifier.clickable {
                         Analytics.logProfileAction("bug_report")
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Tarunswamy-Muralidharan/-AttendanceWidgetLaudea/issues/new/choose")))
+                        onBugReportClick()
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
@@ -456,6 +459,16 @@ fun ProfileScreen(
                             modifier = Modifier.clickable {
                                 Analytics.logProfileAction("tournament_approvals")
                                 onTournamentApprovalClick()
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                        ListItem(
+                            headlineContent = { Text("Bug Report Inbox") },
+                            leadingContent = { Icon(Icons.Default.Inbox, null) },
+                            modifier = Modifier.clickable {
+                                Analytics.logProfileAction("bug_report_inbox")
+                                onBugReportInboxClick()
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
