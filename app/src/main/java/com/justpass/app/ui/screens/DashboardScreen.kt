@@ -212,7 +212,15 @@ fun DashboardScreen(
     Column(
         modifier = Modifier.fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 160.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp)
+            // 130.dp covers the floating bottom bar's fixed footprint
+            // (barHeight 68 + bumpHeight 30 + outer bottom gap 12 + breathing
+            // room ~20). The .navigationBarsPadding() then adds whatever the
+            // current device's gesture/3-button inset is on top — so the
+            // layout works on phones with 0px gesture bars *and* on phones
+            // with chunky 3-button nav bars without the last card hiding.
+            .padding(bottom = 130.dp)
+            .navigationBarsPadding(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Header — liquid glass with light sweep on refresh
