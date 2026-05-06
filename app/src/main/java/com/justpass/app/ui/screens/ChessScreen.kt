@@ -1277,35 +1277,39 @@ private fun LichessGameScreen(
                         rewrite();setInterval(rewrite,400);
                     })()""".trimIndent().replace("\n", "")
 
-                    // Poll for game-over by looking for .result-wrap presence —
-                    // Lichess only mounts that node once a game has ended, so it's
-                    // a more reliable trigger than scanning the status text (which
-                    // gets mutated by our rewrite() pass and was missing 'victor').
-                    // Also computes an explicit `result` (mywin/oppwin/draw/unknown)
-                    // so the result dialog never has to parse raw localised text.
+                    // Poll for game-over by looking for either a .result-wrap
+                    // element OR a .rmoves move list containing a definitive
+                    // result token (1-0 / 0-1 / ½-½). Lichess does not always
+                    // mount .result-wrap on timeout / abandonment open
+                    // challenges, but the move list always ends with the
+                    // result token once the game is over — so checking both
+                    // covers checkmate, resignation, AND clock-flag-fall.
+                    // Sends "winner|text|myColor|result" so the dialog never
+                    // has to parse raw localised text.
                     val pollGameEnd = """javascript:(function(){
                         if(window._jpPoll)return;window._jpPoll=1;
                         setInterval(function(){
                             if(window._jpDone)return;
                             var wr=document.querySelector('.result-wrap');
-                            if(!wr)return;
-                            var cl=wr.className||'';
+                            var rm=document.querySelector('.rmoves');
+                            var rmt=rm?(rm.textContent||''):'';
+                            var hasMoveResult=/(\b1-0\b|\b0-1\b|½)/.test(rmt);
+                            if(!wr&&!hasMoveResult)return;
                             var winner='unknown';
-                            if(cl.indexOf('white')>=0)winner='white';
-                            else if(cl.indexOf('black')>=0)winner='black';
-                            if(winner==='unknown'){
-                                var rm=document.querySelector('.rmoves');
-                                if(rm){
-                                    var rmt=rm.textContent||'';
-                                    if(rmt.indexOf('1-0')>=0)winner='white';
-                                    else if(rmt.indexOf('0-1')>=0)winner='black';
-                                    else if(rmt.indexOf('½')>=0)winner='draw';
-                                }
+                            if(wr){
+                                var cl=wr.className||'';
+                                if(cl.indexOf('white')>=0)winner='white';
+                                else if(cl.indexOf('black')>=0)winner='black';
                             }
-                            var stEl=wr.querySelector('.status')||document.querySelector('.rresult,.status');
+                            if(winner==='unknown'){
+                                if(rmt.indexOf('1-0')>=0)winner='white';
+                                else if(rmt.indexOf('0-1')>=0)winner='black';
+                                else if(rmt.indexOf('½')>=0)winner='draw';
+                            }
+                            // Don't fire prematurely if we still can't pin a winner.
+                            if(winner==='unknown')return;
+                            var stEl=(wr&&wr.querySelector('.status'))||document.querySelector('.rresult,.status');
                             var txt=stEl?(stEl.textContent||'').trim():'Game Over';
-                            // Don't fire if both winner and text are useless — wait next tick.
-                            if(winner==='unknown'&&txt.length<3)return;
                             var myC='unknown';
                             var bd=document.querySelector('cg-board,.cg-board');
                             if(bd){
@@ -1319,7 +1323,7 @@ private fun LichessGameScreen(
                             }
                             var result='unknown';
                             if(winner==='draw')result='draw';
-                            else if(winner!=='unknown'&&myC!=='unknown')result=(winner===myC)?'mywin':'oppwin';
+                            else if(myC!=='unknown')result=(winner===myC)?'mywin':'oppwin';
                             window._jpDone=1;
                             JustPass.onGameEnd(winner+'|'+txt+'|'+myC+'|'+result);
                         },1500);
