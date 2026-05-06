@@ -31,4 +31,12 @@
         <key>sideload_block_enabled</key>
         <value>false</value>
     </entry>
+    <entry>
+        <!-- false = serve real production AdMob ads (default for prod).
+             true  = serve AdMob's public test ads (no revenue, no policy
+             risk). Flip this in Firebase Console for safe demos / when
+             AdMob flags traffic / before app store review. -->
+        <key>ads_use_test_ids</key>
+        <value>false</value>
+    </entry>
 </defaultsMap>

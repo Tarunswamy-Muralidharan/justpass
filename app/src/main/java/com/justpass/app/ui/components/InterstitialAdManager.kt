@@ -12,10 +12,8 @@ import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 
 object InterstitialAdManager {
 
-    // AdMob approval pending — kill switch in AdConfig.adsEnabled (Firebase Remote Config)
-    // keeps this unit dormant until Remote Config flips ads_enabled=true, which should only
-    // be done after AdMob completes app review (24–48h).
-    private const val AD_UNIT_ID = "ca-app-pub-4936276228225156/3208220090"
+    // Ad unit ID resolved through AdConfig — flips between real + AdMob's public
+    // test IDs based on the `ads_use_test_ids` Remote Config flag.
     private const val TAG = "InterstitialAd"
 
     private var interstitialAd: InterstitialAd? = null
@@ -28,7 +26,7 @@ object InterstitialAdManager {
 
         InterstitialAd.load(
             context,
-            AD_UNIT_ID,
+            AdConfig.interstitialAdUnitId,
             AdRequest.Builder().build(),
             object : InterstitialAdLoadCallback() {
                 override fun onAdLoaded(ad: InterstitialAd) {
