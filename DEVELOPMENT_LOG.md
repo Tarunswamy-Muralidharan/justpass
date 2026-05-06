@@ -6561,3 +6561,125 @@ The displayName-bridge is a workaround. It works because rollNumbers are unique 
 - **Two systems writing related records under different ID schemes will eventually meet.** Bug 5 Layer 3 + Bug 6 are both this. The displayName bridge unblocks today; the schema migration is owed.
 
 ---
+
+## Session: 2026-05-06 (continued) — v3.0.2 release prep, analytics audit, AdMob plumbing, Crashlytics, privacy policy
+
+After the chess + friends overhaul landed, the same evening pivoted to release-readiness. Goal: get v3.0.2 (versionCode 11) into the Play Console Closed testing track tonight, and have everything in place for the eventual production rollout once Google approves the production-access application that was filed at 21:44.
+
+### Analytics audit + dead-code wiring
+
+Audited every `Analytics.log*` call site against the wrapper definitions in `data/analytics/Analytics.kt`. Found seven defined-but-never-fired functions — `logRefresh`, `logResultViewed`, `logSessionDuration`, `logScreenDuration`, `logGpaCalculated`, `logCircularViewed`, `logCalendarMonthViewed`. Most were wired now:
+
+- `logRefresh(success, method)` fires on both result branches of `DashboardViewModel.refreshAttendance()`. Lets us read attendance-API failure rate from a single Firebase Engagement event.
+- `logResultViewed(semester)` fires from `ResultViewModel.selectSemester()`.
+- `logCircularViewed(circularId)` fires from `CircularViewModel.loadCircularPdf()`.
+- `logCalendarMonthViewed(month, year)` fires from `CalendarViewModel.previousMonth()` + `nextMonth()`.
+- `logGpaCalculated(semester, sgpa)` fires from `CgpaViewModel.setGrade()`, gated on a non-null grade so per-tap clears don't flood the report.
+- `logTileClicked("bunkometer")` fires on the dashboard Bunkometer tile click — previously the only tile not registering in `tile_clicked` breakdowns.
+
+`logScreenDuration` is intentionally still dead — Firebase auto-derives time-on-screen from `SCREEN_VIEW` events fired in `MainActivity:171`, so an explicit duration event is redundant.
+
+The full event surface readable in Firebase Console → Analytics → Engagement → Events is now: `app_open`, `screen_view`, `login`, `logout`, `feature_used`, `tile_clicked`, `pull_to_refresh`, `slider_used`, `result_viewed`, `gpa_calculated`, `circular_viewed`, `calendar_month_viewed`, `attendance_refresh`, `profile_action`, `easter_egg_triggered`, `ad_impression`, `ad_click`, `session_duration`. User properties: `app_version`, `install_source`.
+
+The naming inconsistency between `tile_clicked` / `feature_used` / `profile_action` was noted — three event names for the conceptually same "click that opens a screen" — but a refactor to one unified `screen_open` event was deferred to keep this push focused.
+
+### Real ↔ test ad unit ID switch via Remote Config
+
+Both real AdMob unit IDs were hardcoded in `AdBanner.kt` and `InterstitialAdManager.kt`. Added a remote-toggleable indirection through `AdConfig`:
+
+- New constants `REAL_BANNER_ID`, `REAL_INTERSTITIAL_ID`, `TEST_BANNER_ID`, `TEST_INTERSTITIAL_ID`. The test units are AdMob's public test IDs (`ca-app-pub-3940256099942544/...`) — never serve real ads, never bill, safe to load anywhere.
+- New `_useTestIds` mutable state, seeded from `SharedPreferences` so the value applied on prior launch is read instantly (no first-frame flicker), then overwritten by the next `fetchAndActivate` result.
+- Public `bannerAdUnitId` / `interstitialAdUnitId` getters return real or test IDs based on the live state.
+- `AdBanner.kt` and `InterstitialAdManager.kt` updated to read through `AdConfig.bannerAdUnitId` / `AdConfig.interstitialAdUnitId` instead of their old constants.
+- Bundled XML defaults at `res/xml/remote_config_defaults.xml` got `<key>ads_use_test_ids</key><value>false</value>` so first-ever launches default to real ads.
+- The user added the matching `ads_use_test_ids` parameter on Firebase Console and published it.
+
+The combined kill-switch matrix:
+
+| `ads_enabled` | `ads_use_test_ids` | What user sees |
+|---|---|---|
+| false | * | No ads at all (master kill) |
+| true | true | AdMob test ads — zero revenue, zero policy risk |
+| true | false | Real production ads — revenue |
+
+Useful for: emergency kill if AdMob flags traffic; demoing the app without real ads; staging on closed testing without billing.
+
+### Faster banner ads — adaptive sizing + reserved height
+
+The user reported a visible 1-2 second pop-in on every banner. Two issues:
+
+1. `setAdSize(AdSize.BANNER)` requested a fixed 320x50dp creative. Adaptive banners are Google's official replacement — creatives are pre-cached for common screen widths, fill rate is higher, median load drops.
+2. `AndroidView` had no fixed height, so the banner area was 0.dp until the creative loaded → page visibly shifted down ("popping in").
+
+Fixed in one go: `AdBanner.kt` now uses `AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(context, screenWidthDp)` and reserves the resulting height upfront via `Modifier.height(adSize.height.dp)`. The slot is now sized correctly the moment the screen renders; the creative fades into the reserved space instead of pushing content. Falls back to `AdSize.BANNER` if the adaptive call ever returns null (rare).
+
+### Firebase Crashlytics added
+
+The user wanted crash reporting before shipping. Wired it end-to-end:
+
+- New version-catalog entries: `crashlyticsPlugin = "3.0.2"`, library `firebase-crashlytics-ktx`, plugin `firebase-crashlytics`.
+- Plugin applied at root `build.gradle.kts` (`apply false`) and at app-level `build.gradle.kts`.
+- Dependency `implementation(libs.firebase.crashlytics)` added.
+- `MainActivity.onCreate` calls `FirebaseCrashlytics.setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG)` so debug-time crashes don't pollute the production crash list.
+- `setUserId` is called with the same hashed `p_${rollHash}` ID the chess subsystem uses — lets the Crashlytics console show "N users affected" without leaking raw roll numbers.
+- AGP 8 default of `buildFeatures { buildConfig = false }` had to be flipped to `true` so `BuildConfig.DEBUG` resolves; the existing standalone `buildFeatures { compose = true }` block was merged into one to avoid the duplicate-block error.
+- The build initially failed with `BuildConfig` unresolved + a spurious WideNavigationRailValue mismatch (Compose name shadowing); fixed by fully-qualifying `com.justpass.app.BuildConfig.DEBUG`.
+
+### Privacy Policy authored + hosted
+
+Required by both Play (Data safety section) and AdMob (every ad-supported app). Generated via `app-privacy-policy-generator.firebaseapp.com` for the "Ad Supported" + "AI used" configuration, listed Google Play Services + AdMob + Google Analytics + Crashlytics as third-party services.
+
+The PWA repo (`AttendanceWidgetLaudea-Web`) already had a `/privacy` route, but it was the in-app version using the AppShell wrapper — wrong for Play reviewers, who need a public standalone page. Rewrote `src/app/privacy/page.tsx` as a standalone server-rendered page with:
+
+- Effective date 6 May 2026.
+- Disclosed third-party SDKs (Play Services, AdMob, Firebase Analytics + Crashlytics + Firestore + FCM + Remote Config — all three Firebase products link to the same canonical privacy URL).
+- On-device-only AI inference disclosure (LiteRT-LM Gemma) — important since the privacy policy generator's default text implied cloud AI.
+- Listed collected data (Auth credentials, Device ID, IP, Usage Data) — minimal-accurate set rather than the over-inclusive default.
+- Children-under-13 disclosure (AdMob policy requires this).
+- Contact email: `justpass.support@gmail.com` (TODO: actually create this Gmail and forward to personal).
+
+URL: <https://justpass-eta.vercel.app/privacy>. Vercel auto-deployed in ~30 sec after push to master.
+
+The user pasted that URL into Play Console → Policy → App content → Privacy policy → Save. Green tick.
+
+### v3.0.1 → v3.0.2 version bump
+
+The original v3.0.1 plan (versionCode 10) was committed `32e5b55` two weeks ago but never shipped. Today's chess + friends + analytics + ad-switch + Crashlytics work made it materially different from v3.0.1, so bumped to v3.0.2 (versionCode 11) at commit `8f674af` to keep the version semantics honest.
+
+### AAB build + Closed testing upload via Playwright
+
+Built the production AAB (`./gradlew :app:bundleRelease`) — final output `app/build/outputs/bundle/release/app-release.aab`, 69 MB, contains all six commits (`ca3d837` chess+friends → `8f674af` v3.0.2 bump → `914e89b` analytics → `177444a` ad switch → `7056554` adaptive banner → `19014ed` Crashlytics).
+
+Production access wasn't yet approved (applied today 21:44, ETA 7 days), so couldn't push directly to Production track. Pushed to the existing **Friends alpha** Closed testing track instead — verified per [Google's published guidance](https://support.google.com/googleplay/android-developer/answer/14151465?hl=en) that pushing closed-track releases during production-access review does NOT delay or invalidate the application; in fact, Google explicitly recommends ≥3 new releases during the 14-day closed-test window.
+
+Used Playwright MCP for the upload flow:
+
+1. `play.google.com/console/u/0/developers` → signed in (user manual step for auth).
+2. JustPass app card → Test and release → Closed testing → Friends alpha track → Create new release.
+3. Upload AAB (~3 min for 69 MB at 45 MB/s upstream).
+4. Filled release notes via DOM injection (`HTMLTextAreaElement.value` setter + `input` event) since Playwright's `browser_type` was hitting the wrong element.
+5. **Stopped at "Save as draft / Next / Review release"** per safety policy — irreversible publishing actions require explicit user action through the chat interface, not autonomous click.
+
+Upload + draft-fill is the part Playwright handles reliably; the actual "Roll out to Closed testing" click is owned by the user.
+
+### Pending follow-ups
+
+- User clicks Save → Review → Roll out to Closed track. ~15 min later v3.0.2 reaches Friends alpha testers via the Play Store update flow (versionCode 11 supersedes the sideloaded 8).
+- Wait up to 7 days for Google's production-access approval.
+- After approval: Promote-release → Production from the same AAB. One-click ship.
+- After Play listing is publicly live: AdMob → Apps → JustPass → Connect to Play Store. AdMob status flips to `Ready`.
+- After AdMob `Ready`: flip `ads_enabled = true` + `ads_use_test_ids = false` + Publish in Firebase Remote Config. Real ads start serving.
+- Create `justpass.support@gmail.com` Gmail and forward to personal — referenced in the privacy policy.
+- Eventual unification of the three ID-spaces (chess `p_xxx` vs Firebase Auth UID vs displayName bridge) — server-side schema migration deferred from previous session.
+
+### Lessons / patterns from this push
+
+- **Wrapper functions decouple where unit IDs live from the call sites.** Hardcoding `BANNER_AD_UNIT_ID` in two files made the test/real switch impossible without recompilation. Reading through `AdConfig.bannerAdUnitId` makes it a one-line server flip. Same pattern would apply if AdMob ever needed to rotate units for fraud reasons.
+- **Firebase Remote Config bundled defaults are NOT the same as server values.** A bundled default fires when the server parameter doesn't yet exist (or fetch fails); once you add the server parameter and Publish, server wins. Watching the Fetch% indicator on the console is the right way to confirm clients have picked up a flip — `0%` means Publish hasn't reached anyone yet.
+- **Adaptive banners + reserved height fix what feels like a "load speed" bug but is actually a layout-stability bug.** Most "ad is slow" complaints from users are really about the page jumping when the creative arrives.
+- **Crashlytics should be off in debug builds, on in release.** Default is on for both; one `setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG)` call prevents your dev-time NPEs from polluting prod crash dashboards.
+- **Privacy policy generators default to over-inclusive PII lists.** Don't accept the suggested `Email, Name, Roll Number, Phone, DOB, Address, ...`. List only what the app *transmits*, not what it displays. The honest minimal list (`Authentication Credentials, Device Identifier, IP Address, App Usage Data`) is both more accurate and less liability surface.
+- **Closed testing does not delay production-access review.** Confirmed via web search before pushing — actually strengthens the application by demonstrating active iteration.
+- **Always stop browser automation before irreversible publish actions.** Playwright can navigate, upload, and fill forms reliably; clicking "Roll out to 100%" is a human-in-the-loop step. Encoded this in the session prompt.
+
+---
