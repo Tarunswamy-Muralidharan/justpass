@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Screen {
-    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, LiteRt, CreateTournament, TournamentApproval
+    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, LiteRt, CreateTournament, TournamentApproval, BugReport, BugReportInbox
 }
 
 private val bottomTabs = listOf(
@@ -483,7 +483,7 @@ fun AttendanceApp() {
                 }
             ) { cardState ->
                 Crossfade(
-                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Profile, Screen.LiteRt, Screen.CreateTournament, Screen.TournamentApproval)) currentScreen.name
+                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Profile, Screen.LiteRt, Screen.CreateTournament, Screen.TournamentApproval, Screen.BugReport, Screen.BugReportInbox)) currentScreen.name
                                   else "tab_$selectedTabIndex",
                     animationSpec = tween(200),
                     label = "screenFade"
@@ -591,6 +591,12 @@ fun AttendanceApp() {
                         Screen.TournamentApproval.name -> com.justpass.app.ui.screens.TournamentApprovalScreen(
                             onBack = { currentScreen = Screen.Profile }
                         )
+                        Screen.BugReport.name -> com.justpass.app.ui.screens.BugReportScreen(
+                            onBack = { currentScreen = Screen.Profile }
+                        )
+                        Screen.BugReportInbox.name -> com.justpass.app.ui.screens.BugReportInboxScreen(
+                            onBack = { currentScreen = Screen.Profile }
+                        )
                         Screen.LiteRt.name -> com.justpass.app.ui.screens.LiteRtScreen(
                             onBack = {
                                 currentScreen = Screen.Dashboard
@@ -688,7 +694,9 @@ fun AttendanceApp() {
                             displayName = displayName,
                             onLogout = handleLogout,
                             onPrivacyPolicyClick = { currentScreen = Screen.PrivacyPolicy },
-                            onTournamentApprovalClick = { currentScreen = Screen.TournamentApproval }
+                            onTournamentApprovalClick = { currentScreen = Screen.TournamentApproval },
+                            onBugReportClick = { currentScreen = Screen.BugReport },
+                            onBugReportInboxClick = { currentScreen = Screen.BugReportInbox }
                         )
                     }
                 }

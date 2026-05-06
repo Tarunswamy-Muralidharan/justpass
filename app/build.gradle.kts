@@ -120,6 +120,7 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation("com.google.firebase:firebase-config")
     implementation(libs.firebase.crashlytics)
+    implementation(libs.firebase.storage)
 
     // Apache POI (Excel parsing)
     implementation(libs.poi)

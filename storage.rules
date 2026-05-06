@@ -1,0 +1,22 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Bug-report images. Authed users can upload to their own report path
+    // (the requestId is generated client-side from doc.collection().doc()),
+    // image is read-only for everyone (admin reads via download URL).
+    match /bug_reports/{requestId}/{file} {
+      // Anyone authed can upload — file size capped at 2MB to keep within
+      // free-tier 5GB/month + prevent abuse.
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Catch-all denies — explicit prefix above is the only allowed path.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
