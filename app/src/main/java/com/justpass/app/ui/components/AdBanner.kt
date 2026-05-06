@@ -11,10 +11,9 @@ import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 import com.google.android.gms.ads.LoadAdError
 
-// AdMob approval pending — kill switch in AdConfig.adsEnabled (Firebase Remote Config)
-// keeps this unit dormant until Remote Config flips ads_enabled=true, which should only
-// be done after AdMob completes app review (24–48h).
-private const val BANNER_AD_UNIT_ID = "ca-app-pub-4936276228225156/4108831863"
+// Ad unit ID resolved through AdConfig — flips between real + AdMob's public
+// test IDs based on the `ads_use_test_ids` Remote Config flag. Lets the dev
+// flip to safe test ads instantly without an APK rebuild.
 
 @Composable
 fun AdBanner(modifier: Modifier = Modifier, screenName: String = "unknown") {
@@ -24,7 +23,7 @@ fun AdBanner(modifier: Modifier = Modifier, screenName: String = "unknown") {
         factory = { context ->
             AdView(context).apply {
                 setAdSize(AdSize.BANNER)
-                adUnitId = BANNER_AD_UNIT_ID
+                adUnitId = AdConfig.bannerAdUnitId
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
                         Analytics.logAdImpression(screenName, "banner")
