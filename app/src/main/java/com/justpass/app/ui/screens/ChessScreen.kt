@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
@@ -280,6 +281,7 @@ fun ChessScreen(
                         gameResult = result
                     }
                 },
+                onAbandon = { viewModel.notifyGameLeft() },
                 onOpenExternal = {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(activeGameUrl)))
                 }
@@ -969,6 +971,7 @@ private fun LichessGameScreen(
     myName: String = "",
     opponentName: String = "",
     onClose: (result: String?) -> Unit,
+    onAbandon: () -> Unit = {},
     onOpenExternal: () -> Unit
 ) {
     var showExitConfirm by remember { mutableStateOf(false) }
@@ -981,6 +984,21 @@ private fun LichessGameScreen(
         if (!isLiveGame) onClose(null)
         else if (gameEnded != null) onClose(gameEnded)
         else showExitConfirm = true
+    }
+
+    // Belt-and-braces: if the game window leaves composition while still live
+    // (user navigates away from chess tab, app put in background and reclaimed,
+    // dialog disposed without going through onClose) — notify the opponent so
+    // they get the "you win" toast instead of a frozen loading screen.
+    // markGameLeft on the repo side is idempotent (transaction checks existing
+    // leftBy), so this safely co-exists with the explicit onClose(null) path.
+    val gameEndedRef = rememberUpdatedState(gameEnded)
+    DisposableEffect(Unit) {
+        onDispose {
+            if (isLiveGame && gameEndedRef.value == null) {
+                onAbandon()
+            }
+        }
     }
 
     // Auto-close when game ends (live games only)
@@ -1026,13 +1044,25 @@ private fun LichessGameScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
+            Button(
                 onClick = { if (isLiveGame) showExitConfirm = true else onClose(null) },
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = Color.Black.copy(alpha = 0.5f)
-                )
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
             ) {
-                Icon(Icons.Default.Close, "Close game", tint = Color.White)
+                Icon(
+                    Icons.AutoMirrored.Filled.ExitToApp,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "Leave Game",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp
+                )
             }
             if (isLoading) {
                 RoseFourLoader(modifier = Modifier.size(24.dp))

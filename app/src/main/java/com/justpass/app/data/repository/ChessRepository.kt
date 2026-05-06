@@ -11,6 +11,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -450,10 +451,11 @@ class ChessRepository {
             val claimed = FirebaseFirestore.getInstance().runTransaction { txn ->
                 val snap = txn.get(docRef)
                 if (snap.getBoolean("resultChecked") == true) return@runTransaction false
-                txn.update(docRef, mapOf(
+                // set-merge so V2 challenges (no parent Firestore doc) don't fail NOT_FOUND.
+                txn.set(docRef, mapOf(
                     "resultChecked" to true,
                     "abandoned" to true
-                ))
+                ), SetOptions.merge())
                 true
             }.await()
             if (claimed) {
@@ -494,11 +496,14 @@ class ChessRepository {
                 val snap = tx.get(docRef)
                 val existing = snap.getString("leftBy")
                 if (!existing.isNullOrEmpty()) return@runTransaction false
-                tx.update(docRef, mapOf(
+                // V2 (CF DO) never writes the parent challenge doc, so update would
+                // throw NOT_FOUND. set-with-merge creates the doc on first write and
+                // is a safe no-op merge on V1's existing doc.
+                tx.set(docRef, mapOf(
                     "leftBy" to leaverId,
                     "leftByName" to leaverName,
                     "leftAt" to System.currentTimeMillis()
-                ))
+                ), SetOptions.merge())
                 true
             }.await()
             if (claimed == true) {
