@@ -6409,3 +6409,155 @@ Implemented today via a `requiresHeartbeat: boolean` field on the `ChessLobby` i
 - **WebSocket Hibernation API is the missing piece for free-tier real-time.** Without it, a global DO with 100 idle sockets bills you for 100 idle compute-seconds. With it, the DO sleeps; sockets stay attached; you pay for nothing until a message arrives. CF undersells this in the docs.
 
 ---
+
+## Session: 2026-05-06 — Chess Endgame & Friends Plumbing
+
+A multi-hour debugging session driven by two-phone manual testing (Moto Edge 60 Fusion `10.205.185.119:5555` + Realme `TGZTTKFMCE8PDEX4`). Goal at session start: reliable opponent-leave Game Over flow. Goal at session end: a working friend graph across the V2 lobby. Everything in between was peeling layers off two architectural mismatches that had been quietly broken since the V2 rollout.
+
+### Commits shipped (push order, all on `main`)
+
+| SHA | Subject |
+|-----|---------|
+| `bef7e1b` | Chess opponent-leave reliability + UX + responsive layout (initial fix attempt) |
+| `c91c440` | Chess opponent-leave: V2 challenges + UX + double-count |
+| `3926291` | Detect Lichess game-end on clock-flag-fall too |
+| `a406fe1` | First-writer-wins on abandon path too |
+| `c930886` | Fix Game Over name flicker — `getOrCreateProfile` preserves stored displayName |
+
+(Plus the changes summarised below in this section, batched into the next push.)
+
+### Bug 1 — Opponent leaves, winner sees nothing
+
+**Repro:** Phone A clicks "Leave Game" mid-match. Phone B's Lichess WebView stayed at the live board, no Game Over, no win credited until Lichess's own ~10-minute abandonment timer fired.
+
+**Root cause chain (took several builds to peel apart):**
+
+1. `notifyGameLeft` on the leaver side was reading `_uiState.value.acceptedChallenge?.id`, but `clearAcceptedChallenge()` had nulled `acceptedChallenge` the moment the WebView opened. The leaver couldn't write `leftBy` because it didn't know its own challenge ID.
+2. `watchForOpponentLeave` registered before the WebView opened, then was torn down by `clearAcceptedChallenge()` itself — the listener was dropped before the leaver had even left.
+3. Synthetic abandon-result was overwriting Lichess's later `pollGameEnd` synthesis (or vice versa) → `gameResult` flipped between two attributions, which is why the user reported "name flickering between both names."
+4. `getOrCreateProfile(myId, capturedOpponentName, "")` in the abandon-credit path was passing the *opponent's* name as `realName`, and the repo function wrote that into `chess_profiles.displayName` for the *winner's* doc. On the next recompose the dialog re-resolved `myProfile.visibleName` and showed the wrong name.
+
+**Fixes (in order applied):**
+
+- Stash `activeGameChallengeId`, `activeGameLichessId`, `activeGameOpponentName` into dedicated `ChessUiState` fields *before* `clearAcceptedChallenge` nulls `acceptedChallenge`. `notifyGameLeft` and the win-credit path read from these stash fields.
+- Move `gameLeftListener` teardown out of `clearAcceptedChallenge` and into `cleanup()` / `onCleared()` / the actual game-result confirmation paths.
+- First-writer-wins guard on every code path that sets `gameResult` (abandon LaunchedEffect + Lichess `onClose` callback). `if (gameResult == null) gameResult = ...` everywhere, no exceptions.
+- `ChessRepository.getOrCreateProfile` reads stored `displayName` from Firestore when the doc exists, only falling back to the `realName` parameter when creating fresh. Caller can no longer corrupt their own profile by passing the opponent's name.
+- `watchForOpponentLeave` captures `capturedLichessId` + `capturedOpponentName` from `acceptedChallenge` at registration time into closure-local vals, so the listener fires correctly long after `acceptedChallenge` has been nulled.
+
+### Bug 2 — Clock-flag-fall not detected
+
+**Repro:** Both phones sit until one player's clock hits `00:00`. Lichess displays the move list ending with `1-0` (or `0-1`). The Game Over dialog never appears in the JustPass UI.
+
+**Root cause:** The `pollGameEnd` JS, injected into the Lichess WebView at `onPageFinished`, was looking for `.result-wrap` to mount. On clock-flag-fall in open-challenge games the `.result-wrap` element doesn't always render — the DOM signal is the move list (`.rmoves` or its mobile equivalent) ending with `1-0` / `0-1` / `½-½`. Even with that fallback added, *no console output ever surfaced in logcat* because the default `WebChromeClient` swallows `console.log`.
+
+**Fixes:**
+
+- Pipe `WebChromeClient.onConsoleMessage` for `[JP]`-prefixed logs to a `ChessJS` logcat tag.
+- Replace selector-specific detection with a `document.body.innerText` regex scan for the result token (`1-0`, `0-1`, `½-½`, `1/2-1/2`). Selector drift on the Lichess mobile DOM no longer matters — the body always renders the result somewhere by the time the game has ended.
+- Console-log every poll iteration: `[JP] poll installed`, `[JP] poll tick no-result body=N`, `[JP] poll match wr=... tok=...`, `[JP] FIRING winner=... result=...`. Any future failure can be diagnosed in two `adb logcat` lines.
+
+After this landed, both timeout and resignation reliably surface the Game Over dialog with the correct winner attribution within ~1.5 s of the result text appearing in the WebView.
+
+### Bug 3 — Loser missing from match history
+
+**Repro:** Game ends by abandonment. Winner's history shows the match with an "Analyze" button. Loser's history is empty.
+
+**Root cause:** `watchForOpponentLeave` saves the match to `SecurePreferences.history` only on the winner's device (it's the side that detects `leftBy`). The leaver's `notifyGameLeft` writes Firestore but never touches local prefs. Lichess REST returns `404` for anonymous-account games (which is what JustPass uses), so the fallback in `processGameResult` never fires for either side.
+
+**Fix:** `notifyGameLeft` now also writes a `loss` entry to local history, using `activeGameLichessId` + `activeGameOpponentName` (the stashed fields from Bug 1's fix). Dedupe via `existingIds` so a subsequent `processGameResult` can't double-write the same `lichessGameId`.
+
+### Bug 4 — Analysis button kicked the user out to a browser
+
+The Game Over dialog's "Analysis" button used `context.startActivity(Intent.ACTION_VIEW, lichess.org/$id#analysis)`, which opens an external browser. The history dialog's "Analyze" button correctly set `activeGameUrl` to load in-app via the same WebView. Inconsistent UX.
+
+**Fix:** Game Over dialog now sets `activeGameUrl = "https://lichess.org/$resultGameId#analysis"` to match the history flow. `isLiveGame` correctly reports `false` for any URL containing `#`, so the WebView opens without exit-confirm or `leftBy` bridge wiring.
+
+### Bug 5 — Add-Friend icon shown for already-friends + no pinning + offline labels for online friends
+
+This was the session's deepest dive. Initial assumption was a stale `friendIds` set, then a stale `friendIdsSnapshot` cache. Both turned out to be symptoms of an architectural mismatch.
+
+**Symptom:** Two Android phones whose users are already friends still saw the `+` icon next to each other in the lobby, no pinning to top, and the Friends dialog showed "last seen long ago" while both were online.
+
+**Layer 1 — One-shot friendId fetch:**
+`ChessViewModel.goOnline` was loading `friendIds` once via `repo.getFriendIds(myId)`. After Phone B accepted Phone A's request, Phone B updated its local set immediately but Phone A had no listener for accept events. Asymmetric UX until app restart.
+
+→ Added `repo.listenAcceptedFriendIds(myId, onUpdate)`: two parallel snapshot listeners (sent + received with `status == "accepted"`), merged into one `Set<String>` callback. Re-registers `onlineListener` on every change so the V2 lobby's `friendIdsSnapshot` updates.
+
+**Layer 2 — Cached `isFriend` baked into `OnlinePlayer` map:**
+V2's `currentOnlinePlayers` map stored `OnlinePlayer` instances with `isFriend` evaluated at PRESENCE_SNAPSHOT/PRESENCE_DIFF arrival. When `friendIdsSnapshot` updated later, `emitOnlinePlayers` re-emitted the same cached values.
+
+→ `emitOnlinePlayers` now `.map { it.copy(isFriend = it.id in friendIdsSnapshot) }` before sort. Recomputes against the *current* snapshot every emit.
+
+**Layer 3 — The actual root cause: two ID-spaces:**
+With the above fixes deployed, logcat showed:
+```
+emitOnlinePlayers friendIds=[p_678fd669, p_678fd682]
+                  list=[NHOROn3QxUQqRcNUAvygWrhxpME3:false]
+```
+`friendIdsSnapshot` held `p_${rollHash}`-format IDs (deterministic from roll number, used by both Android and PWA `getPlayerId`). The lobby presence broadcast a 28-char Firebase Auth UID. The `it.id in friendIdsSnapshot` lookup could never match — different ID-spaces.
+
+The smoking gun was in `chess-lobby/src/worker.ts`:
+```ts
+const verified = await verifyFirebaseIdToken(token, env.FIREBASE_PROJECT_ID);
+forwarded.headers.set("X-Player-Id", verified.uid);
+```
+The CF Worker tags lobby presence with the verified Firebase UID. The DO trusts that header (`lobby.ts`) as authoritative. Meanwhile `chess_friends` writes use `myProfile.id` (`p_${rollHash}`) on every client. Same user, two different IDs.
+
+**Fix (client-side, no server schema migration):**
+
+- `ChessRepositoryV2`: added `friendNamesSnapshot: Set<String>` field + `updateFriendNames(names)` setter that re-emits.
+- `emitOnlinePlayers` now: `isFriend = id in friendIdsSnapshot OR (displayName.isNotBlank() && displayName in friendNamesSnapshot)`.
+- ViewModel: when `listenAcceptedFriendIds` fires, fetch `getFriendProfiles(ids)` and push their `visibleName`s to the lobby. Also stash `friendProfiles` into `uiState` so the Friends dialog stays in sync.
+- `FriendsDialog`: introduced an `isOnlineNow()` helper that does the same dual-match (`id in onlineIds || visibleName in onlineNames`). Used for online count, pinning, and per-row online labels.
+
+After the fixes:
+- Friends show a non-clickable purple `People` icon (replaces `+` for confirmed friends).
+- Online friends pin to top of the lobby list.
+- Friends dialog shows green dot + "Online now" when the friend is in lobby.
+
+### Bug 6 — Removed friend can't be re-added
+
+Once Bug 5 was fixed, the user removed a friend (new red-X button + confirm dialog wired in `FriendsDialog` + `viewModel.removeFriend(friendId)` + `repo.removeFriend(myId, friendId)` deleting both directions of the chess_friends doc), then tried to send a new request. UI showed nothing.
+
+Logs revealed two stacked issues:
+
+**Stale pending docs blocking re-friend:**
+`sendFriendRequest`'s existence check was `if (existing.documents.isNotEmpty()) return false`, regardless of status. A `pending` doc from an earlier session was still in the collection and blocking new sends.
+
+→ Filtered the existence check to `status in ["pending", "accepted"]` only. Pre-write scrub of any stale outgoing docs (any status). Reverse-direction pending blocks (they sent us one — accept it, don't double-send).
+
+**Inbox listener never sees the request:**
+`sendFriendRequest` was being called with `toId = player.id` from the lobby, where `player.id` is the Firebase UID. Receiver's inbox listener queries `whereEqualTo("toId", myProfile.id)` where `myProfile.id = p_${rollHash}`. Doc written with toId=UID never matches. Sender saw success but receiver saw nothing.
+
+→ New `repo.findProfileIdByName(displayName)` queries `chess_profiles` (keyed by `p_xxx`) by displayName. ViewModel resolves the lobby player's `p_xxx` profile id before sending. Falls back to `player.id` if no match. Added explicit user feedback ("Request sent to X" / "Already friends or pending") via the existing `errorMessage` banner.
+
+### Bug 7 — Cosmetic: badge digit off-center
+
+The "1 friend online" badge inside the Friends tile had the digit baseline-shifted within the 18.dp circle. Compose's default font padding (ascender/descender) was eating the centering.
+
+→ `lineHeight = 10.sp` + `PlatformTextStyle(includeFontPadding = false)` + `textAlign = TextAlign.Center` on the `Text`. Glyph now centered exactly.
+
+### Architecture observation: ID-space bifurcation
+
+This is the single largest piece of latent debt in the chess module after this session. There are now three different IDs in play for the same user:
+
+| ID-space | Where | How derived |
+|----------|-------|-------------|
+| `p_${abs(roll.hashCode()).toString(16)}` | `chess_profiles`, `chess_friends`, `chess_match_history`, `chess_challenges`, ViewModel `myProfile.id` | `ChessRepository.getPlayerId(rollNumber)` |
+| Firebase Auth UID (~28 chars, e.g. `NHOROn3QxUQqRcNUAvygWrhxpME3`) | CF Worker → Durable Object → `PRESENCE_*` broadcasts → `OnlinePlayer.id` | `verifyFirebaseIdToken().uid` |
+| Display name | Used as a fallback bridge after this session's fixes | User-set or random nickname |
+
+The displayName-bridge is a workaround. It works because rollNumbers are unique and so are the corresponding profile names *in practice*. It will silently break if two users ever pick the same display name. The proper fix is server-side: Worker sends the client-claimed `X-Player-Id` (or a verified `pid` claim derived from roll number) into the DO instead of `verified.uid`. That requires a schema migration of which clients store which IDs, and a coordinated PWA + Android + Worker deploy. Deferred.
+
+### Lessons
+
+- **Never read `_uiState.value.X` from inside a long-lived listener closure.** Capture in a local `val` at registration time, or stash into a dedicated mutable field. Async listeners fire after the caller has already nulled the state — null/stale read.
+- **First-writer-wins guards belong on every code path that sets the same field.** Plural sources of truth (Lichess pollGameEnd + abandon synth + onClose fallback) WILL race; gating one of them is half a fix.
+- **Upsert-style `getOrCreate` functions must read existing fields from the doc.** Don't blindly use parameters as the returned values. Caller may pass wildly wrong values for a different code path; the function shouldn't trust them when the doc already exists.
+- **Console output isn't piped from WebView by default.** If you're injecting JS into a WebView and want to debug it, install a `WebChromeClient.onConsoleMessage` override before you write the JS. Saved an hour on Bug 2.
+- **WebView selector-specific detection is fragile across mobile / desktop / SPA layouts.** Body-text scans are slower but bulletproof.
+- **When the cached state diverges from the source of truth, recompute at emit time.** `emitOnlinePlayers` baking `isFriend` into the cached `OnlinePlayer` map was Bug 5 Layer 2. Cheap recompute on every emit is correct.
+- **Two systems writing related records under different ID schemes will eventually meet.** Bug 5 Layer 3 + Bug 6 are both this. The displayName bridge unblocks today; the schema migration is owed.
+
+---

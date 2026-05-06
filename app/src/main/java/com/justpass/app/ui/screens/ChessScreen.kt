@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -152,9 +153,8 @@ fun ChessScreen(
                             }
                             OutlinedButton(
                                 onClick = {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW,
-                                        Uri.parse("https://lichess.org/$resultGameId#analysis")))
                                     gameResult = null; activeChallenge = null
+                                    activeGameUrl = "https://lichess.org/$resultGameId#analysis"
                                 },
                                 shape = RoundedCornerShape(10.dp)
                             ) {
@@ -268,6 +268,7 @@ fun ChessScreen(
         FriendsDialog(
             friends = uiState.friendProfiles,
             onlinePlayers = uiState.onlinePlayers,
+            onRemove = { viewModel.removeFriend(it) },
             onDismiss = { viewModel.toggleFriends() }
         )
     }
@@ -378,8 +379,20 @@ fun ChessScreen(
                                 .background(Color(0xFF00E676)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("$onlineFriendCount", fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold, color = Color.Black)
+                            // includeFontPadding=false + lineHeight=fontSize to
+                            // strip the default ascender/descender padding that
+                            // pushes single digits off-center in tight circles.
+                            Text(
+                                "$onlineFriendCount",
+                                fontSize = 10.sp,
+                                lineHeight = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black,
+                                textAlign = TextAlign.Center,
+                                style = LocalTextStyle.current.copy(
+                                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                )
+                            )
                         }
                     }
                 }
@@ -698,7 +711,14 @@ private fun PlayerCard(
                 Text("Active $ago", fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
             }
-            if (!player.isFriend) {
+            if (player.isFriend) {
+                // Non-clickable confirmed-friend marker. Replaces the +icon
+                // so users don't think they need to re-add an existing friend.
+                Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.People, "Friend", Modifier.size(16.dp),
+                        tint = Color(0xFF7C4DFF))
+                }
+            } else {
                 IconButton(onClick = onAddFriend, modifier = Modifier.size(28.dp)) {
                     Icon(Icons.Default.PersonAdd, "Add friend", Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
@@ -1282,37 +1302,38 @@ private fun LichessGameScreen(
                         rewrite();setInterval(rewrite,400);
                     })()""".trimIndent().replace("\n", "")
 
-                    // Poll for game-over by looking for either a .result-wrap
-                    // element OR a .rmoves move list containing a definitive
-                    // result token (1-0 / 0-1 / ½-½). Lichess does not always
-                    // mount .result-wrap on timeout / abandonment open
-                    // challenges, but the move list always ends with the
-                    // result token once the game is over — so checking both
-                    // covers checkmate, resignation, AND clock-flag-fall.
-                    // Sends "winner|text|myColor|result" so the dialog never
-                    // has to parse raw localised text.
+                    // Poll for game-over with the broadest possible detection.
+                    // Lichess mobile uses hashed class names for some elements,
+                    // so .result-wrap / .rmoves can be missing or renamed.
+                    // Strategy: scan document.body.innerText for a result token
+                    // (1-0 / 0-1 / ½-½). On clock-flag-fall the move list AND
+                    // the bottom status text both render the token, so a body
+                    // scan catches it regardless of selector drift.
+                    // Console.log every iteration so logcat (via WebChromeClient
+                    // .onConsoleMessage) shows whether the poll is even firing.
                     val pollGameEnd = """javascript:(function(){
                         if(window._jpPoll)return;window._jpPoll=1;
+                        console.log('[JP] poll installed');
                         setInterval(function(){
                             if(window._jpDone)return;
+                            var b=document.body?(document.body.innerText||''):'';
+                            var m=b.match(/(?:^|\s)(1-0|0-1|½-½|1\/2-1\/2)(?:\s|$)/);
                             var wr=document.querySelector('.result-wrap');
-                            var rm=document.querySelector('.rmoves');
-                            var rmt=rm?(rm.textContent||''):'';
-                            var hasMoveResult=/(\b1-0\b|\b0-1\b|½)/.test(rmt);
-                            if(!wr&&!hasMoveResult)return;
+                            if(!m&&!wr){console.log('[JP] poll tick no-result body='+b.length);return;}
+                            console.log('[JP] poll match wr='+!!wr+' tok='+(m?m[1]:'(none)'));
                             var winner='unknown';
                             if(wr){
                                 var cl=wr.className||'';
                                 if(cl.indexOf('white')>=0)winner='white';
                                 else if(cl.indexOf('black')>=0)winner='black';
                             }
-                            if(winner==='unknown'){
-                                if(rmt.indexOf('1-0')>=0)winner='white';
-                                else if(rmt.indexOf('0-1')>=0)winner='black';
-                                else if(rmt.indexOf('½')>=0)winner='draw';
+                            if(winner==='unknown'&&m){
+                                var t=m[1];
+                                if(t==='1-0')winner='white';
+                                else if(t==='0-1')winner='black';
+                                else winner='draw';
                             }
-                            // Don't fire prematurely if we still can't pin a winner.
-                            if(winner==='unknown')return;
+                            if(winner==='unknown'){console.log('[JP] poll: winner unknown');return;}
                             var stEl=(wr&&wr.querySelector('.status'))||document.querySelector('.rresult,.status');
                             var txt=stEl?(stEl.textContent||'').trim():'Game Over';
                             var myC='unknown';
@@ -1323,13 +1344,14 @@ private fun LichessGameScreen(
                                 else if(bcl.indexOf('orientation-white')>=0)myC='white';
                             }
                             if(myC==='unknown'){
-                                var bw=document.querySelector('.round__app,.board-wrap');
-                                if(bw){var bwc=bw.className||'';if(bwc.indexOf('black')>=0)myC='black';else myC='white';}
+                                var bw=document.querySelector('.round__app,.board-wrap,main');
+                                if(bw){var bwc=bw.className||'';if(bwc.indexOf('black')>=0)myC='black';else if(bwc.indexOf('white')>=0)myC='white';}
                             }
                             var result='unknown';
                             if(winner==='draw')result='draw';
                             else if(myC!=='unknown')result=(winner===myC)?'mywin':'oppwin';
                             window._jpDone=1;
+                            console.log('[JP] FIRING winner='+winner+' myC='+myC+' result='+result);
                             JustPass.onGameEnd(winner+'|'+txt+'|'+myC+'|'+result);
                         },1500);
                     })()""".trimIndent().replace("\n", "")
@@ -1372,7 +1394,15 @@ private fun LichessGameScreen(
                         }
                     }
 
-                    webChromeClient = WebChromeClient()
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onConsoleMessage(msg: android.webkit.ConsoleMessage?): Boolean {
+                            val m = msg?.message() ?: return false
+                            if (m.contains("[JP]")) {
+                                android.util.Log.d("ChessJS", "${msg.messageLevel()} $m")
+                            }
+                            return true
+                        }
+                    }
                     loadUrl(url)
                 }
             }
@@ -1446,12 +1476,21 @@ private fun BoardThemeDialog(
 private fun FriendsDialog(
     friends: List<ChessProfile>,
     onlinePlayers: List<OnlinePlayer>,
+    onRemove: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var pendingRemoval by remember { mutableStateOf<ChessProfile?>(null) }
     val onlineIds = onlinePlayers.map { it.id }.toSet()
-    val onlineCount = friends.count { it.id in onlineIds }
-    // Sort: online friends first, then by rating
-    val sortedFriends = friends.sortedWith(compareByDescending<ChessProfile> { it.id in onlineIds }.thenByDescending { it.rating })
+    // CF Worker tags presence with Firebase UID; chess_profiles keys by
+    // p_${rollHash}. id-set lookup never matches across the two ID-spaces, so
+    // also match by displayName as fallback. See ChessRepositoryV2.emitOnlinePlayers.
+    val onlineNames = onlinePlayers.map { it.displayName }.filter { it.isNotBlank() }.toSet()
+    fun ChessProfile.isOnlineNow(): Boolean =
+        id in onlineIds || (visibleName.isNotBlank() && visibleName in onlineNames)
+    val onlineCount = friends.count { it.isOnlineNow() }
+    val sortedFriends = friends.sortedWith(
+        compareByDescending<ChessProfile> { it.isOnlineNow() }.thenByDescending { it.rating }
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1482,7 +1521,7 @@ private fun FriendsDialog(
             } else {
                 LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                     items(sortedFriends) { friend ->
-                        val isOnline = friend.id in onlineIds
+                        val isOnline = friend.isOnlineNow()
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -1509,6 +1548,17 @@ private fun FriendsDialog(
                                 Text("${friend.wins}W ${friend.losses}L ${friend.draws}D",
                                     fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            Spacer(Modifier.width(4.dp))
+                            IconButton(
+                                onClick = { pendingRemoval = friend },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close, "Remove friend",
+                                    Modifier.size(16.dp),
+                                    tint = Color(0xFFFF5252).copy(alpha = 0.7f)
+                                )
+                            }
                         }
                     }
                 }
@@ -1518,4 +1568,25 @@ private fun FriendsDialog(
             TextButton(onClick = onDismiss) { Text("Close") }
         }
     )
+
+    pendingRemoval?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingRemoval = null },
+            containerColor = Color(0xFF1E2A3A),
+            title = { Text("Remove friend?", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Remove ${target.visibleName} from your friends list?",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onRemove(target.id); pendingRemoval = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252))
+                ) { Text("Remove", color = Color.White) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemoval = null }) { Text("Cancel") }
+            }
+        )
+    }
 }
