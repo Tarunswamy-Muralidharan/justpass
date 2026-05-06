@@ -54,6 +54,12 @@ class ChessRepositoryV2 private constructor() : ChessLobby {
     // Single slot — ChessViewModel only calls listenOnlinePlayers once per session.
     @Volatile private var onlinePlayersCallback: ((List<OnlinePlayer>) -> Unit)? = null
     @Volatile private var friendIdsSnapshot: Set<String> = emptySet()
+    // CF Worker tags presence with Firebase Auth UID (worker.ts sets
+    // X-Player-Id: verified.uid). chess_friends docs key by p_${rollHash}.
+    // The two ID-spaces never match, so we ALSO match online players by
+    // displayName as a fallback. ViewModel pushes friend display names here
+    // whenever friendProfiles refreshes.
+    @Volatile private var friendNamesSnapshot: Set<String> = emptySet()
     @Volatile private var myId: String = ""
     @Volatile private var myDisplayName: String = ""
     private val currentOnlinePlayers: MutableMap<String, OnlinePlayer> = ConcurrentHashMap()
@@ -320,8 +326,17 @@ class ChessRepositoryV2 private constructor() : ChessLobby {
         val cb = onlinePlayersCallback ?: return
         val list = currentOnlinePlayers.values
             .filter { it.id != myId }
+            .map {
+                it.copy(isFriend = it.id in friendIdsSnapshot ||
+                    (it.displayName.isNotBlank() && it.displayName in friendNamesSnapshot))
+            }
             .sortedWith(compareByDescending<OnlinePlayer> { it.isFriend }.thenByDescending { it.timestamp })
         cb(list)
+    }
+
+    fun updateFriendNames(names: Set<String>) {
+        friendNamesSnapshot = names
+        emitOnlinePlayers()
     }
 
     private fun handleChallengeIncoming(obj: JsonObject) {

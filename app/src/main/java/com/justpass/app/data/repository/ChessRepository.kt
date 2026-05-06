@@ -195,22 +195,60 @@ class ChessRepository {
         }
     }
 
+    /**
+     * Find a chess_profile doc by its displayName. CF Worker tags lobby
+     * presence with Firebase Auth UID, but chess_profiles are keyed by
+     * p_${rollHash}. Friend requests + inbox listeners all use p_${rollHash}
+     * everywhere, so we must resolve UID → p_xxx before writing a friend
+     * request — otherwise the receiver's inbox never sees it.
+     */
+    suspend fun findProfileIdByName(displayName: String): String? {
+        if (displayName.isBlank()) return null
+        return try {
+            val snap = profileCollection
+                .whereEqualTo("displayName", displayName)
+                .limit(1)
+                .get().await()
+            snap.documents.firstOrNull()?.id
+        } catch (e: Exception) {
+            Log.e(TAG, "findProfileIdByName error: ${e.message}")
+            null
+        }
+    }
+
     // ─── Friends ────────────────────────────────────────────────────────────
 
     suspend fun sendFriendRequest(fromId: String, fromName: String, toId: String, toName: String): Boolean {
         return try {
-            // Check if already friends or pending
-            val existing = friendCollection
+            // Block only on live ACCEPTED relationships. Pending docs are
+            // refreshed (delete + re-add) so a stale unanswered request from
+            // a prior session doesn't permanently block re-friending. Declined
+            // / cancelled docs are scrubbed too. Reverse-direction pending
+            // (they sent us one) succeeds silently — nothing to do, the user
+            // should accept the inbound from the inbox instead.
+            val sentDocs = friendCollection
                 .whereEqualTo("fromId", fromId)
                 .whereEqualTo("toId", toId)
-                .get().await()
-            if (existing.documents.isNotEmpty()) return false
+                .get().await().documents
+            val sentAccepted = sentDocs.any { (it.getString("status") ?: "") == "accepted" }
+            Log.d(TAG, "sendFriendRequest sent(from=$fromId,to=$toId) docs=${sentDocs.size} accepted=$sentAccepted")
+            if (sentAccepted) return false
 
-            val reverse = friendCollection
+            val recvDocs = friendCollection
                 .whereEqualTo("fromId", toId)
                 .whereEqualTo("toId", fromId)
-                .get().await()
-            if (reverse.documents.isNotEmpty()) return false
+                .get().await().documents
+            val recvAccepted = recvDocs.any { (it.getString("status") ?: "") == "accepted" }
+            val recvPending = recvDocs.any { (it.getString("status") ?: "") == "pending" }
+            Log.d(TAG, "sendFriendRequest recv(from=$toId,to=$fromId) docs=${recvDocs.size} accepted=$recvAccepted pending=$recvPending")
+            if (recvAccepted) return false
+            if (recvPending) return false
+
+            // Scrub any sent-side stale docs (pending/declined/cancelled) so
+            // we don't leave duplicates around.
+            sentDocs.forEach {
+                try { it.reference.delete().await() } catch (_: Exception) {}
+            }
 
             friendCollection.add(hashMapOf(
                 "fromId" to fromId, "fromName" to fromName,
@@ -236,6 +274,32 @@ class ChessRepository {
         } catch (_: Exception) {}
     }
 
+    /**
+     * Remove an existing friendship between [myId] and [friendId]. The
+     * underlying chess_friends doc may have either user as fromId, so query
+     * both directions and delete whatever matches.
+     */
+    suspend fun removeFriend(myId: String, friendId: String) {
+        try {
+            val q1 = friendCollection
+                .whereEqualTo("fromId", myId)
+                .whereEqualTo("toId", friendId)
+                .get().await()
+            val q2 = friendCollection
+                .whereEqualTo("fromId", friendId)
+                .whereEqualTo("toId", myId)
+                .get().await()
+            val docs = q1.documents + q2.documents
+            Log.d(TAG, "removeFriend(my=$myId,friend=$friendId) deleting ${docs.size} docs: ${docs.map { it.id }}")
+            docs.forEach {
+                try { it.reference.delete().await() }
+                catch (e: Exception) { Log.e(TAG, "removeFriend delete ${it.id} failed: ${e.message}") }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "removeFriend error: ${e.message}")
+        }
+    }
+
     fun listenFriendRequests(myId: String, onUpdate: (List<FriendRequest>) -> Unit): ListenerRegistration {
         return friendCollection
             .whereEqualTo("toId", myId)
@@ -253,6 +317,40 @@ class ChessRepository {
                 } ?: emptyList()
                 onUpdate(requests)
             }
+    }
+
+    /**
+     * Reactive friend-set listener. Two underlying Firestore snapshot listeners
+     * (sent + received), combined into a single [onUpdate] callback so callers
+     * see one merged Set<String>. Required because `getFriendIds` is one-shot —
+     * after a user accepts a request, the OTHER side never learns until app
+     * restart, and the lobby's `friendIds` snapshot stays stale, leaving
+     * "Add Friend" visible on someone who's already a friend.
+     */
+    fun listenAcceptedFriendIds(myId: String, onUpdate: (Set<String>) -> Unit): ListenerRegistration {
+        var sentIds: Set<String> = emptySet()
+        var recvIds: Set<String> = emptySet()
+        val sentReg = friendCollection
+            .whereEqualTo("fromId", myId)
+            .whereEqualTo("status", "accepted")
+            .addSnapshotListener { snap, err ->
+                if (err != null) { Log.e(TAG, "listenAcceptedFriendIds(sent) err: ${err.message}") }
+                sentIds = snap?.documents?.mapNotNull { it.getString("toId") }?.toSet() ?: emptySet()
+                Log.d(TAG, "listenAcceptedFriendIds(sent) myId=$myId sent=$sentIds")
+                onUpdate(sentIds + recvIds)
+            }
+        val recvReg = friendCollection
+            .whereEqualTo("toId", myId)
+            .whereEqualTo("status", "accepted")
+            .addSnapshotListener { snap, err ->
+                if (err != null) { Log.e(TAG, "listenAcceptedFriendIds(recv) err: ${err.message}") }
+                recvIds = snap?.documents?.mapNotNull { it.getString("fromId") }?.toSet() ?: emptySet()
+                Log.d(TAG, "listenAcceptedFriendIds(recv) myId=$myId recv=$recvIds")
+                onUpdate(sentIds + recvIds)
+            }
+        return object : ListenerRegistration {
+            override fun remove() { sentReg.remove(); recvReg.remove() }
+        }
     }
 
     suspend fun getFriendIds(myId: String): Set<String> {

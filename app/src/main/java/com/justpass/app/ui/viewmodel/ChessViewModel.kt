@@ -106,6 +106,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     private var friendReqListener: ListenerRegistration? = null
     private var sentChallengeListener: ListenerRegistration? = null
     private var gameLeftListener: ListenerRegistration? = null
+    private var friendIdsListener: ListenerRegistration? = null
     private var heartbeatJob: Job? = null
     private var countdownJob: Job? = null
     private var senderCountdownJob: Job? = null
@@ -153,10 +154,26 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             lobby.goOnline(myPlayerId, profile.visibleName)
             _uiState.value = _uiState.value.copy(isOnline = true)
 
-            friendIds = repo.getFriendIds(myPlayerId)
-
-            onlineListener = lobby.listenOnlinePlayers(myPlayerId, friendIds) { players ->
-                _uiState.value = _uiState.value.copy(onlinePlayers = players)
+            // Reactive: any friendship status flip on either side re-emits the
+            // online list with up-to-date `isFriend` flags. Without this, the
+            // sender of an accepted friend request would still see "Add Friend"
+            // until app restart.
+            friendIdsListener = repo.listenAcceptedFriendIds(myPlayerId) { ids ->
+                friendIds = ids
+                onlineListener?.remove()
+                onlineListener = lobby.listenOnlinePlayers(myPlayerId, ids) { players ->
+                    _uiState.value = _uiState.value.copy(onlinePlayers = players)
+                }
+                // CF Worker tags presence with Firebase UID, not p_${rollHash},
+                // so id-based isFriend matching always misses across the two
+                // ID-spaces. Push friend display names too — V2 lobby uses
+                // them as a fallback match (see emitOnlinePlayers).
+                viewModelScope.launch {
+                    val profiles = repo.getFriendProfiles(ids)
+                    val names = profiles.map { it.visibleName }.filter { it.isNotBlank() }.toSet()
+                    (lobby as? ChessRepositoryV2)?.updateFriendNames(names)
+                    _uiState.value = _uiState.value.copy(friendProfiles = profiles)
+                }
             }
 
             incomingListener = lobby.listenIncomingChallenges(
@@ -397,10 +414,18 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     fun sendFriendRequest(player: OnlinePlayer) {
         val profile = _uiState.value.myProfile ?: return
         viewModelScope.launch {
-            val sent = repo.sendFriendRequest(profile.id, profile.visibleName, player.id, player.displayName)
-            if (!sent) {
-                _uiState.value = _uiState.value.copy(errorMessage = "Already friends or request pending")
-            }
+            // CF Worker broadcasts presence keyed by Firebase Auth UID, but
+            // chess_friends + inbox listeners use p_${rollHash}. Resolve the
+            // lobby player's profile id (p_xxx) by displayName so the receiver's
+            // inbox listener (`whereEqualTo toId == myProfile.id`) actually
+            // sees the request.
+            val resolvedToId = repo.findProfileIdByName(player.displayName) ?: player.id
+            Log.d("ChessVM", "sendFriendRequest player.id=${player.id} resolved=$resolvedToId")
+            val sent = repo.sendFriendRequest(profile.id, profile.visibleName, resolvedToId, player.displayName)
+            _uiState.value = _uiState.value.copy(
+                errorMessage = if (sent) "Request sent to ${player.displayName}"
+                               else "Already friends or pending"
+            )
         }
     }
 
@@ -413,6 +438,17 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     fun declineFriendRequest(request: FriendRequest) {
         viewModelScope.launch { repo.declineFriendRequest(request.id) }
+    }
+
+    fun removeFriend(friendId: String) {
+        val myId = _uiState.value.myProfile?.id ?: return
+        viewModelScope.launch {
+            repo.removeFriend(myId, friendId)
+            // Refresh friend profiles list immediately so the FriendsDialog
+            // drops the removed user without waiting for a snapshot tick.
+            val profiles = repo.getFriendProfiles(friendIds - friendId)
+            _uiState.value = _uiState.value.copy(friendProfiles = profiles)
+        }
     }
 
     // ─── Challenges ─────────────────────────────────────────────────────────
@@ -602,6 +638,19 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         val myName = _uiState.value.myProfile?.visibleName ?: "Opponent"
         Log.d("ChessVM", "notifyGameLeft: writing leftBy for $challengeId by $myId")
         viewModelScope.launch { repo.markGameLeft(challengeId, myId, myName) }
+
+        // Save the loss to local history so the leaver also sees an
+        // "Analyze" button in match history. Without this, only the winner's
+        // device records the game (via watchForOpponentLeave) and the loser's
+        // history list silently misses the entry.
+        val lichessId = _uiState.value.activeGameLichessId
+        val opponentName = _uiState.value.activeGameOpponentName.ifBlank { "Opponent" }
+        if (lichessId.isNotBlank()) {
+            val existingIds = _uiState.value.matchHistory.map { it.lichessGameId }.toSet()
+            if (lichessId !in existingIds) {
+                saveMatchToHistory(opponentName, "loss", lichessId)
+            }
+        }
     }
 
     /**
@@ -758,6 +807,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         friendReqListener?.remove()
         sentChallengeListener?.remove()
         gameLeftListener?.remove(); gameLeftListener = null
+        friendIdsListener?.remove(); friendIdsListener = null
         heartbeatJob?.cancel()
         countdownJob?.cancel()
         senderCountdownJob?.cancel()
