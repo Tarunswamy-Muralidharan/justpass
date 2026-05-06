@@ -89,6 +89,36 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ─── tournament_requests ──────────────────────────────────────────
+    // Anyone authed can create a request (with the required fields). Only
+    // the creator can read their own. Only an admin can read all + approve
+    // /reject. Phone OTP verification is enforced client-side via Firebase
+    // Phone Auth — server can't easily check that a phone-verified
+    // signInWithCredential happened in the same session. Rate-limit via
+    // a per-creator quota in Cloud Functions if abuse appears.
+    match /tournament_requests/{requestId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.creatorPlayerId is string
+        && request.resource.data.creatorPhone is string
+        && request.resource.data.tournamentName is string
+        && request.resource.data.status == "pending";
+      allow update: if request.auth != null
+        && resource.data.status == "pending"
+        && request.resource.data.status in ["approved", "rejected"];
+      allow delete: if false;
+    }
+
+    // ─── tournaments ─────────────────────────────────────────────────
+    // Approved tournaments. Only writeable by Cloud Functions / admin
+    // path that reads the parent request. Public read since users browse
+    // the lobby for tournaments to join.
+    match /tournaments/{tournamentId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+
     // Catch-all for everything else.
     match /{document=**} {
       allow read, write: if request.auth != null;

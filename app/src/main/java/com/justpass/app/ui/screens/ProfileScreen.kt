@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Feedback
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
@@ -64,7 +65,8 @@ fun ProfileScreen(
     cardState: LiquidState,
     displayName: String = "",
     onLogout: () -> Unit,
-    onPrivacyPolicyClick: () -> Unit
+    onPrivacyPolicyClick: () -> Unit,
+    onTournamentApprovalClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val securePrefs = SecurePreferences.getInstance(context)
@@ -439,6 +441,26 @@ fun ProfileScreen(
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 ListItem(headlineContent = { Text("Privacy Policy") }, leadingContent = { Icon(Icons.Default.Info, null) },
                     modifier = Modifier.clickable { onPrivacyPolicyClick() }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+                // Tournament Approvals — admin only. Visible only when the
+                // signed-in roll matches an entry in TournamentAdmins.PLAYER_IDS.
+                run {
+                    val myPid = remember(rollNumber) {
+                        if (rollNumber.isBlank()) ""
+                        else "p_${kotlin.math.abs(rollNumber.hashCode()).toString(16)}"
+                    }
+                    if (com.justpass.app.data.model.TournamentAdmins.isAdmin(myPid)) {
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                        ListItem(
+                            headlineContent = { Text("Tournament Approvals") },
+                            leadingContent = { Icon(Icons.Default.AdminPanelSettings, null) },
+                            modifier = Modifier.clickable {
+                                Analytics.logProfileAction("tournament_approvals")
+                                onTournamentApprovalClick()
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
+                }
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 ListItem(headlineContent = { Text("Logout", color = MaterialTheme.colorScheme.error) },
                     leadingContent = { Icon(Icons.AutoMirrored.Filled.ExitToApp, null, tint = MaterialTheme.colorScheme.error) },
