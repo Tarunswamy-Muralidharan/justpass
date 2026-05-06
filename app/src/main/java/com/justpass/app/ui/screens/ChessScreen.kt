@@ -210,10 +210,15 @@ fun ChessScreen(
     // actually sees the "you win" message instead of a frozen Lichess loading
     // screen. The WebView Dialog overlays the entire app, so showing a snackbar
     // behind it has no effect.
+    // First-writer-wins: if Lichess's pollGameEnd already wrote a Game Over
+    // result, don't overwrite it with the synthetic abandon string (would flip
+    // the displayed name back and forth between attributions).
     LaunchedEffect(uiState.pendingAbandonResult) {
         val abandonResult = uiState.pendingAbandonResult ?: return@LaunchedEffect
         activeGameUrl = null
-        gameResult = abandonResult
+        if (gameResult == null) {
+            gameResult = abandonResult
+        }
         viewModel.consumeAbandonResult()
     }
 
