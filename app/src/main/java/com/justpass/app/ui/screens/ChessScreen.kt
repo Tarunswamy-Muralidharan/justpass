@@ -87,8 +87,9 @@ fun ChessScreen(
             ?: activeChallenge?.let { ch ->
                 if (ch.fromId == (uiState.myProfile?.id ?: "")) ch.toName else ch.fromName
             } ?: "Opponent"
-        // Parse "winner|text|myColor" format from JS (e.g. "white|Checkmate|black")
-        val parts = gameResult!!.split("|", limit = 3)
+        // Parse "winner|text|myColor|result" format from JS (e.g. "white|Checkmate|black|mywin").
+        // result is the authoritative hint; all other parts are diagnostics only.
+        val parts = gameResult!!.split("|", limit = 4)
         val winnerColor = parts.getOrNull(0)?.lowercase()?.trim() ?: "unknown"
         val rawResult = (parts.getOrNull(1) ?: gameResult!!).lowercase()
         // My color: prefer the board orientation detected by JS, fall back to challenge data
@@ -98,21 +99,24 @@ fun ChessScreen(
                 if (ch.fromId == (uiState.myProfile?.id ?: "")) fromColor
                 else if (fromColor == "white") "black" else "white"
             }
+        val resultHint = parts.getOrNull(3)?.lowercase()?.trim()
         // Extract lichess game ID from the active challenge for replay/analysis
         val resultGameId = activeChallenge?.lichessGameId ?: ""
 
         val namedResult = when {
+            // Authoritative path — JS computed it from winner + my orientation.
+            resultHint == "mywin" -> "$myName wins!"
+            resultHint == "oppwin" -> "$opponentName wins!"
+            resultHint == "draw" -> "Draw!"
+            // Pre-result-hint clients (or unknown) — fall back to color matching.
             rawResult.contains("draw") || rawResult.contains("stalemate") || winnerColor == "draw" -> "Draw!"
             rawResult.contains("abort") -> "Game Aborted"
-            // Use extracted winner color for reliable mapping
-            winnerColor == "white" || winnerColor == "black" -> {
-                val winnerIsMe = winnerColor == myColor
-                if (winnerIsMe) "$myName wins!" else "$opponentName wins!"
+            (winnerColor == "white" || winnerColor == "black") && (myColor == "white" || myColor == "black") -> {
+                if (winnerColor == myColor) "$myName wins!" else "$opponentName wins!"
             }
-            // Fallback: parse from raw text
-            rawResult.contains("win") -> "$myName wins!"
-            rawResult.contains("lose") || rawResult.contains("loss") -> "$opponentName wins!"
-            else -> parts.getOrNull(1) ?: gameResult!!
+            // Last-resort: never trust raw rewritten text — show generic so we don't
+            // attribute the wrong winner.
+            else -> "Game Over"
         }
         val resultColor = when {
             namedResult.contains(myName) && namedResult.contains("win", ignoreCase = true) -> Color(0xFF00E676)
@@ -201,6 +205,18 @@ fun ChessScreen(
         }
     }
 
+    // Opponent abandoned mid-game — close the Lichess WebView Dialog
+    // immediately and route into the standard Game Over dialog so the user
+    // actually sees the "you win" message instead of a frozen Lichess loading
+    // screen. The WebView Dialog overlays the entire app, so showing a snackbar
+    // behind it has no effect.
+    LaunchedEffect(uiState.pendingAbandonResult) {
+        val abandonResult = uiState.pendingAbandonResult ?: return@LaunchedEffect
+        activeGameUrl = null
+        gameResult = abandonResult
+        viewModel.consumeAbandonResult()
+    }
+
     // Name setup dialog
     if (uiState.showNameSetup) {
         NameSetupDialog(
@@ -277,7 +293,11 @@ fun ChessScreen(
                     if (result == null) viewModel.notifyGameLeft()
                     activeGameUrl = null
                     viewModel.checkPendingResults()
-                    if (result != null) {
+                    // First-writer-wins: if pendingAbandonResult already routed
+                    // a synthetic gameResult through this composable, don't let
+                    // a late-firing Lichess pollGameEnd overwrite it (causes the
+                    // dialog to flicker between two attributions).
+                    if (result != null && gameResult == null) {
                         gameResult = result
                     }
                 },
@@ -398,8 +418,8 @@ fun ChessScreen(
                 ) {
                     Icon(Icons.Default.EmojiEvents, null, Modifier.size(18.dp), tint = Color(0xFFFFC107))
                     Spacer(Modifier.width(6.dp))
-                    Text("Leaderboard", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                        color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Ranks", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color.White, maxLines = 1)
                 }
             }
             // Edit Name
@@ -1257,49 +1277,52 @@ private fun LichessGameScreen(
                         rewrite();setInterval(rewrite,400);
                     })()""".trimIndent().replace("\n", "")
 
-                    // Poll for game-over status in Lichess DOM
-                    // Extracts winner color + my color from board orientation for accurate name mapping
+                    // Poll for game-over by looking for .result-wrap presence —
+                    // Lichess only mounts that node once a game has ended, so it's
+                    // a more reliable trigger than scanning the status text (which
+                    // gets mutated by our rewrite() pass and was missing 'victor').
+                    // Also computes an explicit `result` (mywin/oppwin/draw/unknown)
+                    // so the result dialog never has to parse raw localised text.
                     val pollGameEnd = """javascript:(function(){
                         if(window._jpPoll)return;window._jpPoll=1;
                         setInterval(function(){
-                            var st=document.querySelector('.result-wrap .status,.rresult,.status');
-                            if(st){
-                                var txt=st.textContent.trim();
-                                if(txt&&(txt.indexOf('win')>=0||txt.indexOf('lose')>=0||txt.indexOf('draw')>=0||txt.indexOf('time')>=0||txt.indexOf('resign')>=0||txt.indexOf('mate')>=0||txt.indexOf('abort')>=0||txt.indexOf('stalemate')>=0)){
-                                    if(!window._jpDone){
-                                        window._jpDone=1;
-                                        var winner='unknown';
-                                        var wr=document.querySelector('.result-wrap');
-                                        if(wr){
-                                            var cl=wr.className||'';
-                                            if(cl.indexOf('white')>=0)winner='white';
-                                            else if(cl.indexOf('black')>=0)winner='black';
-                                        }
-                                        if(winner==='unknown'){
-                                            var rm=document.querySelector('.rmoves');
-                                            if(rm){
-                                                var rmt=rm.textContent||'';
-                                                if(rmt.indexOf('1-0')>=0)winner='white';
-                                                else if(rmt.indexOf('0-1')>=0)winner='black';
-                                                else if(rmt.indexOf('½')>=0)winner='draw';
-                                            }
-                                        }
-                                        var myC='unknown';
-                                        var bd=document.querySelector('cg-board,.cg-board');
-                                        if(bd){
-                                            var bcl=(bd.className||'')+' '+(bd.parentElement?bd.parentElement.className:'');
-                                            if(bcl.indexOf('orientation-black')>=0)myC='black';
-                                            else if(bcl.indexOf('orientation-white')>=0)myC='white';
-                                        }
-                                        if(myC==='unknown'){
-                                            var bw=document.querySelector('.round__app,.board-wrap');
-                                            if(bw){var bwc=bw.className||'';if(bwc.indexOf('black')>=0)myC='black';else myC='white';}
-                                        }
-                                        JustPass.onGameEnd(winner+'|'+txt+'|'+myC);
-                                    }
+                            if(window._jpDone)return;
+                            var wr=document.querySelector('.result-wrap');
+                            if(!wr)return;
+                            var cl=wr.className||'';
+                            var winner='unknown';
+                            if(cl.indexOf('white')>=0)winner='white';
+                            else if(cl.indexOf('black')>=0)winner='black';
+                            if(winner==='unknown'){
+                                var rm=document.querySelector('.rmoves');
+                                if(rm){
+                                    var rmt=rm.textContent||'';
+                                    if(rmt.indexOf('1-0')>=0)winner='white';
+                                    else if(rmt.indexOf('0-1')>=0)winner='black';
+                                    else if(rmt.indexOf('½')>=0)winner='draw';
                                 }
                             }
-                        },2000);
+                            var stEl=wr.querySelector('.status')||document.querySelector('.rresult,.status');
+                            var txt=stEl?(stEl.textContent||'').trim():'Game Over';
+                            // Don't fire if both winner and text are useless — wait next tick.
+                            if(winner==='unknown'&&txt.length<3)return;
+                            var myC='unknown';
+                            var bd=document.querySelector('cg-board,.cg-board');
+                            if(bd){
+                                var bcl=(bd.className||'')+' '+(bd.parentElement?bd.parentElement.className:'');
+                                if(bcl.indexOf('orientation-black')>=0)myC='black';
+                                else if(bcl.indexOf('orientation-white')>=0)myC='white';
+                            }
+                            if(myC==='unknown'){
+                                var bw=document.querySelector('.round__app,.board-wrap');
+                                if(bw){var bwc=bw.className||'';if(bwc.indexOf('black')>=0)myC='black';else myC='white';}
+                            }
+                            var result='unknown';
+                            if(winner==='draw')result='draw';
+                            else if(winner!=='unknown'&&myC!=='unknown')result=(winner===myC)?'mywin':'oppwin';
+                            window._jpDone=1;
+                            JustPass.onGameEnd(winner+'|'+txt+'|'+myC+'|'+result);
+                        },1500);
                     })()""".trimIndent().replace("\n", "")
 
                     // JS interface to receive game-end callback

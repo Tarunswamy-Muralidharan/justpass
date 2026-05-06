@@ -1,6 +1,7 @@
 package com.justpass.app.ui.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.justpass.app.data.local.SecurePreferences
@@ -45,6 +46,19 @@ data class ChessUiState(
     val sentChallengeName: String? = null,
     val sentChallengeToId: String? = null,
     val acceptedChallenge: ChessChallenge? = null,
+    // Persisted reference to the in-flight Lichess game so notifyGameLeft and
+    // the abandonment-credit path keep working AFTER ChessScreen calls
+    // clearAcceptedChallenge() (which it does as soon as the WebView opens, to
+    // prevent the LaunchedEffect from re-firing on recomposition).
+    val activeGameChallengeId: String? = null,
+    val activeGameLichessId: String = "",
+    val activeGameOpponentName: String = "",
+    // Set when opponent abandons mid-game. ChessScreen observes this to close
+    // the Lichess WebView Dialog and route into the standard Game Over dialog
+    // with "$myName wins!" — without this, the WebView stayed on the loading
+    // screen indefinitely and the user never saw the "you win" toast (it was
+    // hidden behind the Dialog).
+    val pendingAbandonResult: String? = null,
     val showNameSetup: Boolean = false,
     val showLeaderboard: Boolean = false,
     val showHistory: Boolean = false,
@@ -270,6 +284,18 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun goOffline() {
+        // Last-ditch leave notification — if the user was mid-game and leaves
+        // chess by tapping the bottom nav, the WebView Dialog is gone but we
+        // never went through the LichessGameScreen Close button. Catch it here
+        // so the opponent still gets the leftBy write before WS disconnects.
+        val activeId = _uiState.value.activeGameChallengeId
+        val myId = _uiState.value.myProfile?.id
+        val myName = _uiState.value.myProfile?.visibleName ?: "Opponent"
+        if (!activeId.isNullOrBlank() && !myId.isNullOrBlank()) {
+            viewModelScope.launch(Dispatchers.IO + NonCancellable) {
+                try { repo.markGameLeft(activeId, myId, myName) } catch (_: Exception) {}
+            }
+        }
         cleanup()
         // NonCancellable so the backend cleanup completes even if scope is cancelled.
         // Delegates to whichever lobby is active: FirestoreChessLobby → deletes the
@@ -536,8 +562,25 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearAcceptedChallenge() {
-        gameLeftListener?.remove(); gameLeftListener = null
-        _uiState.value = _uiState.value.copy(acceptedChallenge = null)
+        // Do NOT remove gameLeftListener here. ChessScreen calls this method as
+        // soon as it routes the user into the WebView, which is exactly when we
+        // need the listener alive — to catch the opponent's leftBy write.
+        // Listener teardown is now in cleanup() / onCleared and on game-result
+        // confirmation paths (recordAbandonmentResult / processGameResult).
+        // CRITICAL: stash the challengeId + lichessId + opponent name into
+        // dedicated fields BEFORE nulling acceptedChallenge, otherwise
+        // notifyGameLeft can't find the doc to write leftBy to. Same for the
+        // winner-credit path inside watchForOpponentLeave.
+        val accepted = _uiState.value.acceptedChallenge
+        val myId = _uiState.value.myProfile?.id ?: ""
+        val opponentName = if (accepted == null) ""
+            else if (accepted.fromId == myId) accepted.toName else accepted.fromName
+        _uiState.value = _uiState.value.copy(
+            acceptedChallenge = null,
+            activeGameChallengeId = accepted?.id,
+            activeGameLichessId = accepted?.lichessGameId ?: "",
+            activeGameOpponentName = opponentName
+        )
         // Check results shortly after returning from Lichess
         viewModelScope.launch {
             kotlinx.coroutines.delay(3000L)
@@ -548,11 +591,16 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * User exited an in-progress game — write leftBy to Firestore so the opponent's
      * client can show "Opponent left the game" instead of waiting for Lichess timeout.
+     * Reads activeGameChallengeId (set by clearAcceptedChallenge) so this still
+     * works after the WebView has opened and acceptedChallenge has been nulled.
      */
     fun notifyGameLeft() {
-        val challengeId = _uiState.value.acceptedChallenge?.id ?: return
+        val challengeId = _uiState.value.activeGameChallengeId
+            ?: _uiState.value.acceptedChallenge?.id
+            ?: return
         val myId = _uiState.value.myProfile?.id ?: return
         val myName = _uiState.value.myProfile?.visibleName ?: "Opponent"
+        Log.d("ChessVM", "notifyGameLeft: writing leftBy for $challengeId by $myId")
         viewModelScope.launch { repo.markGameLeft(challengeId, myId, myName) }
     }
 
@@ -563,27 +611,42 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     fun watchForOpponentLeave(challengeId: String) {
         gameLeftListener?.remove()
         val myId = _uiState.value.myProfile?.id
+        // Snapshot everything we need from acceptedChallenge while it's still
+        // set. ChessScreen nulls it out moments later via clearAcceptedChallenge,
+        // and the listener fires on opponent's exit much later — by then the
+        // closure-captured values are the only reliable source.
+        val accepted = _uiState.value.acceptedChallenge
+        val capturedLichessId = accepted?.lichessGameId.orEmpty()
+        val capturedOpponentName = if (accepted == null || myId == null) ""
+            else if (accepted.fromId == myId) accepted.toName else accepted.fromName
         var claimed = false
+        Log.d("ChessVM", "watchForOpponentLeave: armed for $challengeId myId=$myId")
         gameLeftListener = repo.listenGameLeft(challengeId) { leaverId, leaverName ->
             if (myId != null && leaverId == myId) return@listenGameLeft
             if (claimed) return@listenGameLeft
             claimed = true
+            Log.d("ChessVM", "Opponent left detected: leaver=$leaverId ($leaverName)")
+            // Synthetic gameResult string: "winner|text|myColor|hint" — hint=mywin
+            // makes the Game Over dialog render "$myName wins!" with green tint
+            // regardless of color resolution. ChessScreen consumes pendingAbandonResult
+            // to close the WebView and surface the dialog.
+            val syntheticResult = "?|${leaverName} left the game|?|mywin"
             _uiState.value = _uiState.value.copy(
-                errorMessage = "$leaverName left the game — you win!"
+                errorMessage = "$leaverName left the game — you win!",
+                pendingAbandonResult = syntheticResult
             )
             // Credit the win immediately — don't wait for Lichess flag fall.
-            val accepted = _uiState.value.acceptedChallenge
-            if (myId != null && accepted != null) {
+            if (myId != null) {
                 viewModelScope.launch(Dispatchers.IO) {
                     val ok = repo.recordAbandonmentResult(challengeId, winnerId = myId, loserId = leaverId)
+                    Log.d("ChessVM", "recordAbandonmentResult claimed=$ok challenge=$challengeId")
                     if (ok) {
-                        val lichessId = accepted.lichessGameId
                         val existingIds = _uiState.value.matchHistory.map { it.lichessGameId }.toSet()
-                        if (lichessId.isNotBlank() && lichessId !in existingIds) {
-                            saveMatchToHistory(leaverName, "win", lichessId)
+                        if (capturedLichessId.isNotBlank() && capturedLichessId !in existingIds) {
+                            saveMatchToHistory(leaverName, "win", capturedLichessId)
                         }
                         // Pull fresh profile so the dashboard stats update
-                        val fresh = repo.getOrCreateProfile(myId, accepted.toName, "")
+                        val fresh = repo.getOrCreateProfile(myId, capturedOpponentName, "")
                         if (fresh != null) {
                             _uiState.value = _uiState.value.copy(myProfile = fresh)
                         }
@@ -608,6 +671,16 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    /** Called by ChessScreen after it has consumed pendingAbandonResult. */
+    fun consumeAbandonResult() {
+        _uiState.value = _uiState.value.copy(
+            pendingAbandonResult = null,
+            activeGameChallengeId = null,
+            activeGameLichessId = "",
+            activeGameOpponentName = ""
+        )
     }
 
     // ─── Auto game result checking ─────────────────────────────────────────
@@ -681,6 +754,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         incomingListener?.remove()
         friendReqListener?.remove()
         sentChallengeListener?.remove()
+        gameLeftListener?.remove(); gameLeftListener = null
         heartbeatJob?.cancel()
         countdownJob?.cancel()
         senderCountdownJob?.cancel()

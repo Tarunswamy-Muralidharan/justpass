@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -290,6 +291,10 @@ fun LiquidGlassBottomBar(
 
     Box(
         modifier = modifier
+            // displayCutoutPadding handles side notches (edge cutouts on
+            // certain Samsungs / curved Realmes) so the bar doesn't get
+            // visually shifted by an asymmetric safe area.
+            .displayCutoutPadding()
             .padding(horizontal = 16.dp)
             .padding(bottom = 12.dp)
             .navigationBarsPadding()

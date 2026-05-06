@@ -30,7 +30,9 @@ interface ChallengeState {
   createdAt: number;
 }
 
-const CHALLENGE_TTL_MS = 20_000;
+// Match the app's 15s receiver countdown so the server's CANCELED broadcast
+// doesn't fire 5s after the receiver UI already auto-declined locally.
+const CHALLENGE_TTL_MS = 15_000;
 const ALARM_INTERVAL_MS = 5_000;
 
 export class Lobby implements DurableObject {

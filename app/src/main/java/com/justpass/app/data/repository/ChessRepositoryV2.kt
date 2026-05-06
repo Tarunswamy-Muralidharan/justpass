@@ -369,6 +369,10 @@ class ChessRepositoryV2 private constructor() : ChessLobby {
         )
         challengeStatusCallbacks[id]?.invoke(updated)
         sentChallenges.remove(id)
+        // Drop the cached incoming so checkExistingChallenge stops blocking the
+        // next sendChallenge with a stale "this guy already challenged you" — the
+        // challenge has been resolved and is no longer pending mutual.
+        recentIncoming.entries.removeAll { it.value.id == id }
     }
 
     private fun handleChallengeDeclined(obj: JsonObject, canceled: Boolean) {
