@@ -645,8 +645,11 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                         if (capturedLichessId.isNotBlank() && capturedLichessId !in existingIds) {
                             saveMatchToHistory(leaverName, "win", capturedLichessId)
                         }
-                        // Pull fresh profile so the dashboard stats update
-                        val fresh = repo.getOrCreateProfile(myId, capturedOpponentName, "")
+                        // Pull fresh profile so the dashboard stats update.
+                        // Pass MY real name (not opponent's) so a stored
+                        // displayName mismatch can't bleed into uiState.myProfile.
+                        val myRealName = _uiState.value.myProfile?.displayName ?: ""
+                        val fresh = repo.getOrCreateProfile(myId, myRealName, "")
                         if (fresh != null) {
                             _uiState.value = _uiState.value.copy(myProfile = fresh)
                         }

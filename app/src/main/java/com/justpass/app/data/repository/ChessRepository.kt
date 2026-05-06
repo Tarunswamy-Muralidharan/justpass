@@ -79,7 +79,11 @@ class ChessRepository {
             if (doc.exists()) {
                 ChessProfile(
                     id = doc.id,
-                    displayName = realName,
+                    // Prefer the stored displayName so callers passing a wrong
+                    // realName (e.g. abandonment-credit path used to pass the
+                    // opponent's name) don't corrupt the local profile and flip
+                    // the Game Over dialog's "$myName wins!" between players.
+                    displayName = doc.getString("displayName") ?: realName,
                     nickname = doc.getString("nickname") ?: generateRandomName(rollNumber),
                     nameMode = doc.getString("nameMode") ?: "random",
                     wins = doc.getLong("wins")?.toInt() ?: 0,
