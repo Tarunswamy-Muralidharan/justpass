@@ -6794,3 +6794,80 @@ Final decision: do nothing for now. Inbox real-time listener fires on screen ope
 - WorkManager-based bug-report notifications: deferred per user choice; revisit if report volume justifies it.
 
 ---
+
+## Session: 2026-05-07 — Water animation, servers-down fallback, debug slider, Blender MCP
+
+After the admin / tournaments / bug-report push landed and got bootstrapped via Playwright, the rest of the day was visual polish + a couple of QA niceties. Three commits on top of the v3.0.2 baseline.
+
+### Animated 2D water inside the attendance card (commits `ecec7e5` and the earlier `0027917` / `2580431` revert pair)
+
+User asked for a matter-js style water animation inside the dashboard's main attendance LiquidGlassCard. Water height = attendance %, capped at 95% so a 100% attendance day still leaves a thin sky strip. Gyroscope-aware: tilt the phone, the water surface tilts with it. Scroll-aware: scroll the dashboard, the water sloshes from the inertia. Performance-critical because we have entry-level Moto Gs in the user base.
+
+matter-js was the wrong tool. It's a 2D rigid-body physics engine, not a fluid solver. Simulating "water" in matter-js requires spawning hundreds of small circles with constraints — expensive on edge devices, looks ball-pit-soup not surface-tension water. Surveyed alternatives (Prime31's "Modeling 2D Water With Springs" blog, Envato Tuts+'s "Make a Splash" tutorial, sinasamaki's Apple Watch Ultra Compose port, Amit Bhandari's WavyBackground) and settled on the canonical spring-coupled-surface pattern: N spring nodes evenly spaced across the water container, each with `y_position` and `y_velocity`. Per frame, two passes:
+
+1. Spring force pulls each node toward its target_y (the resting waterline + per-node tilt offset). Damping bleeds energy.
+2. Neighbour coupling: each node nudges its left and right neighbour velocities by `spread * (own_y - neighbour_y)`. This is what propagates a perturbation as a travelling wave instead of letting it stay local.
+
+Initial implementation had two-pass coupling with `spread = 0.25`. That oscillated and amplified — waves grew rather than damped. Switched to single-pass with `spread = 0.10`, increased damping from 0.025 to 0.045, and the system settles cleanly within ~30 frames after any disturbance.
+
+Tilt input comes from `SensorManager.TYPE_GRAVITY` (with `TYPE_ACCELEROMETER` fallback for old devices that don't expose gravity). Wrapped in a `rememberGravity()` Composable that uses `DisposableEffect` to register/unregister with the lifecycle, so background battery cost is zero when the dashboard isn't on screen. No runtime permission needed for either sensor type — both are always-accessible. The x component of the gravity vector becomes the tilt slope: `target_y[i] = baseTarget + (i - midpoint) / midpoint * gravity.x * maxTiltOffset`. Springs settle to that line within a few frames.
+
+Scroll input is observed via `snapshotFlow { scrollOffsetPx }.distinctUntilChanged()`. Each delta becomes a uniform impulse injected into all node velocities. Initial scaling was `delta / 200f` clamped at 0.05 — that produced tsunamis on a fast fling because the impulse applied EVERY frame for the whole scroll duration (60 frames × 0.05 = 3.0 cumulative velocity). Tuned down to `delta / 1500f` clamped at 0.012 for natural-feeling slosh.
+
+#### Critical lesson — DO NOT use Canvas + Box overlay inside LiquidGlassCard
+
+First implementation wrapped the LiquidGlassCard's content slot in a `Box` with the WaterFill Composable as a sibling using `Modifier.matchParentSize()` and the existing Column layered on top. Result: the water rendered as full-screen-tall vertical stripes, smearing across the entire dashboard — every card had blue striping behind it.
+
+Cause: LiquidGlassCard from the `liquid` library uses `Modifier.graphicsLayer { renderEffect = RenderEffect.createBlurEffect(...) }` for its glass refraction. The blur shader pulls in the layer-behind pixels and re-projects them through the refraction. When I added a Canvas inside the same composition slot, the GraphicsLayer's compositing pipeline interpreted the Canvas as a backdrop source for the blur, and the blur shader's sampling smeared the path nodes vertically across the screen.
+
+Fixed by splitting WaterFill into two artefacts: `rememberWaterState(...)` returns a mutable `WaterState` that the Composable continues to drive every frame, and `DrawScope.drawWater(state, ...)` is a top-level extension function that the parent invokes from inside `Modifier.drawBehind { ... }`. No new Canvas composable, no new layout node, no Box overlay — the water draws into the inner Column's existing draw scope, before the column's children render. Same draw pass as the LiquidGlass refraction, no compositing collision.
+
+This pattern (state-holder Composable + DrawScope extension function called from `drawBehind`) is the right shape for ANY animated overlay that needs to live underneath content inside a graphicsLayer-using parent. Worth remembering.
+
+#### Realistic water look
+
+The user explicitly didn't want a flat cartoon-blue fill. Wanted something that looks like real water in a glass bowl. Built four draw layers in `drawWater`:
+
+1. **Main fill** — vertical gradient from `#B3E5FC` α 0.18 (pale cyan at the surface) down through `#4FC3F7` α 0.32 → `#0277BD` α 0.55 → `#01579B` α 0.70 (deeper teal at the floor). Low alpha throughout so the LiquidGlass blur shows through and the result reads as a transparent fluid behind glass rather than a solid blue rectangle.
+2. **Sub-surface light band** — a thin polygon traced just below the wave surface (height = 6% of card or 18px max) filled with white α 0.20 fading to 0. Mimics how light penetrates the upper few centimetres of real shallow water before being absorbed.
+3. **Side vignette** — a horizontal gradient painted into the water region only (via `clipPath(sharedPath) { drawRect(...) }`). Black α 0.18 at left + right edges, transparent in the middle. Creates the visual hint that the water is being held inside a curved bowl. Adds the "slightly 3D-ish" depth cue without going to a real perspective render.
+4. **Foam-edge stroke** — a thin near-white stroke (α 0.55, width 1.8px) tracing every wave crest. Catches the eye on individual ripples.
+
+Bitmaps reused across frames via `sharedPath`, `sharedHighlight`, `sharedSubSurface` parameters that default to fresh `Path()` instances on first call. Zero allocation in the per-frame loop after the first call.
+
+#### fillFraction smoothing
+
+The attendance percentage updates from 0.0 to e.g. 78.4 the moment the SIS API resolves on first launch. Springs alone cannot absorb step-function inputs cleanly — the baseTarget jumps and the solver tries to pull the nodes 78% upward in a single frame, which produces a tsunami crash. Wrapped fillFraction in `Animatable + tween(800ms)` before feeding to `physics.setBase()`. The animatable interpolates the smooth resting waterline over 0.8 seconds; the springs track without crashing.
+
+Also added `if (fillFraction <= 0.005f) return` early-exit in `rememberWaterState` so we don't run physics or draw anything when there's no real attendance data to display. Saves CPU during the SIS-down state.
+
+### Servers-down toolkit fallback (commit `3ab820a`)
+
+User wanted a clear "college servers are down" indicator instead of just "0.0%" when the SIS API fails to return. Detection condition: `attendanceWithExemption == 0.0 && enteredTillDate == 0`. Both being zero together means the data load returned nothing (SIS down, network failure, or fresh login pre-refresh), as opposed to a legitimate 0% attendance which would still have a non-zero `enteredTillDate`.
+
+When triggered, the big attendance card swaps its inner content for a 64dp yellow `Icons.Default.Build` (toolkit/wrench), a "College servers down" headline (22sp bold), and a "Pull down to retry — we'll grab your attendance the moment SIS is back." subtitle. Returns from the Column scope early so the rest of the percentage + stats UI doesn't draw.
+
+The water animation is hidden in this state because its early-return on `fillFraction <= 0.005` already covers it. Recovery is automatic — once data arrives `enteredTillDate > 0` and the condition flips false.
+
+### Debug slider for QA testing (uncommitted, debug builds only)
+
+To preview the water animation across the full 0-100% attendance range without waiting for SIS to return varied data, added a debug-only slider above the attendance card. `var debugAttendancePct by remember { mutableStateOf<Float?>(null) }`, an entire `if (com.justpass.app.BuildConfig.DEBUG) { ... }` block containing a yellow-tinted GlassListCard with a Slider 0..100 (99 steps), live percentage readout, and a "reset" text button visible only when an override is active. The dashboard's percentage display, attendance tint, and water fillFraction all read through `effectivePct = debugAttendancePct?.toDouble() ?: uiState.attendanceData.attendanceWithExemption`, so dragging the slider live-updates everything. The servers-down condition is gated to ignore the slider override (only triggers on real-data zeros) so we don't accidentally show the fallback while testing.
+
+Wrapped in `BuildConfig.DEBUG` rather than admin-gated because admins exist in release builds too — debug is the right gate for ephemeral QA UI. Not committing this; it stays in the working tree until the user is done testing, then gets removed.
+
+### Blender MCP attempt — pending user action
+
+User said they installed Blender + the blender-mcp addon. Tried `ToolSearch` for blender tools — none registered. `ListMcpResourcesTool` confirms only `appium` and `claude.ai Notion` MCP servers are registered. The `mcpServers` block in `~/.claude.json` is empty for this project.
+
+Two-step user action required (NOT something I can do from inside Claude Code): run `claude mcp add blender -- uvx blender-mcp` in a terminal (installs `uv` first via `pip install uv` if missing), then restart Claude Code. The Blender side also needs the addon connected via the BlenderMCP sidebar tab. After both, `mcp__blender__*` tools surface in the deferred tool list and become callable via `ToolSearch select:`.
+
+### Patterns established this push
+
+- **Modifier.drawBehind with state-holder Composable + DrawScope extension** is the right architecture for animated overlays that need to compose with `graphicsLayer`-using parents. Avoid Canvas inside Box inside graphicsLayer parent — the compositor interprets the Canvas as a backdrop source and the blur smears it.
+- **Spring-coupled surface nodes beat both rigid-body fluid simulation and pure-shader water for mobile.** Rigid bodies are too expensive at the node count needed to look smooth; shaders look uniform and don't react to physics inputs naturally; springs hit the sweet spot of cheap (hundreds of float ops per frame), reactive (tilt + scroll inputs map directly to target_y and velocity perturbation), and visually credible.
+- **Wrap step-function inputs in tween-based smoothing before feeding to a physics solver.** Springs cannot absorb instant target jumps cleanly; the solver tries to pull all the way and overshoots. An `Animatable + tween(800ms)` between the data state and the physics base lets the springs track a smooth ramp.
+- **Debug-only UI gates on BuildConfig.DEBUG, not admin role.** Admins exist in release; debug builds don't. The right gate matches the audience.
+- **Gravity sensor cost is zero when properly lifecycle-scoped.** `DisposableEffect` registering / unregistering on composition entry / exit is enough — no need for explicit pause-on-scroll-off-screen logic for a card that's always on the dashboard's first scroll page.
+- **For "real water" look in a small UI region**, four cheap layered draws (main gradient, sub-surface light band, side vignette, foam edge) in the same DrawScope beat any single-pass approach. Each layer is one drawPath / drawRect, total ~5 ops per frame, all anti-aliased by Compose's renderer.
+
+---
