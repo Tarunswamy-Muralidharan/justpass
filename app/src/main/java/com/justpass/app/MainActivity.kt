@@ -88,6 +88,22 @@ class MainActivity : ComponentActivity() {
                 val pid = "p_${kotlin.math.abs(roll.hashCode()).toString(16)}"
                 com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance()
                     .setUserId(pid)
+
+                // Live-load the dynamic admin set from Firestore. The
+                // hardcoded bootstrap admin (TournamentAdmins.HARDCODED_PLAYER_IDS)
+                // always works even if this listener never fires — so we never
+                // get locked out. New admin doc -> isAdmin() flips on next read.
+                val adminRepo = com.justpass.app.data.repository.AdminRolesRepository()
+                adminRepo.listenAdminPlayerIds { ids ->
+                    com.justpass.app.data.model.TournamentAdmins.setDynamicAdmins(ids)
+                }
+                // If the current user is in admin_roles but their Firebase UID
+                // isn't yet mirrored in admin_uids (which the rules engine
+                // exists()-checks), self-register. Lets newly-added admins
+                // start writing on their first app open.
+                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { adminRepo.registerSelfUidIfAdmin(pid) }
+                }
             }
         } catch (_: Exception) {}
         com.justpass.app.ui.components.AdConfig.init(this)
@@ -117,7 +133,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Screen {
-    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, LiteRt, CreateTournament, TournamentApproval, BugReport, BugReportInbox
+    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, LiteRt, CreateTournament, TournamentApproval, BugReport, BugReportInbox, ManageAdmins
 }
 
 private val bottomTabs = listOf(
@@ -483,7 +499,7 @@ fun AttendanceApp() {
                 }
             ) { cardState ->
                 Crossfade(
-                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Profile, Screen.LiteRt, Screen.CreateTournament, Screen.TournamentApproval, Screen.BugReport, Screen.BugReportInbox)) currentScreen.name
+                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Profile, Screen.LiteRt, Screen.CreateTournament, Screen.TournamentApproval, Screen.BugReport, Screen.BugReportInbox, Screen.ManageAdmins)) currentScreen.name
                                   else "tab_$selectedTabIndex",
                     animationSpec = tween(200),
                     label = "screenFade"
@@ -597,6 +613,9 @@ fun AttendanceApp() {
                         Screen.BugReportInbox.name -> com.justpass.app.ui.screens.BugReportInboxScreen(
                             onBack = { currentScreen = Screen.Profile }
                         )
+                        Screen.ManageAdmins.name -> com.justpass.app.ui.screens.ManageAdminsScreen(
+                            onBack = { currentScreen = Screen.Profile }
+                        )
                         Screen.LiteRt.name -> com.justpass.app.ui.screens.LiteRtScreen(
                             onBack = {
                                 currentScreen = Screen.Dashboard
@@ -696,7 +715,8 @@ fun AttendanceApp() {
                             onPrivacyPolicyClick = { currentScreen = Screen.PrivacyPolicy },
                             onTournamentApprovalClick = { currentScreen = Screen.TournamentApproval },
                             onBugReportClick = { currentScreen = Screen.BugReport },
-                            onBugReportInboxClick = { currentScreen = Screen.BugReportInbox }
+                            onBugReportInboxClick = { currentScreen = Screen.BugReportInbox },
+                            onManageAdminsClick = { currentScreen = Screen.ManageAdmins }
                         )
                     }
                 }

@@ -69,7 +69,8 @@ fun ProfileScreen(
     onPrivacyPolicyClick: () -> Unit,
     onTournamentApprovalClick: () -> Unit = {},
     onBugReportClick: () -> Unit = {},
-    onBugReportInboxClick: () -> Unit = {}
+    onBugReportInboxClick: () -> Unit = {},
+    onManageAdminsClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val securePrefs = SecurePreferences.getInstance(context)
@@ -469,6 +470,16 @@ fun ProfileScreen(
                             modifier = Modifier.clickable {
                                 Analytics.logProfileAction("bug_report_inbox")
                                 onBugReportInboxClick()
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                        ListItem(
+                            headlineContent = { Text("Manage Admins") },
+                            leadingContent = { Icon(Icons.Default.AdminPanelSettings, null) },
+                            modifier = Modifier.clickable {
+                                Analytics.logProfileAction("manage_admins")
+                                onManageAdminsClick()
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )

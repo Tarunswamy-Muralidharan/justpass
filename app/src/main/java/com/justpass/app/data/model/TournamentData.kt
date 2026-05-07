@@ -38,13 +38,30 @@ data class Tournament(
     val endedAt: Long = 0L
 )
 
-/** Player IDs that can approve / reject tournament requests. Hardcoded
- *  for now — derived from the dev's roll-number hash. */
+/**
+ * Admin gate for tournament approvals + bug-report inbox + admin
+ * management. Hybrid cache:
+ *
+ *  - HARDCODED_PLAYER_IDS — bootstrap set baked into the APK. Always
+ *    treated as admin even if Firestore is unreachable. Prevents getting
+ *    locked out of the app.
+ *  - dynamicPlayerIds — set populated at app start by
+ *    AdminRolesRepository.listenAdminPlayerIds. Lets you grant / revoke
+ *    admin access without shipping an APK.
+ */
 object TournamentAdmins {
-    val PLAYER_IDS: Set<String> = setOf(
-        "p_678fd629" // Tarunswamy Muralidharan
+    val HARDCODED_PLAYER_IDS: Set<String> = setOf(
+        "p_678fd629" // Tarunswamy Muralidharan — bootstrap admin
     )
 
-    fun isAdmin(playerId: String?): Boolean =
-        playerId != null && playerId in PLAYER_IDS
+    @Volatile private var dynamicPlayerIds: Set<String> = emptySet()
+
+    fun setDynamicAdmins(ids: Set<String>) {
+        dynamicPlayerIds = ids
+    }
+
+    fun isAdmin(playerId: String?): Boolean {
+        if (playerId.isNullOrBlank()) return false
+        return playerId in HARDCODED_PLAYER_IDS || playerId in dynamicPlayerIds
+    }
 }
