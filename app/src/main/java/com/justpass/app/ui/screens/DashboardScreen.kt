@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.EventSeat
@@ -579,6 +580,37 @@ fun DashboardScreen(
                     .padding(horizontal = 24.dp, vertical = 28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Servers-down fallback: triggered when attendance + enteredTillDate
+                // both zero — happens when SIS API is offline or the user just
+                // logged in with no cached data. Replaces the percentage display
+                // with a toolkit icon + reassurance message.
+                val serversDown = uiState.attendanceData.attendanceWithExemption == 0.0
+                    && uiState.attendanceData.enteredTillDate == 0
+                if (serversDown) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Icon(
+                        Icons.Default.Build,
+                        contentDescription = "Servers down",
+                        tint = Color(0xFFFFC107),
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "College servers down",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Pull down to retry — we'll grab your attendance the moment SIS is back.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center
+                    )
+                    return@Column
+                }
                 Text("Attendance (with exemption)", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                 Spacer(modifier = Modifier.height(8.dp))
                 SlotMachineNumber(
