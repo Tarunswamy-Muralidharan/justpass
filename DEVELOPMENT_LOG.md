@@ -6683,3 +6683,114 @@ Upload + draft-fill is the part Playwright handles reliably; the actual "Roll ou
 - **Always stop browser automation before irreversible publish actions.** Playwright can navigate, upload, and fill forms reliably; clicking "Roll out to 100%" is a human-in-the-loop step. Encoded this in the session prompt.
 
 ---
+
+## Session: 2026-05-06 (continued, late evening) → 2026-05-07 — Admin-gated workflows: tournaments, bug reports, dynamic admin management
+
+After v3.0.2 entered Closed-testing review, the same evening rolled into building three new admin-gated features that share infrastructure: chess tournament creation with phone OTP, in-app bug reports with image upload, and a Firestore-backed admin role system that lets you grant or revoke admin access without shipping an APK. Three commits, ~1500 lines of new code, all pushed to main.
+
+### Feature 1 — Chess tournaments with OTP verification (commit `72f9ffa`)
+
+Goal: let any signed-in student request a tournament; admin (you) sees their name + dept + verified phone number and approves or rejects.
+
+The flow: user opens chess lobby → taps the new "Tourney" tile → form auto-fills name, roll, and dept from cached SIS biodata; user enters tournament name, format dropdown (Bullet / Blitz / Rapid / Classical), max participants dropdown (8 / 16 / 32), description, and phone number → "Send OTP" hits Firebase Phone Auth, which dispatches an SMS → user types the 6-digit code → "Verify & submit" triggers `signInWithCredential` and on success writes a `tournament_requests/{auto-id}` doc to Firestore with `status: pending` and the verified phone.
+
+Admin side mirrors this: a new "Tournament Approvals" tile appears in Profile (admin-gated by `TournamentAdmins.isAdmin`) → opens a list of pending docs as cards showing tournament details, requester name + roll + dept, and the verified phone number. Approve mirrors the doc into a `tournaments/{auto-id}` collection and flips `status: approved`. Reject prompts for an optional reason and flips `status: rejected`.
+
+Files: `data/model/TournamentData.kt`, `data/repository/TournamentRepository.kt`, `data/auth/PhoneAuthHelper.kt`, `ui/viewmodel/TournamentViewModel.kt`, `ui/screens/CreateTournamentScreen.kt` + `TournamentApprovalScreen.kt`. Firestore rules added for `tournament_requests` (any authed user can create with required fields, status updates restricted to `pending → approved|rejected`) and `tournaments` (public read, authed write).
+
+Phone OTP requires Firebase Console manual setup that isn't yet done: enable Phone provider in Authentication, register SHA-1 fingerprints of release + debug keystores, and accept the Spark-plan SMS quotas (10/day per phone, 100/day project-wide). Without these the OTP send fails silently with "App not authorized." Documented in `PhoneAuthHelper.kt` header.
+
+Out of scope for this session: actual tournament running (bracket generation, match scheduling, leaderboards). The current infrastructure only handles request creation + admin approval.
+
+### Feature 2 — In-app bug reports with image upload (commit `c142187`)
+
+The user explicitly didn't want users to need email or Gmail (rejected the original Path B "open email composer" idea). Goal: text + image submission, admin inbox to triage.
+
+User-side: Profile → "Report Bug / Feature Request" (replaced an old GitHub-issues mailto link) → form with title, description, optional screenshot via Android 13+ `PickVisualMedia` (no permission prompt). Submit path:
+1. Reserve a Firestore doc id client-side (`reports.document()`).
+2. If image attached, decode via `BitmapFactory`, scale longest side to 1280px, JPEG-80 compress (~100-300KB output), upload to Cloud Storage at `bug_reports/{requestId}/img.jpg` via `firebase-storage-ktx`.
+3. Get the public download URL from `ref.downloadUrl.await()`.
+4. Write the Firestore doc with `imageUrl` + reporter context (name, roll, dept, device model, OS version, app version) + `status: open`.
+5. Show "Thanks!" card and back-navigate.
+
+Admin side: new "Bug Report Inbox" tile in Profile (admin-gated). Cards newest-first, each showing title, status badge (OPEN / FIXED / WONTFIX / DUP), creation date, description, "Open screenshot" button (launches the image URL in browser/gallery via `Intent.ACTION_VIEW`), reporter chip (name + roll + dept), device meta (model + OS + app version), and Fixed / Won't-fix action buttons that flip status via `repo.setStatus`.
+
+Files: `data/model/BugReportData.kt`, `data/repository/BugReportRepository.kt`, `ui/viewmodel/BugReportViewModel.kt`, `ui/screens/BugReportScreen.kt` + `BugReportInboxScreen.kt`. New gradle dep: `com.google.firebase:firebase-storage-ktx` (added via the existing Firebase BOM, no version specified). Firestore rule for `bug_reports`: any authed user can create with required fields, updates allowed by any authed user (used for status flip), no delete.
+
+Storage rule (new file `storage.rules`): `bug_reports/{requestId}/{file}` write requires auth, file size <2MB, contentType `image/*`. Public read so admin can open URLs without re-auth. Catch-all denies everything else.
+
+Cost analysis: Cloud Storage free tier is 5GB total + 50k downloads/day. At ~300KB/image that's ~17k reports headroom — plenty for current 1.4k DAU.
+
+Avoided Coil dependency by using the existing native `BitmapFactory` + `asImageBitmap` pattern that Circulars / Profile / CGPA screens already use. Saves a transitive dep.
+
+### Feature 3 — Dynamic admin management with hardcoded bootstrap (commit `19d0bc0`)
+
+Until this session, `TournamentAdmins.PLAYER_IDS` was hardcoded to a single-element set with Tarun's roll-hash. Adding a second admin meant editing source + shipping. The user wanted runtime admin role flips.
+
+Designed a hybrid scheme that solves three concerns simultaneously:
+
+1. **Lockout protection.** `HARDCODED_PLAYER_IDS = setOf("p_678fd629")` is baked into the APK and always returns true from `isAdmin()` regardless of network state. Even if Firestore is unreachable or the admin docs are deleted, Tarun stays admin.
+2. **Runtime grant / revoke.** A new `admin_roles/{playerId}` Firestore collection is the human-readable source of truth (one doc per dynamic admin, with `name`, `addedAt`, `addedBy`). A realtime listener at `MainActivity.onCreate` fills `TournamentAdmins.dynamicPlayerIds` whenever the collection changes.
+3. **Safe write rules.** Firestore rules can't compute `p_${rollHash}` from a roll number, so the `admin_roles` write rule needs to verify the requesting user via Firebase Auth UID — but UIDs aren't directly tied to player IDs in existing data. Solution: a parallel `admin_uids/{firebase_uid}` shadow collection holds `{ playerId: "p_xxx" }`. The rule for `admin_roles` writes is `exists(/databases/$(db)/documents/admin_uids/$(request.auth.uid))`. A user is "an admin from Firestore's perspective" iff their UID is in `admin_uids`.
+
+The chicken-and-egg of `admin_uids` writes is solved by self-registration. When an app starts up, after login + Firebase Anonymous Auth completes, it calls `AdminRolesRepository.registerSelfUidIfAdmin(myPlayerId)`:
+- Check `admin_roles/{myPlayerId}` exists. If not, do nothing.
+- Check `admin_uids/{my_firebase_uid}` exists. If yes, do nothing.
+- Otherwise write the `admin_uids` doc with my playerId.
+
+The `admin_uids` create rule allows this because it requires `request.resource.data.playerId` to already exist in `admin_roles` — meaning a user can only register their own UID into `admin_uids` if they were already added to `admin_roles` by an existing admin. No self-promotion possible.
+
+UI: new `ManageAdminsScreen` opens from Profile (admin-gated), shows the bootstrap admin (read-only "hardcoded" badge) and dynamic admins (with delete buttons), plus a form to grant new admin by roll number + name. The form computes `p_${abs(roll.hashCode()).toString(16)}` and writes `admin_roles/{p_xxx}`. The new admin's UID gets self-registered on their first app launch.
+
+Files: `data/repository/AdminRolesRepository.kt`, `ui/viewmodel/AdminRolesViewModel.kt`, `ui/screens/ManageAdminsScreen.kt`. `TournamentData.kt` rewritten to expose `HARDCODED_PLAYER_IDS`, a volatile `dynamicPlayerIds` cache, and `setDynamicAdmins(ids)` setter. `MainActivity.onCreate` extended to register the listener + run self-registration. Firestore rules added for both new collections.
+
+### Bootstrap completed via Playwright on 2026-05-07
+
+Started the night still in caveman mode (then user switched to lite mid-stream). After committing the admin-management code, ran `firebase deploy --only firestore:rules` from the terminal — succeeded cleanly via the existing `firebase login` session. Then drove the Firebase Console in Playwright to seed both bootstrap docs:
+
+- `admin_roles/p_678fd629` with `name: "Tarunswamy Muralidharan"`
+- `admin_uids/0Q6kaTQioIbIEMKtQQG1aUzGrdy2` with `playerId: "p_678fd629"`
+
+The Firebase Auth UID was already known from earlier chess session logs (Realme's outbound friend-request to Moto exposed Moto's UID as the `to` field). Playwright form-filling for Firebase Console is annoying because the Angular dropdowns + textareas need a specific event sequence — used a hybrid of `browser_type` for inputs and `evaluate()` with `HTMLTextAreaElement.value` setter + `input` event dispatch for the value field.
+
+After bootstrap: app reads `admin_roles` on launch, sees `p_678fd629`, returns true from `isAdmin()` for both the hardcoded check AND the dynamic check. `addAdmin` writes from Tarun's phone now succeed because his UID is in `admin_uids`.
+
+### Bug-report notification — design discussion, no code shipped
+
+The user asked about pushing notifications when a new bug report arrives. Walked through three paths:
+
+- **Path A: Firebase Cloud Functions on the Blaze plan.** Native Firestore `onCreate` trigger sends FCM push via `admin.messaging()`. ~30 lines, real-time (<5s latency), Google handles retries. Requires upgrading from Spark to Blaze (card on file, but free tier still applies — Cloud Functions free at 2M invocations/month, vs your projected ~10/month).
+
+- **Path B: Extend the existing Cloudflare Worker with a `/notify-bug` endpoint.** App POSTs to Worker instead of writing Firestore directly; Worker writes Firestore + signs an OAuth JWT for FCM HTTP v1 + sends push. ~80 lines, no Blaze needed. But re-routes the submit through Worker, loses Firebase SDK's offline-write resilience, single point of failure. JWT signing in Workers is fiddly (PKCS#8 + RS256 via `crypto.subtle.sign`).
+
+- **Path C: WorkManager polling on the admin's phone.** A periodic worker (15-min minimum interval) checks `bug_reports` since the last seen timestamp, fires a local Android notification. ~20 lines, Spark-friendly, no external infrastructure. Trade-off: up to 15-min delay vs sub-5-second push. Storage on phone is <5KB and the bug-report data lives in Firestore so uninstalling the app doesn't lose anything — only the polling schedule + last-seen timestamp.
+
+User asked clarifying questions about Blaze (yes, billing account required, but at projected scale the bill would genuinely be $0; can set $1 budget alert; can downgrade anytime) and about WorkManager isolation (no, it stays inside the existing JustPass app, no separate "admin" app, no data loss on uninstall because Firestore is the source of truth).
+
+Final decision: do nothing for now. Inbox real-time listener fires on screen open; checking once a day is fine for current report volume. Revisit if reports start flowing faster.
+
+### Architectural patterns established this push
+
+- **Hybrid hardcoded + Firestore admin gate** is the right shape any time you have one persistent owner + want runtime delegation. Hardcoded prevents lockout, Firestore enables flexibility.
+- **Two-collection write authorization** pattern (`admin_roles` for human data + `admin_uids` for rules-engine `exists()` lookup) generalizes to any case where Firestore rules need to authorize by something they can't compute from the auth token. Self-registration on first app launch closes the bootstrap loop.
+- **Reserve Firestore doc IDs client-side before uploading related Storage files** — `reports.document()` returns a ref with an id but doesn't write yet. Use that id as the Storage path so the URL is predictable, then write the doc only after upload succeeds. Avoids dangling Storage objects.
+- **Compress images before upload, not after.** Bitmap scale + JPEG-80 in-process cuts a 12MP photo to ~300KB before any network I/O. ~17k reports fit in the 5GB free tier vs ~150 if you upload raw.
+- **Image preview in Compose without Coil** uses native `BitmapFactory.decodeStream` inside a `LaunchedEffect`, store in `mutableStateOf<Bitmap?>` and render via `bitmap.asImageBitmap()`. Saves a 100KB+ dependency for the rare case of one preview per screen.
+- **Phone Auth in Compose** needs `Activity` context, not `Application`. The view-model takes a `bindActivity(activity)` setter that the Composable calls in `LaunchedEffect(Unit)` — works around the fact that `AndroidViewModel` can't access Activity directly.
+
+### Lessons
+
+- **Never let one feature's data layer leak into another's authorization layer.** The admin gate started as `Set<String>` of player IDs. When Firestore rules entered the picture, the same shape couldn't carry both human readability + rules-engine lookups. Splitting into `admin_roles` (human) + `admin_uids` (rules) decoupled them cleanly. If we'd tried to keep one collection, the rule would have ended up doing string parsing or hash recomputation — fragile.
+- **Plan for getting locked out of your own admin tools.** A bootstrap admin baked into the APK is cheap insurance against the "I deleted the wrong Firestore doc at 2am" scenario. The cost is one line of code and one extra `||` in `isAdmin()`.
+- **Firestore Console driving via Playwright works but is fragile.** Angular Material form fields need very specific event sequences to mark themselves dirty. The textarea value setter + `input` event combination works for setting state, but the Save button enable/disable is gated on Angular form pristine state — sometimes need a real `keyDown` to fully wake the form. For two docs it's faster than writing a Node.js Admin SDK script + service account JSON setup.
+- **Bug reporting is more about the channel than the code.** Switching from "GitHub issues mailto" to "in-app form with screenshot" probably 5-10×s the report-completion rate because most users will never click a link that opens a third-party app. Also proves the value of doing it in-app: device + OS + app-version meta auto-attached, no user data entry required.
+- **Bootstrap docs are technically code too.** Treating them as a one-time manual step is fine if rare and visible; treating them as part of the deploy script is better if they ever drift. For two docs created once, manual is right. If we ever expand to multiple admins per project, automate the bootstrap via a `firebase functions:shell` script.
+
+### Pending follow-ups (carry into next session)
+
+- v3.0.2 still in Closed testing review — no email back from Google as of session end. Production access application also pending (filed 2026-05-06 21:44, ~7-day SLA).
+- Phone OTP needs SHA-1 added in Firebase Console + Phone provider enabled before tournament creation actually works end-to-end.
+- Firebase Cloud Storage bucket may need a one-time "Get Started" click in Storage tab if no upload has been attempted yet — usually auto-created on first write but worth verifying before relying on it.
+- WorkManager-based bug-report notifications: deferred per user choice; revisit if report volume justifies it.
+
+---
