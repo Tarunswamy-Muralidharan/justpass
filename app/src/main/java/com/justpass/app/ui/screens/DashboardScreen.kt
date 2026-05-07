@@ -559,17 +559,7 @@ fun DashboardScreen(
         LiquidGlassCard(cardState = cardState,
             modifier = Modifier.fillMaxWidth().clickable { Analytics.logTileClicked("attendance"); onSubjectAttendanceClick() },
             tintColor = attendanceTint) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                // Water fill underlay — gravity tilt + scroll-bounce reactive.
-                // Drawn first so the existing text + numbers render on top.
-                // fillFraction = attendance% / 100, capped at 95% by the
-                // composable so 100% still shows a thin sky strip.
-                com.justpass.app.ui.components.water.WaterFill(
-                    fillFraction = (uiState.attendanceData.attendanceWithExemption / 100.0).toFloat(),
-                    scrollOffsetPx = dashboardScrollState.value.toFloat(),
-                    modifier = Modifier.matchParentSize()
-                )
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Attendance (with exemption)", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                 Spacer(modifier = Modifier.height(8.dp))
                 SlotMachineNumber(
@@ -662,7 +652,6 @@ fun DashboardScreen(
                 Text("Tap for subject-wise details →",
                     fontSize = 12.sp, fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f))
-                }
             }
         }
 

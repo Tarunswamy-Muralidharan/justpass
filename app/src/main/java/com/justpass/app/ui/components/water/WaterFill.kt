@@ -1,5 +1,7 @@
 package com.justpass.app.ui.components.water
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,22 +47,36 @@ fun WaterFill(
     scrollOffsetPx: Float = 0f,
     active: Boolean = true,
 ) {
+    // Don't render anything until we have real attendance data. Avoids
+    // glitchy oscillation when fillFraction starts at 0.0 then snaps up
+    // to e.g. 0.78 the moment attendance loads.
+    if (fillFraction <= 0.005f) return
+
     val physics = remember(nodeCount) { WaterPhysics(nodeCount = nodeCount) }
     val gravity by rememberGravity()
     var lastFrameNanos by remember { mutableLongStateOf(0L) }
     var prevScrollOffset by remember { mutableStateOf(scrollOffsetPx) }
     var initialised by remember { mutableStateOf(false) }
 
-    // Initialise spring positions on first composition + whenever fill
-    // jumps (e.g. user logs in and percentage flips from 0 to 78).
-    val targetFraction = (1f - fillFraction.coerceIn(0f, 1f)).coerceAtLeast(1f - maxFillFraction)
+    // Smoothly animate fillFraction so the spring base doesn't snap when
+    // attendance percentage updates (e.g. after a refresh). 800ms tween
+    // gives the spring solver time to track without crashing waves.
+    val animatedFill = remember { Animatable(fillFraction.coerceIn(0f, 1f)) }
+    LaunchedEffect(fillFraction) {
+        animatedFill.animateTo(
+            targetValue = fillFraction.coerceIn(0f, 1f),
+            animationSpec = tween(durationMillis = 800)
+        )
+    }
+    val targetFraction = (1f - animatedFill.value).coerceAtLeast(1f - maxFillFraction)
+    LaunchedEffect(Unit) {
+        // Initial snap on first composition only — subsequent target moves
+        // are driven by setBase below as targetFraction changes.
+        physics.reset(targetFraction)
+        initialised = true
+    }
     LaunchedEffect(targetFraction) {
-        if (!initialised) {
-            physics.reset(targetFraction)
-            initialised = true
-        } else {
-            physics.setBase(targetFraction)
-        }
+        if (initialised) physics.setBase(targetFraction)
     }
 
     // Feed gravity x to physics every frame. Use the x component (left/right

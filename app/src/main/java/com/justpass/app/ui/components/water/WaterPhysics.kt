@@ -21,11 +21,11 @@ import kotlin.math.min
  */
 class WaterPhysics(
     private val nodeCount: Int = 30,
-    private val springK: Float = 0.025f,        // restoring force coefficient
-    private val damping: Float = 0.025f,        // velocity bleed per frame
-    private val spread: Float = 0.25f,          // how strongly neighbors couple
-    private val maxTiltOffset: Float = 0.18f,   // max fraction of cardHeight a tilt can shift
-    private val maxPerturbVelocity: Float = 0.05f
+    private val springK: Float = 0.020f,        // restoring force coefficient
+    private val damping: Float = 0.045f,        // velocity bleed per frame
+    private val spread: Float = 0.10f,          // how strongly neighbors couple
+    private val maxTiltOffset: Float = 0.10f,   // max fraction of cardHeight a tilt can shift
+    private val maxPerturbVelocity: Float = 0.015f
 ) {
     val positions: FloatArray = FloatArray(nodeCount)
     private val velocities: FloatArray = FloatArray(nodeCount)
@@ -95,16 +95,15 @@ class WaterPhysics(
             positions[i] += velocities[i] * dt
         }
 
-        // Neighbor coupling — two passes for stability
-        repeat(2) {
-            for (i in 0 until nodeCount) {
-                if (i > 0) leftDelta[i] = spread * (positions[i] - positions[i - 1])
-                if (i < nodeCount - 1) rightDelta[i] = spread * (positions[i] - positions[i + 1])
-            }
-            for (i in 0 until nodeCount) {
-                if (i > 0) velocities[i - 1] += leftDelta[i]
-                if (i < nodeCount - 1) velocities[i + 1] += rightDelta[i]
-            }
+        // Single-pass neighbor coupling (was two-pass — too much energy
+        // injection per frame caused waves to amplify rather than damp).
+        for (i in 0 until nodeCount) {
+            if (i > 0) leftDelta[i] = spread * (positions[i] - positions[i - 1])
+            if (i < nodeCount - 1) rightDelta[i] = spread * (positions[i] - positions[i + 1])
+        }
+        for (i in 0 until nodeCount) {
+            if (i > 0) velocities[i - 1] += leftDelta[i]
+            if (i < nodeCount - 1) velocities[i + 1] += rightDelta[i]
         }
     }
 }
