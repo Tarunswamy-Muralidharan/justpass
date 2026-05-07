@@ -109,6 +109,39 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ─── admin_roles + admin_uids ────────────────────────────────────
+    // Two parallel collections. admin_roles is the human-readable
+    // record (keyed by p_${rollHash}, has name + addedAt + addedBy).
+    // admin_uids is the rules-engine shadow (keyed by Firebase Auth
+    // UID, looked up via exists() so other rules can authorise writes).
+    //
+    // Bootstrap: create admin_roles/p_678fd629 and admin_uids/{your_uid}
+    // manually via Firebase Console. After that, existing admins can
+    // grant via the in-app UI; new admins self-register their UID on
+    // their first app open.
+
+    match /admin_roles/{playerId} {
+      allow read: if true;  // public so the cache can populate without auth
+      allow create, update, delete: if request.auth != null
+        && exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid));
+    }
+
+    match /admin_uids/{firebaseUid} {
+      allow read: if request.auth != null;
+      // Self-registration: a user can write admin_uids/{their own uid}
+      // ONLY if their declared playerId is in admin_roles. Stops anyone
+      // from spoofing themselves into admin_uids.
+      allow create: if request.auth != null
+        && request.auth.uid == firebaseUid
+        && request.resource.data.playerId is string
+        && exists(/databases/$(database)/documents/admin_roles/$(request.resource.data.playerId));
+      // Existing admins can wipe stale entries (e.g. when removing an
+      // admin via Manage Admins -> the orphaned uid sweep).
+      allow delete: if request.auth != null
+        && exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid));
+      allow update: if false;
+    }
+
     // ─── bug_reports ─────────────────────────────────────────────────
     // Authed users create reports about themselves. Admin reads all and
     // updates status. No deletion path (keep history).
