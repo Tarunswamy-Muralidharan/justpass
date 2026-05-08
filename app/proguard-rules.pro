@@ -1,6 +1,10 @@
 # Keep data classes for Gson serialization/deserialization
 -keep class com.justpass.app.data.model.** { *; }
 -keep class com.justpass.app.data.update.** { *; }
+# Private nested classes used by Gson reflection inside ViewModels
+# (e.g. SyllabusViewModel$DeptWrapper). Without this, R8 minifies the
+# field names and Gson silently returns null for the nested objects.
+-keep class com.justpass.app.ui.viewmodel.**$* { *; }
 
 # Keep ALL classes/methods annotated with @JavascriptInterface (anonymous objects in WebView)
 -keepclassmembers class * {
