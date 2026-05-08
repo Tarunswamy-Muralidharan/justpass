@@ -67,7 +67,6 @@ import io.github.fletchmckee.liquid.LiquidState
 fun ChessScreen(
     cardState: LiquidState,
     onBack: () -> Unit,
-    onCreateTournament: () -> Unit = {},
     viewModel: ChessViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -415,23 +414,6 @@ fun ChessScreen(
                     Icon(Icons.Default.History, null, Modifier.size(18.dp), tint = Color(0xFF64B5F6))
                     Spacer(Modifier.width(6.dp))
                     Text("History", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        color = Color.White, maxLines = 1)
-                }
-            }
-            // Create Tournament — opens form + OTP flow
-            GlassListCard(
-                modifier = Modifier.weight(1f).clickable { onCreateTournament() },
-                shape = RoundedCornerShape(12.dp),
-                tintColor = Color(0xFFFFD700).copy(alpha = 0.10f)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(Icons.Default.EmojiEvents, null, Modifier.size(18.dp), tint = Color(0xFFFFD700))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Tourney", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                         color = Color.White, maxLines = 1)
                 }
             }
