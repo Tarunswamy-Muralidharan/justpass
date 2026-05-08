@@ -16,9 +16,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawBehind
-import com.justpass.app.ui.components.water.drawWater
-import com.justpass.app.ui.components.water.rememberWaterState
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
@@ -560,26 +557,10 @@ fun DashboardScreen(
 
         // Attendance % — real liquid glass with color tint
         val attendanceTint = getAttendanceTintColor(uiState.attendanceData.attendanceWithExemption)
-        // Spring-coupled water surface that rests at attendance%, tilts with
-        // gravity, sloshes on scroll. Drawn into the inner Column's
-        // drawBehind so it's part of the same draw pass as the LiquidGlass
-        // refraction layer — no Canvas/Box overlay collisions.
-        val waterState = rememberWaterState(
-            fillFraction = (uiState.attendanceData.attendanceWithExemption / 100.0).toFloat(),
-            scrollOffsetPx = dashboardScrollState.value.toFloat()
-        )
         LiquidGlassCard(cardState = cardState,
             modifier = Modifier.fillMaxWidth().clickable { Analytics.logTileClicked("attendance"); onSubjectAttendanceClick() },
             tintColor = attendanceTint) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .drawBehind {
-                        drawWater(waterState)
-                    }
-                    .padding(horizontal = 24.dp, vertical = 28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 // Servers-down fallback: triggered when attendance + enteredTillDate
                 // both zero — happens when SIS API is offline or the user just
                 // logged in with no cached data. Replaces the percentage display
