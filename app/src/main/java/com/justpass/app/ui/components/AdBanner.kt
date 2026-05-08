@@ -40,10 +40,15 @@ fun AdBanner(modifier: Modifier = Modifier, screenName: String = "unknown") {
     // Reserve the ad height upfront so the layout doesn't pop when the
     // creative finally renders. Without this, the ad slot is 0.dp until
     // load completes — visible jank on slower networks.
+    val widthDp = configuration.screenWidthDp
+
     AndroidView(
         modifier = modifier.fillMaxWidth().height(adSize.height.dp),
         factory = { ctx ->
-            AdView(ctx).apply {
+            // Try the pre-warmed banner first — its creative is already in
+            // memory so attach is instant. Fall back to a fresh load if the
+            // pool is empty or the width doesn't match.
+            AdBannerPool.acquire(ctx, adSize, widthDp, screenName) ?: AdView(ctx).apply {
                 setAdSize(adSize)
                 adUnitId = AdConfig.bannerAdUnitId
                 adListener = object : AdListener() {

@@ -109,6 +109,14 @@ class MainActivity : ComponentActivity() {
         com.justpass.app.ui.components.AdConfig.init(this)
         MobileAds.initialize(this) {
             com.justpass.app.ui.components.InterstitialAdManager.preload(this)
+            // Pre-warm a banner AdView before any screen mounts one — first
+            // navigation to a screen that hosts an AdBanner pulls the ready
+            // creative from the pool instead of waiting for a fresh AdRequest.
+            val widthDp = resources.configuration.screenWidthDp
+            val adSize = com.google.android.gms.ads.AdSize
+                .getCurrentOrientationAnchoredAdaptiveBannerAdSize(this, widthDp)
+                ?: com.google.android.gms.ads.AdSize.BANNER
+            com.justpass.app.ui.components.AdBannerPool.preload(this, adSize, widthDp)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
