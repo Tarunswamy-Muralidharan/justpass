@@ -67,7 +67,6 @@ fun ProfileScreen(
     displayName: String = "",
     onLogout: () -> Unit,
     onPrivacyPolicyClick: () -> Unit,
-    onTournamentApprovalClick: () -> Unit = {},
     onBugReportClick: () -> Unit = {},
     onBugReportInboxClick: () -> Unit = {},
     onManageAdminsClick: () -> Unit = {}
@@ -445,24 +444,15 @@ fun ProfileScreen(
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 ListItem(headlineContent = { Text("Privacy Policy") }, leadingContent = { Icon(Icons.Default.Info, null) },
                     modifier = Modifier.clickable { onPrivacyPolicyClick() }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
-                // Tournament Approvals — admin only. Visible only when the
-                // signed-in roll matches an entry in TournamentAdmins.PLAYER_IDS.
+                // Admin tools — visible only when the signed-in roll matches
+                // an entry in TournamentAdmins.PLAYER_IDS (legacy class name;
+                // it now gates bug-report inbox and admin management too).
                 run {
                     val myPid = remember(rollNumber) {
                         if (rollNumber.isBlank()) ""
                         else "p_${kotlin.math.abs(rollNumber.hashCode()).toString(16)}"
                     }
                     if (com.justpass.app.data.model.TournamentAdmins.isAdmin(myPid)) {
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
-                        ListItem(
-                            headlineContent = { Text("Tournament Approvals") },
-                            leadingContent = { Icon(Icons.Default.AdminPanelSettings, null) },
-                            modifier = Modifier.clickable {
-                                Analytics.logProfileAction("tournament_approvals")
-                                onTournamentApprovalClick()
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                         ListItem(
                             headlineContent = { Text("Bug Report Inbox") },
