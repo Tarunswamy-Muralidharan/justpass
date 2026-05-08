@@ -113,62 +113,29 @@ fun CgpaCalculatorScreen(
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
         if (mimeType == "application/pdf") {
-            // PDF: Try direct text extraction first (PdfiumAndroid), fall back to OCR
+            // PDF: ML Kit OCR pipeline (PdfRenderer → Bitmap → preprocess → OCR)
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
-                    val fd = context.contentResolver.openFileDescriptor(uri, "r") ?: throw Exception("Can't open PDF")
-
-                    // ── Tier 1: Direct text extraction via PdfiumAndroid ──
                     var parsed = emptyList<Pair<String, String>>()
-                    try {
-                        val pdfium = arte.programar.pdfium.Pdfium()
-                        pdfium.newDocument(fd)
-                        val pageCount = pdfium.getPageCount()
-                        val allText = StringBuilder()
-                        for (i in 0 until pageCount) {
-                            pdfium.openPage(i)
-                            val text = pdfium.extractText(i)
-                            if (!text.isNullOrBlank()) allText.appendLine(text)
-                        }
-                        pdfium.closeDocument()
-                        val extractedText = allText.toString()
-                        android.util.Log.d("PDF_TEXT", "PdfiumAndroid extracted ${extractedText.length} chars")
-                        if (extractedText.length > 20) {
-                            android.util.Log.d("PDF_TEXT", "Preview: ${extractedText.take(500)}")
-                            parsed = parseGradesFromOcr(extractedText)
-                            if (parsed.isNotEmpty()) {
-                                android.util.Log.d("PDF_TEXT", "Tier 1 (text extract): Found ${parsed.size} grades")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.w("PDF_TEXT", "PdfiumAndroid failed: ${e.message}")
+                    val fd2 = context.contentResolver.openFileDescriptor(uri, "r") ?: throw Exception("Can't open PDF")
+                    val renderer = PdfRenderer(fd2)
+                    val allOcrText = StringBuilder()
+                    for (i in 0 until renderer.pageCount) {
+                        val page = renderer.openPage(i)
+                        val bmp = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
+                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        page.close()
+                        val processed = preprocessForOcr(bmp)
+                        bmp.recycle()
+                        val image = InputImage.fromBitmap(processed, 0)
+                        val result = com.google.android.gms.tasks.Tasks.await(recognizer.process(image))
+                        allOcrText.appendLine(result.text)
+                        processed.recycle()
                     }
+                    renderer.close()
+                    fd2.close()
+                    parsed = parseGradesFromOcr(allOcrText.toString())
 
-                    // ── Tier 2: Fall back to OCR if text extraction found nothing ──
-                    if (parsed.isEmpty()) {
-                        android.util.Log.d("PDF_TEXT", "Tier 2: Falling back to ML Kit OCR")
-                        val fd2 = context.contentResolver.openFileDescriptor(uri, "r") ?: throw Exception("Can't reopen PDF")
-                        val renderer = PdfRenderer(fd2)
-                        val allOcrText = StringBuilder()
-                        for (i in 0 until renderer.pageCount) {
-                            val page = renderer.openPage(i)
-                            val bmp = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
-                            page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                            page.close()
-                            // Preprocess: grayscale + contrast + threshold for colored backgrounds
-                            val processed = preprocessForOcr(bmp)
-                            bmp.recycle()
-                            val image = InputImage.fromBitmap(processed, 0)
-                            val result = com.google.android.gms.tasks.Tasks.await(recognizer.process(image))
-                            allOcrText.appendLine(result.text)
-                            processed.recycle()
-                        }
-                        renderer.close()
-                        fd2.close()
-                        parsed = parseGradesFromOcr(allOcrText.toString())
-                    }
-
-                    fd.close()
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         if (parsed.isNotEmpty()) {
                             val semesters = viewModel.applyOcrGrades(parsed)

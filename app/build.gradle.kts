@@ -12,13 +12,14 @@ plugins {
 android {
     namespace = "com.justpass.app"
     compileSdk = 36
+    ndkVersion = "27.1.12297006"
 
     defaultConfig {
         applicationId = "com.justpass.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "3.0.2"
+        versionCode = 12
+        versionName = "3.0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -55,12 +56,20 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
             val releaseConfig = signingConfigs.getByName("release")
             signingConfig = if (releaseConfig.storeFile?.exists() == true) {
                 releaseConfig
             } else {
                 signingConfigs.getByName("debug")
             }
+        }
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
         }
     }
     compileOptions {
@@ -132,14 +141,11 @@ dependencies {
     // ML Kit Text Recognition (OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
 
-    // PdfiumAndroid — direct text extraction from PDFs (no OCR needed)
-    implementation("com.github.arteaprogramar:Android-Pdfium:3.0.0")
-
     // LiteRT-LM — Google's on-device LLM inference (GPU/NPU acceleration)
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.0")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.11.0")
 
     // Google Mobile Ads (AdMob)
-    implementation("com.google.android.gms:play-services-ads:23.6.0")
+    implementation("com.google.android.gms:play-services-ads:25.2.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
