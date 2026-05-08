@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.DayTimetable
 import com.justpass.app.data.model.SessionInfo
+import com.justpass.app.ui.components.AdBanner
 import com.justpass.app.ui.components.GlassCardShapeSmall
 import com.justpass.app.ui.components.GlassListCard
 import com.justpass.app.ui.components.GlassListSurface
@@ -40,6 +41,7 @@ fun TimetableScreen(cardState: LiquidState, viewModel: TimetableViewModel = view
     LaunchedEffect(Unit) { viewModel.refreshTodayIndex() }
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+        AdBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), screenName = "Timetable")
         // Day tabs — real liquid glass
         if (uiState.days.isNotEmpty()) {
             GlassListCard(
