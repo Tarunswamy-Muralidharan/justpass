@@ -6871,3 +6871,79 @@ Two-step user action required (NOT something I can do from inside Claude Code): 
 - **For "real water" look in a small UI region**, four cheap layered draws (main gradient, sub-surface light band, side vignette, foam edge) in the same DrawScope beat any single-pass approach. Each layer is one drawPath / drawRect, total ~5 ops per frame, all anti-aliased by Compose's renderer.
 
 ---
+
+## Session: 2026-05-09 — Water polish loop, sandbox activity, banding fix, Dashboard port
+
+After the v3.0.3 Closed-Testing → Production promotion went out for review, picked the water animation back up. User had three bugs queued from the earlier session — slider drag wiped surface motion, shake locked the surface frozen at the walls and dropped frame rate, and the slider thumb visibly fought with the spring solver. None of these were debuggable inside the dashboard because too many other recompositions land in the same draw window. Built a standalone sandbox activity, iterated against it, then ported.
+
+### `WaterTestActivity` — debug-only sandbox
+
+New `com.justpass.app.WaterTestActivity` with a single `setContent { WaterTestScreen() }`. The screen is just `Column(verticalScroll) { title; fill: %; tank; slider 0..100; long spacer; tap-to-scroll hint }`. Tank is `Box(.height(440.dp).clip(...).drawBehind { drawWater(water) })` — same `drawBehind` shape Dashboard uses, but on a flat dark background instead of inside a LiquidGlassCard. Manifest entry is `exported=true` but explicitly NOT a launcher target — only reachable via `adb shell am start -n com.justpass.app/.WaterTestActivity`, so it's safe to leave in release builds. Iteration loop became: tweak code → `gradle :app:assembleDebug` → `adb install -r` → `am start ...WaterTestActivity` → `screenrecord --time-limit=8 /sdcard/x.mp4` → `adb pull` → `ffmpeg -i x.mp4 -vf "fps=10,scale=540:-1" -y frame_%03d.png` → Read tool on key frames → diagnose → fix.
+
+### Bug 1: Tank rendered empty
+
+Initial sandbox screenshot showed the tank as a uniform dark rectangle with no water visible at fill=75%. Physics was advancing every frame, but the surface never repainted.
+
+Cause: `drawWater` reads from `state.physics.positions: FloatArray`. `Modifier.drawBehind { drawWater(state) }` only re-runs when its lambda's snapshot reads change. A `FloatArray` mutation is not a snapshot — Compose has no idea anything happened, so the draw lambda never re-fires.
+
+Fix: added a `MutableIntState tick` field to `WaterState`, increment it inside the per-frame `withFrameNanos { ... }` loop right after `state.physics.step()`, and read `state.tick.intValue` at the top of `drawWater`. Now every frame triggers a snapshot read change, the lambda re-runs, the FloatArray gets re-sampled, the polygon repaints. This is the right shape for any draw-only animation backed by mutation of a non-observable buffer.
+
+### Bug 2: Slider drag → surface stops moving
+
+Dragging the slider gave a smooth fill-line transition but killed all visible wave motion. The code had `LaunchedEffect(fillFraction) { animatedFill.animateTo(target, tween(800)) }`. Each drag tick (60×/sec) cancels the in-flight tween and spawns a new one toward the new target — the spring is constantly chasing a target that resets every 16ms.
+
+Two fixes layered on top of each other:
+
+- Snap small deltas: `if (absDelta < 0.05f) animatedFill.snapTo(target) else animateTo(...)`. A slider drag produces hundreds of tiny deltas; snap each one immediately.
+- Throttle the slosh kick: previously every fillFraction change called `state.physics.slosh(...)`. Wrapped in a `lastSloshMs` refractory window — minimum 90 ms gap on slider/data slosh.
+
+### Bug 3: Shake locks the surface, frame rate drops
+
+Accelerometer-derived jerk-impulse path was firing on every sensor sample (50 Hz) without throttling. A sustained shake sent ~50 slosh impulses per second into 30 nodes. Velocities saturated, every node was pinned at `minPosition` or `maxPosition` by the wallBounce clamp, the spring couldn't restore them, integrator started thrashing on tiny timestep variations — hence the FPS drop.
+
+Three-part fix:
+- Same refractory window (`lastSloshMs`, 120 ms for shake) gates the shake path.
+- Raised jerk threshold from 0.4 to 0.6 m/s².
+- Lowered slosh magnitude divisor from 60 to 80 (cap from 0.012 to 0.009).
+- Added a velocity sanitiser at the top of `WaterPhysics.step`: clamps each velocity to `±3 × maxPerturbVelocity`, replaces NaN/Inf with 0.
+
+### Polish set 1-6
+
+1. **Wave variety** — wrapped the idle injection's two sine sources in a slow LFO. Two LFOs drift in/out of phase, surface texture beats organically.
+2. **Edge foam** — initially drew a small white circle at each wall pinned to the local surface y. User saw them as "two small dots floating at the ends" and asked them removed. Block deleted.
+3. **Surface micro-waves** — visual-only ripple. `surfaceYAt(xFrac)` interpolates between the two nearest physics nodes, then adds a high-frequency `sin(xFrac * 18 + microPhase * 1.2) + sin(xFrac * 33 - microPhase * 0.8)` overlay at ~1-2 px amplitude. Polygon is built from `(n - 1) * subdiv + 1` samples (subdiv = 4).
+4. **Tuned springs** — softer to let waves linger. `springK 0.020 → 0.017`, `damping 0.030 → 0.022`, `spread 0.10 → 0.11`.
+5. **Droplets on big upward jumps** — `if (signedDelta > 0.10f) state.spawnDroplet(...)`. Per-frame: gravity adds to vyFraction, vyFraction adds to yFraction. `drawWater` calls `state.physics.splashAt(xFrac, 0.012f)` on impact and retires the droplet.
+6. **Color shift** — surface tint cross-fades red @≤60% → amber @75% → cyan @≥90%.
+
+### Banding fix — 4-anchor → 13-stop ease → 2-tone
+
+User feedback: "the colour i can see bars of rectangle, the colour should be more smoothly integrated". First attempt added more colour stops (4 → 9 → 13) with a smoothstep alpha curve. Helped but didn't fully eliminate.
+
+Second attempt threw out the multi-anchor model entirely. Replaced with a 2-tone gradient: surface tint → a 0.55× luminance variant of the same hue. Single hue family, monotonic luminance fall-off, no slope changes for the eye to read as edges. Banding gone at all three pct ranges.
+
+Lesson: **the eye reads "edge" wherever a vertical gradient's slope direction changes, even at low contrast.** A 4-stop gradient with three different colour-and-alpha slopes will produce three visible bands no matter how many intermediate stops you add.
+
+### Scroll-driven slosh, then dialed gentler
+
+Wired `scrollOffsetPx: Float = 0f` parameter into `rememberWaterState`. Per-frame: `dScroll = scrollOffsetPx - prevScrollPx`, sign drives slosh direction, magnitude scales with `|dScroll|`. Initial values (threshold 6 px, refractory 70 ms, divisor 600, cap 0.010) felt bouncy. Dialed to threshold 40 px, refractory 140 ms, divisor 2000, cap 0.0035. Slow scrolls now barely register; only an aggressive fling produces a small visible wave.
+
+### Port back to Dashboard
+
+Two-line port: `rememberWaterState(fillFraction = ..., scrollOffsetPx = dashboardScrollState.value.toFloat())` in DashboardScreen, plus the existing `Modifier.drawBehind { drawWater(waterState) }`. Verified on real device via the DEBUG override slider through 32% (red) / 82% (cyan-low) / 96% (cyan-high) — all three render uniform, no banding, surface alive, no edge dots, scroll is gentle.
+
+### Slider removed
+
+After all three pct ranges verified, dropped the `if (com.justpass.app.BuildConfig.DEBUG) { ... debug override slider ... }` block from `DashboardScreen.kt` along with the now-orphan `debugAttendancePct == null` check in the servers-down condition. Polish is locked in; sandbox activity stays for any future tweak runs.
+
+### Patterns established this push
+
+- **For animated draws backed by mutation of a non-observable buffer (FloatArray, ByteArray, etc.), expose a `MutableIntState` tick field and increment it from the per-frame loop.** Read it at the top of the `DrawScope` extension to register the snapshot dep.
+- **Throttle every external impulse source feeding a spring solver with a `lastSloshMs` refractory window** sized to the solver's natural settling time (90-140 ms here). Sensor rates (50 Hz accelerometer), drag rates (60 Hz Slider onValueChange), and scroll rates (variable, fling can be 120 Hz+) all happily saturate a spring if you don't gate them.
+- **Add a velocity sanitiser at the top of any physics step**. Cap to a bounded multiple of the normal perturbation budget; replace NaN/Inf with 0.
+- **For step-function input feeding a continuous solver, use `Animatable.snapTo` for sub-threshold deltas and `animateTo(tween)` only for above-threshold jumps**.
+- **To remove visible banding from a vertical gradient: remove slope changes, not add stops**. A monotonic single-hue luminance ramp will never band; a multi-stop multi-hue gradient will band no matter how dense.
+- **Build a sandbox activity for any UI work that needs tight visual iteration**. A standalone activity reachable only via `adb am start` is essentially free (no menu entry, no production blast radius), and removing the rest of the dashboard's recompositions from the diagnosis loop turns guess-and-check into clean signal.
+- **Screen-record + ffmpeg frame-extract + Read tool on key frames is a viable visual debugging loop on Windows.** `MSYS_NO_PATHCONV=1 adb pull /sdcard/x.mp4` works around Git Bash's path conversion.
+
+---

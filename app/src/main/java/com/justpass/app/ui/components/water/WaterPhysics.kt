@@ -21,11 +21,17 @@ import kotlin.math.min
  */
 class WaterPhysics(
     private val nodeCount: Int = 30,
-    private val springK: Float = 0.020f,        // restoring force coefficient
-    private val damping: Float = 0.045f,        // velocity bleed per frame
-    private val spread: Float = 0.10f,          // how strongly neighbors couple
-    private val maxTiltOffset: Float = 0.10f,   // max fraction of cardHeight a tilt can shift
-    private val maxPerturbVelocity: Float = 0.015f
+    // Slightly softer spring + lower damping than v1 — waves linger longer
+    // so a single slosh produces a few visible cycles of motion before
+    // calming, instead of snapping back in a single frame.
+    private val springK: Float = 0.017f,        // restoring force coefficient
+    private val damping: Float = 0.022f,        // velocity bleed per frame (lower = waves linger)
+    private val spread: Float = 0.11f,          // how strongly neighbors couple
+    private val maxTiltOffset: Float = 0.35f,   // max fraction of cardHeight a tilt can shift
+    private val maxPerturbVelocity: Float = 0.015f,
+    private val minPosition: Float = 0.02f,     // surface can never go above 2% from top
+    private val maxPosition: Float = 0.98f,     // surface can never go below 98% from top (i.e. into floor)
+    private val wallBounce: Float = 0.45f       // velocity retention when surface hits ceiling/floor
 ) {
     val positions: FloatArray = FloatArray(nodeCount)
     private val velocities: FloatArray = FloatArray(nodeCount)
@@ -57,11 +63,42 @@ class WaterPhysics(
         tiltSlope = slope.coerceIn(-1f, 1f)
     }
 
-    /** Inject a slosh impulse — positive = downward push, negative = upward. */
-    fun perturb(velocity: Float) {
-        val v = velocity.coerceIn(-maxPerturbVelocity, maxPerturbVelocity)
+    /**
+     * Asymmetric sideways slosh — when the container is shoved sideways,
+     * water lags behind: piles on the trailing side, drops on the leading
+     * side. Net velocity sum is zero so total fluid volume is conserved.
+     *
+     * [directionSign] = +1 means container shoved right (water piles on the
+     * left); -1 means shoved left (water piles on right). [magnitude] is
+     * the peak per-node velocity, clamped to [maxPerturbVelocity].
+     */
+    fun slosh(directionSign: Float, magnitude: Float) {
+        val mag = magnitude.coerceAtMost(maxPerturbVelocity).coerceAtLeast(0f)
+        if (mag == 0f) return
+        val mid = (nodeCount - 1) * 0.5f
         for (i in 0 until nodeCount) {
-            velocities[i] += v
+            val sideRamp = (i - mid) / mid              // -1 at left, +1 at right
+            // Right shove (directionSign=+1) → water piles LEFT → left positions
+            // DECREASE (surface rises). Position's spring target is unchanged;
+            // we inject velocity in the direction that lifts the trailing edge.
+            // Left node (sideRamp < 0): velocity NEGATIVE (positions decrease).
+            velocities[i] += sideRamp * directionSign * mag
+        }
+    }
+
+    /**
+     * Continuous idle ripple — apply a per-node velocity offset that varies
+     * sinusoidally across the array so two long wavelengths overlap. Keeps
+     * the surface alive even with no external input.
+     */
+    fun injectIdle(amplitudeA: Float, amplitudeB: Float) {
+        val n = nodeCount
+        for (i in 0 until n) {
+            val u = i.toFloat() / (n - 1)
+            // Two stationary waveforms shifted in phase — combined effect is a
+            // gentle, ever-shifting surface texture.
+            velocities[i] += amplitudeA * kotlin.math.sin(u * 6.28318f * 1.5f)
+            velocities[i] += amplitudeB * kotlin.math.sin(u * 6.28318f * 2.7f + 0.9f)
         }
     }
 
@@ -83,16 +120,50 @@ class WaterPhysics(
     fun step(dtScale: Float = 1f) {
         val dt = dtScale.coerceIn(0.5f, 2.0f)
 
+        // Velocity sanitiser — clamp any node that has run away (NaN, Inf,
+        // or saturation from sustained sensor input). Without this a long
+        // shake builds velocities far past the wave amplitude budget and
+        // the surface visibly freezes at min/max while the integrator
+        // thrashes. Cap is generous (≈ 3× perturb max) so legitimate big
+        // sloshes still play through; only runaway energy is bled.
+        val vCap = maxPerturbVelocity * 3f
+        for (i in 0 until nodeCount) {
+            val v = velocities[i]
+            if (v.isNaN() || v.isInfinite()) {
+                velocities[i] = 0f
+            } else if (v > vCap) velocities[i] = vCap
+            else if (v < -vCap) velocities[i] = -vCap
+        }
+
         // Spring pass
         val mid = (nodeCount - 1) * 0.5f
         for (i in 0 until nodeCount) {
-            // target = baseline + tilt-induced ramp across the array
-            val tiltOffset = ((i - mid) / mid) * tiltSlope * maxTiltOffset
+            // target = baseline + tilt-induced ramp.
+            //
+            // Real container physics: tilt right (slope > 0) → world's lowest
+            // point shifts to the right edge → water flows there → right side
+            // gets DEEPER (surface rises in container frame, positions[i]
+            // smaller because positions are depth-from-top). So the per-node
+            // offset must be NEGATIVE on the right when slope is positive.
+            // The historical (pre-fix) sign was inverted.
+            val tiltOffset = -((i - mid) / mid) * tiltSlope * maxTiltOffset
             val target = (baseTarget + tiltOffset).coerceIn(0.05f, 0.95f)
             val displacement = positions[i] - target
             val acc = -springK * displacement - damping * velocities[i]
             velocities[i] += acc * dt
             positions[i] += velocities[i] * dt
+
+            // Container walls: surface can't escape past the rim (top) or
+            // sink through the floor. On contact, retain a fraction of the
+            // velocity but reversed — the water "bounces" off the boundary
+            // like a real meniscus snap.
+            if (positions[i] < minPosition) {
+                positions[i] = minPosition
+                if (velocities[i] < 0f) velocities[i] = -velocities[i] * wallBounce
+            } else if (positions[i] > maxPosition) {
+                positions[i] = maxPosition
+                if (velocities[i] > 0f) velocities[i] = -velocities[i] * wallBounce
+            }
         }
 
         // Single-pass neighbor coupling (was two-pass — too much energy

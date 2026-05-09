@@ -60,3 +60,44 @@ fun rememberGravity(): State<Pair<Float, Float>> {
     }
     return state
 }
+
+/**
+ * Reports the device's linear acceleration as (x, y, z) in m/s² with gravity
+ * already removed by the OS — i.e. pure motion. Used to drive splash impulses
+ * when the phone is shaken / jolted.
+ *
+ *  x > 0 → device shoved right
+ *  y > 0 → device shoved up (in portrait)
+ *  z > 0 → device shoved toward the user (out of screen)
+ *
+ * Falls back to (0, 0, 0) state if TYPE_LINEAR_ACCELERATION is missing
+ * (rare on modern hardware). Auto-registers / unregisters with the
+ * composition lifecycle.
+ */
+@Composable
+fun rememberLinearAcceleration(): State<Triple<Float, Float, Float>> {
+    val context = LocalContext.current
+    val state = remember { mutableStateOf(Triple(0f, 0f, 0f)) }
+
+    DisposableEffect(Unit) {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val sensor = sensorManager?.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
+        val listener = if (sensor != null && sensorManager != null) {
+            object : SensorEventListener {
+                override fun onSensorChanged(event: SensorEvent) {
+                    state.value = Triple(event.values[0], event.values[1], event.values[2])
+                }
+                override fun onAccuracyChanged(s: Sensor?, accuracy: Int) {}
+            }.also {
+                sensorManager.registerListener(it, sensor, SensorManager.SENSOR_DELAY_GAME)
+            }
+        } else null
+
+        onDispose {
+            if (listener != null && sensorManager != null) {
+                sensorManager.unregisterListener(listener)
+            }
+        }
+    }
+    return state
+}
