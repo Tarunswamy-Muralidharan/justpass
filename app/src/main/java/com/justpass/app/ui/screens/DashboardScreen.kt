@@ -558,15 +558,17 @@ fun DashboardScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
+        val effectivePct = uiState.attendanceData.attendanceWithExemption
+
         // Attendance % — real liquid glass with color tint
-        val attendanceTint = getAttendanceTintColor(uiState.attendanceData.attendanceWithExemption)
-        // Spring-coupled water surface that rests at attendance%, tilts with
-        // gravity, sloshes on scroll. Drawn into the inner Column's
-        // drawBehind so it's part of the same draw pass as the LiquidGlass
-        // refraction layer — no Canvas/Box overlay collisions.
+        val attendanceTint = getAttendanceTintColor(effectivePct)
+        // Spring-coupled water surface that rests at attendance% and tilts
+        // with gravity. Idle ripple keeps it gently wavy. Drawn into the
+        // inner Column's drawBehind so it's part of the same draw pass as
+        // the LiquidGlass refraction layer — no Canvas/Box overlay collisions.
         val waterState = rememberWaterState(
-            fillFraction = (uiState.attendanceData.attendanceWithExemption / 100.0).toFloat(),
-            scrollOffsetPx = dashboardScrollState.value.toFloat()
+            fillFraction = (effectivePct / 100.0).toFloat(),
+            scrollOffsetPx = dashboardScrollState.value.toFloat(),
         )
         LiquidGlassCard(cardState = cardState,
             modifier = Modifier.fillMaxWidth().clickable { Analytics.logTileClicked("attendance"); onSubjectAttendanceClick() },
@@ -584,7 +586,7 @@ fun DashboardScreen(
                 // both zero — happens when SIS API is offline or the user just
                 // logged in with no cached data. Replaces the percentage display
                 // with a toolkit icon + reassurance message.
-                val serversDown = uiState.attendanceData.attendanceWithExemption == 0.0
+                val serversDown = effectivePct == 0.0
                     && uiState.attendanceData.enteredTillDate == 0
                 if (serversDown) {
                     Spacer(modifier = Modifier.height(4.dp))
@@ -614,7 +616,7 @@ fun DashboardScreen(
                 Text("Attendance (with exemption)", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                 Spacer(modifier = Modifier.height(8.dp))
                 SlotMachineNumber(
-                    value = "${String.format("%.1f", uiState.attendanceData.attendanceWithExemption)}%",
+                    value = "${String.format("%.1f", effectivePct)}%",
                     fontSize = 52.sp,
                     color = MaterialTheme.colorScheme.onSurface
                 )

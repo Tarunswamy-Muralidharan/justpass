@@ -59,6 +59,17 @@
             </intent-filter>
         </activity>
 
+        <!-- Water playground (debug-only sandbox; launch with
+             `adb shell am start -n com.justpass.app/.WaterTestActivity`).
+             Not exported / not a launcher target — only the adb intent
+             starts it. Safe to ship in release; nobody can reach it
+             without explicit intent. -->
+        <activity
+            android:name=".WaterTestActivity"
+            android:exported="true"
+            android:label="Water playground"
+            android:theme="@style/Theme.AttendanceWidgetLaudea" />
+
         <!-- Widget Receiver -->
         <receiver
             android:name=".widget.AttendanceWidgetReceiver"
