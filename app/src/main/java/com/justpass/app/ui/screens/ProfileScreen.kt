@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Feedback
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
@@ -67,9 +68,14 @@ fun ProfileScreen(
     displayName: String = "",
     onLogout: () -> Unit,
     onPrivacyPolicyClick: () -> Unit,
+    onTournamentApprovalClick: () -> Unit = {},
     onBugReportClick: () -> Unit = {},
     onBugReportInboxClick: () -> Unit = {},
-    onManageAdminsClick: () -> Unit = {}
+    onManageAdminsClick: () -> Unit = {},
+    weatherMode: com.justpass.app.ui.components.WeatherMode = com.justpass.app.ui.components.WeatherMode.OFF,
+    onWeatherModeChange: (com.justpass.app.ui.components.WeatherMode) -> Unit = {},
+    weatherTesting: Boolean = false,
+    onWeatherTestingChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val securePrefs = SecurePreferences.getInstance(context)
@@ -133,7 +139,7 @@ fun ProfileScreen(
                         profileBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                         // Save to cache file for instant display next time
                         try {
-                            val cacheFile = File(context.cacheDir, "profile_pic.jpg")
+                            val cacheFile = File(context.filesDir, "profile_pic.jpg")
                             cacheFile.outputStream().use { out ->
                                 profileBitmap!!.compress(Bitmap.CompressFormat.JPEG, 85, out)
                             }
@@ -442,6 +448,46 @@ fun ProfileScreen(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                // Weather mode toggle — temporary manual switch (will be replaced
+                // by live weather API later). Tap to cycle through modes.
+                ListItem(
+                    headlineContent = { Text("Weather Mode") },
+                    leadingContent = { Icon(Icons.Default.Cloud, null) },
+                    supportingContent = {
+                        Text(
+                            weatherMode.displayName + "  •  tap to cycle",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    modifier = Modifier.clickable {
+                        onWeatherModeChange(weatherMode.next())
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                // Weather: Testing — swaps in ColorOS-style sprite-bolt + parallax
+                // tilted rain. Off = original Compose-drawn effects.
+                ListItem(
+                    headlineContent = { Text("Weather Testing") },
+                    leadingContent = { Icon(Icons.Default.Cloud, null) },
+                    supportingContent = {
+                        Text(
+                            (if (weatherTesting) "On" else "Off") + "  •  ColorOS-style FX",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = weatherTesting,
+                            onCheckedChange = onWeatherTestingChange,
+                        )
+                    },
+                    modifier = Modifier.clickable { onWeatherTestingChange(!weatherTesting) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 ListItem(headlineContent = { Text("Privacy Policy") }, leadingContent = { Icon(Icons.Default.Info, null) },
                     modifier = Modifier.clickable { onPrivacyPolicyClick() }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
                 // Admin tools — visible only when the signed-in roll matches
@@ -453,6 +499,29 @@ fun ProfileScreen(
                         else "p_${kotlin.math.abs(rollNumber.hashCode()).toString(16)}"
                     }
                     if (com.justpass.app.data.model.TournamentAdmins.isAdmin(myPid)) {
+                        // Tournament Approvals — visible to admins in all
+                        // builds. Tap behavior gated by the `tournament_enabled`
+                        // Remote Config flag: while false we toast "Feature
+                        // under development" instead of opening the screen.
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                        ListItem(
+                            headlineContent = { Text("Tournament Approvals") },
+                            leadingContent = { Icon(Icons.Default.AdminPanelSettings, null) },
+                            modifier = Modifier.clickable {
+                                Analytics.logProfileAction("tournament_approvals")
+                                val rc = com.google.firebase.remoteconfig.FirebaseRemoteConfig.getInstance()
+                                if (rc.getBoolean("tournament_enabled")) {
+                                    onTournamentApprovalClick()
+                                } else {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "Feature under development",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                         ListItem(
                             headlineContent = { Text("Bug Report Inbox") },
