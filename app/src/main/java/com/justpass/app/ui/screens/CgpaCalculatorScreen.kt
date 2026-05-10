@@ -1,6 +1,7 @@
 package com.justpass.app.ui.screens
 
 import com.justpass.app.ui.components.AdBanner
+import com.justpass.app.ui.components.AnimatedSlideInTabs
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ColorMatrix
@@ -62,6 +63,7 @@ fun CgpaCalculatorScreen(
     onBack: () -> Unit,
     userDepartment: Department? = null,
     userBatchYear: Int? = null,
+    cardState: io.github.fletchmckee.liquid.LiquidState? = null,
     viewModel: CgpaViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -512,31 +514,19 @@ fun CgpaCalculatorScreen(
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        // Semester tabs
-        ScrollableTabRow(
-            selectedTabIndex = uiState.availableSemesters.indexOf(uiState.selectedSemester).coerceAtLeast(0),
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary,
-            edgePadding = 0.dp,
-            divider = {}
-        ) {
-            uiState.availableSemesters.forEach { sem ->
-                val sgpa = viewModel.getSGPA(sem)
-                Tab(
-                    selected = uiState.selectedSemester == sem,
-                    onClick = { viewModel.selectSemester(sem) },
-                    text = {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Sem $sem", fontSize = 13.sp)
-                            if (sgpa > 0) {
-                                Text(String.format("%.1f", sgpa), fontSize = 10.sp,
-                                    color = getGpaColor(sgpa), fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                )
-            }
-        }
+        // Semester tabs (slide-in-from-right with stagger)
+        AnimatedSlideInTabs(
+            items = uiState.availableSemesters.map { "Sem $it" },
+            selectedIndex = uiState.availableSemesters.indexOf(uiState.selectedSemester).coerceAtLeast(0),
+            onSelect = { idx -> viewModel.selectSemester(uiState.availableSemesters[idx]) },
+            animationKey = uiState.availableSemesters,
+            liquidState = cardState,
+            showSubTextRow = true,
+            subText = { idx ->
+                val sgpa = viewModel.getSGPA(uiState.availableSemesters[idx])
+                if (sgpa > 0) String.format("%.1f", sgpa) to getGpaColor(sgpa) else null
+            },
+        )
 
         Spacer(modifier = Modifier.height(12.dp))
 

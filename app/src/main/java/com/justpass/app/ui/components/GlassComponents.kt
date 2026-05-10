@@ -1,5 +1,6 @@
 package com.justpass.app.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -8,6 +9,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -16,7 +18,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -45,19 +49,31 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -99,6 +115,8 @@ val GlassCardShapeSmall = RoundedCornerShape(14.dp)
 fun LiquidGlassScaffold(
     modifier: Modifier = Modifier,
     variant: BackgroundVariant = BackgroundVariant.Default,
+    weatherMode: WeatherMode = WeatherMode.OFF,
+    weatherTesting: Boolean = false,
     bottomBar: @Composable BoxScope.(barState: LiquidState) -> Unit = {},
     content: @Composable BoxScope.(cardState: LiquidState) -> Unit
 ) {
@@ -115,7 +133,8 @@ fun LiquidGlassScaffold(
                 .fillMaxSize()
                 .liquefiable(barState)
         ) {
-            // cardState liquefiable: captures just the gradient for card refraction
+            // cardState liquefiable: captures the gradient AND the weather effects
+            // for card refraction.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -127,10 +146,23 @@ fun LiquidGlassScaffold(
                             end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                         )
                     )
-            )
+            ) {
+                // Weather effects sit on top of the gradient but inside both
+                // liquefiable layers so glass tiles refract them.
+                WeatherBackground(weatherMode, testing = weatherTesting)
+            }
 
             // Screen content — cards use liquid(cardState), list items use lightweight
             content(cardState)
+
+            // Glass raindrops sit ON TOP of cards (drops stick to glass surface).
+            // Only active in rain / thunderstorm.
+            if (weatherMode == WeatherMode.RAIN || weatherMode == WeatherMode.THUNDERSTORM) {
+                GlassRainDroplets(
+                    modifier = Modifier.fillMaxSize(),
+                    intense = weatherMode == WeatherMode.THUNDERSTORM,
+                )
+            }
         }
 
         // Floating glass bottom bar — uses liquid(barState) to blur everything
@@ -606,259 +638,413 @@ private fun AnimatedHomeIcon(selected: Boolean, tint: Color) {
 }
 
 /**
- * Animated Calendar/Timetable icon — multiple pages flip in rapid succession.
+ * Animated Calendar/Timetable icon — when selected, pages tear off in
+ * randomised succession for ~2 seconds. Each page peels from the
+ * top-right corner, drifts off the icon, fades, and shows a faint date
+ * number behind it. Deselecting the tab snaps everything back to the
+ * idle state with no reverse animation.
  */
 @Composable
 private fun AnimatedCalendarIcon(selected: Boolean, tint: Color) {
-    // 3 pages flip in sequence when selected
-    val page1 by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-        label = "page1"
+    val redTop = Color(0xFFE53935)
+    val bindingColor by animateColorAsState(
+        targetValue = if (selected) redTop else tint,
+        animationSpec = tween(durationMillis = if (selected) 200 else 0),
+        label = "calBinding"
     )
-    val page2 by animateFloatAsState(
+    val bindingFill by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(durationMillis = 300, delayMillis = 120, easing = FastOutSlowInEasing),
-        label = "page2"
+        animationSpec = tween(durationMillis = if (selected) 200 else 0),
+        label = "calBindFill"
     )
-    val page3 by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(durationMillis = 350, delayMillis = 250, easing = FastOutSlowInEasing),
-        label = "page3"
-    )
+
+    val tear1 = remember { Animatable(0f) }
+    val tear2 = remember { Animatable(0f) }
+    val tear3 = remember { Animatable(0f) }
+    val tear4 = remember { Animatable(0f) }
+
+    // Per-tap random parameters: rotation, drift X/Y magnitudes, curl
+    // size, displayed date number. Regenerated every time the tab
+    // becomes selected so each tap looks different.
+    var pageParams by remember { mutableStateOf(generateCalendarPageParams()) }
+
+    LaunchedEffect(selected) {
+        if (selected) {
+            pageParams = generateCalendarPageParams()
+            tear1.snapTo(0f); tear2.snapTo(0f); tear3.snapTo(0f); tear4.snapTo(0f)
+            launch { tear1.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
+            launch { delay(300); tear2.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
+            launch { delay(620); tear3.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
+            launch { delay(960); tear4.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
+        } else {
+            // Snap to idle — no reverse animation
+            tear1.snapTo(0f); tear2.snapTo(0f); tear3.snapTo(0f); tear4.snapTo(0f)
+        }
+    }
+
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
 
     Canvas(modifier = Modifier.size(24.dp)) {
         val w = size.width
         val h = size.height
         val stroke = w * 0.08f
+        val cornerR = w * 0.13f
 
-        val bodyTop = h * 0.20f
+        val bodyTop = h * 0.22f
         val bodyLeft = w * 0.08f
         val bodyRight = w * 0.92f
-        val bodyBottom = h * 0.95f
-        val headerBottom = bodyTop + (bodyBottom - bodyTop) * 0.22f
+        val bodyBottom = h * 0.94f
+        val bindingH = (bodyBottom - bodyTop) * 0.26f
+        val bindingBottom = bodyTop + bindingH
 
-        // Calendar body
-        drawRoundRect(tint, Offset(bodyLeft, bodyTop),
-            Size(bodyRight - bodyLeft, bodyBottom - bodyTop),
-            cornerRadius = CornerRadius(w * 0.08f), style = Stroke(width = stroke))
-
-        // Binding rings
-        val ringH = h * 0.11f
-        drawLine(tint, Offset(w * 0.30f, bodyTop - ringH), Offset(w * 0.30f, bodyTop + ringH * 0.3f), strokeWidth = stroke)
-        drawLine(tint, Offset(w * 0.70f, bodyTop - ringH), Offset(w * 0.70f, bodyTop + ringH * 0.3f), strokeWidth = stroke)
-
-        // Header bar
-        drawLine(tint, Offset(bodyLeft, headerBottom), Offset(bodyRight, headerBottom), strokeWidth = stroke * 0.6f)
-
-        // Grid dots
-        val gridLeft = bodyLeft + w * 0.08f
-        val gridTop = headerBottom + h * 0.05f
-        val cellW = (bodyRight - bodyLeft - w * 0.16f) / 4f
-        val cellH = (bodyBottom - headerBottom - h * 0.10f) / 3f
-        for (row in 0..2) {
-            for (col in 0..3) {
-                drawCircle(tint.copy(alpha = 0.7f), radius = w * 0.028f,
-                    center = Offset(gridLeft + cellW * col + cellW * 0.5f, gridTop + cellH * row + cellH * 0.5f))
+        // Red top binding — only when selected, no white face fill below
+        if (bindingFill > 0.01f) {
+            val bindingPath = Path().apply {
+                addRoundRect(
+                    RoundRect(
+                        left = bodyLeft,
+                        top = bodyTop,
+                        right = bodyRight,
+                        bottom = bindingBottom,
+                        topLeftCornerRadius = CornerRadius(cornerR),
+                        topRightCornerRadius = CornerRadius(cornerR),
+                        bottomLeftCornerRadius = CornerRadius.Zero,
+                        bottomRightCornerRadius = CornerRadius.Zero
+                    )
+                )
             }
+            drawPath(bindingPath, color = bindingColor.copy(alpha = bindingFill))
         }
 
-        // ── Flipping pages (3 in staggered sequence) ──
-        fun drawFlippingPage(progress: Float, pageIndex: Int) {
-            if (progress < 0.05f) return
-            val p = progress
-            // Each page flips at a slightly different angle
-            val curlX = w * 0.04f * p * (1f + pageIndex * 0.3f)
-            val liftY = (bodyBottom - headerBottom) * p * 0.7f * (1f - pageIndex * 0.15f)
-            val pageBottom = bodyBottom - liftY
-            val alpha = p * (0.7f - pageIndex * 0.15f)
+        // Body outline — always visible
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(bodyLeft, bodyTop),
+            size = Size(bodyRight - bodyLeft, bodyBottom - bodyTop),
+            cornerRadius = CornerRadius(cornerR),
+            style = Stroke(width = stroke)
+        )
 
-            // Page shadow
-            drawRect(Color.Black.copy(alpha = 0.10f * p),
-                Offset(bodyLeft + curlX * 0.5f, headerBottom),
-                Size(bodyRight - bodyLeft - curlX, pageBottom - headerBottom))
-
-            // Page shape with curl
-            val pagePath = Path().apply {
-                moveTo(bodyLeft + curlX * 0.3f, headerBottom)
-                lineTo(bodyRight, headerBottom)
-                lineTo(bodyRight - curlX, pageBottom)
-                quadraticTo(
-                    (bodyLeft + bodyRight) * 0.5f, pageBottom + h * 0.03f * p,
-                    bodyLeft + curlX * 0.3f, pageBottom
-                )
-                close()
-            }
-            drawPath(pagePath, color = tint.copy(alpha = alpha * 0.35f))
-            drawPath(pagePath, color = tint.copy(alpha = alpha), style = Stroke(width = stroke * 0.4f))
-
-            // Curl edge highlight
-            drawLine(
-                color = tint.copy(alpha = alpha * 0.6f),
-                start = Offset(bodyRight - curlX, pageBottom),
-                end = Offset(bodyRight - curlX * 0.5f, headerBottom + (pageBottom - headerBottom) * 0.3f),
-                strokeWidth = stroke * 0.3f
+        // Two binding rings on top
+        val ringR = w * 0.05f
+        val ringY = bodyTop - ringR * 0.6f
+        for (cx in listOf(w * 0.32f, w * 0.68f)) {
+            drawCircle(
+                color = tint,
+                radius = ringR,
+                center = Offset(cx, ringY),
+                style = Stroke(width = stroke * 0.7f)
             )
         }
 
-        drawFlippingPage(page1, 0)
-        drawFlippingPage(page2, 1)
-        drawFlippingPage(page3, 2)
+        // ── Tearing pages — peel-off-the-top desk-calendar style ──
+        // Each tap regenerates random per-page parameters: rotation,
+        // drift X/Y magnitudes, curl size, and the date number printed
+        // faintly on the page as it tears away.
+        fun drawTearingPage(progress: Float, params: CalendarPageParam) {
+            if (progress <= 0.001f || progress >= 0.999f) return
+            val p = progress
+            val pageLeft = bodyLeft + stroke * 0.5f
+            val pageRight = bodyRight - stroke * 0.5f
+            val pageTop = bindingBottom + stroke * 0.2f
+            val pageBottom = bodyBottom - stroke * 0.5f
+            val pageW = pageRight - pageLeft
+            val pageH = pageBottom - pageTop
+
+            val rotDeg = p * params.rotMagnitude
+            val driftX = p * pageW * params.driftXMag
+            val driftY = -p * pageH * params.driftYMag
+            val alpha = (1f - (p - 0.45f).coerceAtLeast(0f) / 0.55f).coerceIn(0f, 1f)
+            val curlPhase = if (p < 0.5f) p * 2f else (1f - (p - 0.5f) * 2f)
+            val curlSize = pageW * params.curlSizeMag * curlPhase
+
+            // Date number drawn at page centre, tinted faint
+            val pageCenterX = (pageLeft + pageRight) / 2f
+            val pageCenterY = (pageTop + pageBottom) / 2f
+
+            withTransform({
+                translate(left = driftX, top = driftY)
+                rotate(degrees = rotDeg, pivot = Offset(pageLeft, pageTop))
+            }) {
+                val pagePath = Path().apply {
+                    moveTo(pageLeft, pageTop)
+                    lineTo(pageRight - curlSize, pageTop)
+                    quadraticTo(
+                        pageRight - curlSize * 0.4f, pageTop + curlSize * 0.25f,
+                        pageRight - curlSize * 0.55f, pageTop + curlSize * 0.55f
+                    )
+                    quadraticTo(
+                        pageRight - curlSize * 0.7f, pageTop + curlSize * 0.85f,
+                        pageRight, pageTop + curlSize
+                    )
+                    lineTo(pageRight, pageBottom)
+                    lineTo(pageLeft, pageBottom)
+                    close()
+                }
+                drawPath(pagePath, color = tint.copy(alpha = alpha * 0.18f))
+                drawPath(
+                    pagePath,
+                    color = tint.copy(alpha = alpha * 0.9f),
+                    style = Stroke(width = stroke * 0.55f, join = StrokeJoin.Round)
+                )
+                drawLine(
+                    color = tint.copy(alpha = alpha * 0.6f),
+                    start = Offset(pageRight - curlSize, pageTop),
+                    end = Offset(pageRight, pageTop + curlSize),
+                    strokeWidth = stroke * 0.4f,
+                    cap = StrokeCap.Round
+                )
+                // Faint date number on the page
+                val numStyle = TextStyle(
+                    color = tint.copy(alpha = alpha * 0.55f),
+                    fontSize = with(density) { (h * 0.30f).toSp() },
+                    fontWeight = FontWeight.ExtraBold
+                )
+                val numLayout = textMeasurer.measure(params.number, numStyle)
+                drawText(
+                    textLayoutResult = numLayout,
+                    topLeft = Offset(
+                        pageCenterX - numLayout.size.width / 2f,
+                        pageCenterY - numLayout.size.height / 2f
+                    )
+                )
+            }
+        }
+
+        drawTearingPage(tear1.value, pageParams[0])
+        drawTearingPage(tear2.value, pageParams[1])
+        drawTearingPage(tear3.value, pageParams[2])
+        drawTearingPage(tear4.value, pageParams[3])
+    }
+}
+
+/** Per-page random tear parameters, regenerated on each calendar tap. */
+private data class CalendarPageParam(
+    val rotMagnitude: Float,
+    val driftXMag: Float,
+    val driftYMag: Float,
+    val curlSizeMag: Float,
+    val number: String
+)
+
+private fun generateCalendarPageParams(): List<CalendarPageParam> {
+    val nums = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9",
+        "10", "11", "12", "13", "14", "15", "20", "21", "22", "30", "31")
+    val rng = java.util.Random()
+    return List(4) {
+        // Rotation: -180..-90 (mostly counter-clockwise upward)
+        val rot = -90f - rng.nextFloat() * 90f
+        // X drift: 0.2..0.8 (positive = up-right; negative half = up-left)
+        val xMag = (0.2f + rng.nextFloat() * 0.6f) * (if (rng.nextBoolean()) 1f else -0.6f)
+        val yMag = 0.55f + rng.nextFloat() * 0.6f
+        val curl = 0.30f + rng.nextFloat() * 0.25f
+        CalendarPageParam(rot, xMag, yMag, curl, nums[rng.nextInt(nums.size)])
     }
 }
 
 /**
- * Animated Calculator/GPA icon — math symbols cycle through with a
- * spinning twist effect and electric glow when selected.
+ * Animated Calculator/GPA icon — grade cards (A+, A, O, S) drop into the
+ * calculator's display in succession over ~2s when selected, with
+ * sparkles around the top. Idle state shows a clean calculator outline
+ * with a display strip and 2x3 button grid.
  */
 @Composable
 private fun AnimatedCalculatorIcon(selected: Boolean, tint: Color) {
-    // Symbols rotate through when selected
-    val symbolRotation by animateFloatAsState(
-        targetValue = if (selected) 360f else 0f,
-        animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
-        label = "symbolRotation"
-    )
-    val glowPulse by animateFloatAsState(
+    val card1 = remember { Animatable(0f) }
+    val card2 = remember { Animatable(0f) }
+    val card3 = remember { Animatable(0f) }
+    val card4 = remember { Animatable(0f) }
+    val sparkle by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(durationMillis = 400),
-        label = "glowPulse"
+        animationSpec = tween(durationMillis = if (selected) 250 else 0),
+        label = "gradeSparkle"
     )
-    // Staggered symbol animations
-    val sym1 by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(durationMillis = 300),
-        label = "sym1"
-    )
-    val sym2 by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(durationMillis = 300, delayMillis = 100),
-        label = "sym2"
-    )
-    val sym3 by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(durationMillis = 300, delayMillis = 200),
-        label = "sym3"
-    )
-    val sym4 by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(durationMillis = 300, delayMillis = 300),
-        label = "sym4"
-    )
+
+    var cardParams by remember { mutableStateOf(generateGradeCardParams()) }
+
+    LaunchedEffect(selected) {
+        if (selected) {
+            cardParams = generateGradeCardParams()
+            card1.snapTo(0f); card2.snapTo(0f); card3.snapTo(0f); card4.snapTo(0f)
+            launch { card1.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
+            launch { delay(300); card2.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
+            launch { delay(620); card3.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
+            launch { delay(960); card4.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
+        } else {
+            card1.snapTo(0f); card2.snapTo(0f); card3.snapTo(0f); card4.snapTo(0f)
+        }
+    }
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val gradeGreen = Color(0xFF00C853)
+    val orangeBtn = Color(0xFFFF6D00)
 
     Canvas(modifier = Modifier.size(24.dp)) {
         val w = size.width
         val h = size.height
         val stroke = w * 0.08f
+        val cornerR = w * 0.13f
 
-        // ── Calculator body (rounded rect) ──
+        // Calculator body
+        val bodyTop = h * 0.18f
+        val bodyLeft = w * 0.14f
+        val bodyRight = w * 0.86f
+        val bodyBottom = h * 0.94f
         drawRoundRect(
             color = tint,
-            topLeft = Offset(w * 0.05f, w * 0.05f),
-            size = Size(w * 0.9f, h * 0.9f),
-            cornerRadius = CornerRadius(w * 0.15f),
+            topLeft = Offset(bodyLeft, bodyTop),
+            size = Size(bodyRight - bodyLeft, bodyBottom - bodyTop),
+            cornerRadius = CornerRadius(cornerR),
             style = Stroke(width = stroke)
         )
 
-        // Electric glow behind body when selected
-        if (glowPulse > 0f) {
-            drawRoundRect(
-                color = Color(0xFF448AFF).copy(alpha = glowPulse * 0.2f),
-                topLeft = Offset(w * 0.05f, w * 0.05f),
-                size = Size(w * 0.9f, h * 0.9f),
-                cornerRadius = CornerRadius(w * 0.15f)
-            )
+        // Display strip (top quarter of calculator)
+        val displayTop = bodyTop + h * 0.06f
+        val displayBottom = bodyTop + (bodyBottom - bodyTop) * 0.32f
+        val displayLeft = bodyLeft + w * 0.07f
+        val displayRight = bodyRight - w * 0.07f
+        drawRoundRect(
+            color = tint.copy(alpha = 0.45f),
+            topLeft = Offset(displayLeft, displayTop),
+            size = Size(displayRight - displayLeft, displayBottom - displayTop),
+            cornerRadius = CornerRadius(w * 0.04f),
+            style = Stroke(width = stroke * 0.5f)
+        )
+
+        // 2x3 button grid below the display
+        val gridTop = displayBottom + h * 0.04f
+        val gridBottom = bodyBottom - h * 0.05f
+        val btnW = (bodyRight - bodyLeft - w * 0.16f) / 3f
+        val btnH = (gridBottom - gridTop - h * 0.04f) / 2f
+        for (row in 0..1) {
+            for (col in 0..2) {
+                val cx = bodyLeft + w * 0.08f + btnW * col + btnW * 0.5f
+                val cy = gridTop + btnH * row + btnH * 0.5f + (if (row == 1) h * 0.04f else 0f)
+                val isOrange = row == 1 && col == 2
+                if (isOrange) {
+                    drawRoundRect(
+                        color = orangeBtn,
+                        topLeft = Offset(cx - btnW * 0.36f, cy - btnH * 0.36f),
+                        size = Size(btnW * 0.72f, btnH * 0.72f),
+                        cornerRadius = CornerRadius(w * 0.025f)
+                    )
+                } else {
+                    drawRoundRect(
+                        color = tint.copy(alpha = 0.55f),
+                        topLeft = Offset(cx - btnW * 0.36f, cy - btnH * 0.36f),
+                        size = Size(btnW * 0.72f, btnH * 0.72f),
+                        cornerRadius = CornerRadius(w * 0.025f),
+                        style = Stroke(width = stroke * 0.5f)
+                    )
+                }
+            }
         }
 
-        // ── 4 math symbols in a 2x2 grid ──
-        // Each symbol scales in with stagger and has a slight rotation
-        val cx1 = w * 0.32f; val cy1 = h * 0.32f  // top-left: minus
-        val cx2 = w * 0.68f; val cy2 = h * 0.32f  // top-right: multiply
-        val cx3 = w * 0.32f; val cy3 = h * 0.68f  // bottom-left: plus
-        val cx4 = w * 0.68f; val cy4 = h * 0.68f  // bottom-right: equals
+        // ── Falling grade cards ──
+        // Each card flies in from above, lands on the display, fades out.
+        // Per-tap random params: starting X offset, drop rotation, grade
+        // letter chosen from a pool.
+        val displayCenterX = (displayLeft + displayRight) / 2f
+        val displayCenterY = (displayTop + displayBottom) / 2f
 
-        val symSize = w * 0.16f
-        val symStroke = stroke * 1.2f
+        fun drawGradeCard(progress: Float, params: GradeCardParam) {
+            if (progress <= 0.001f || progress >= 0.999f) return
+            val p = progress
+            val flyT = (p / 0.55f).coerceAtMost(1f)
+            val fadeT = ((p - 0.55f) / 0.45f).coerceIn(0f, 1f)
+            val alpha = 1f - fadeT
+            val startX = displayCenterX + params.startXOffsetMag * w
+            val startY = -h * (0.4f + params.startYOffsetMag)
+            val cx = startX + (displayCenterX - startX) * flyT
+            val cy = startY + (displayCenterY - startY) * flyT
+            val rotDeg = (1f - flyT) * params.rotMagnitude
+            val cardW = w * 0.36f
+            val cardH = h * 0.26f
 
-        // Symbol scale for animation (pop in effect)
-        fun symScale(anim: Float) = 0.6f + anim * 0.4f
-
-        // ── Minus ─ (top-left)
-        val s1 = symScale(sym1)
-        drawLine(tint, Offset(cx1 - symSize * s1, cy1), Offset(cx1 + symSize * s1, cy1),
-            strokeWidth = symStroke, cap = StrokeCap.Round)
-
-        // ── Multiply × (top-right) — rotates when selected
-        val s2 = symScale(sym2)
-        val xRot = symbolRotation * 0.5f // half rotation for X
-        val xRad = Math.toRadians(xRot.toDouble()).toFloat()
-        val xCos = kotlin.math.cos(xRad)
-        val xSin = kotlin.math.sin(xRad)
-        val xLen = symSize * s2
-        // Line 1 of X (rotated)
-        drawLine(tint,
-            Offset(cx2 - xLen * xCos, cy2 - xLen * xSin),
-            Offset(cx2 + xLen * xCos, cy2 + xLen * xSin),
-            strokeWidth = symStroke, cap = StrokeCap.Round)
-        // Line 2 of X (perpendicular, rotated)
-        drawLine(tint,
-            Offset(cx2 + xLen * xSin, cy2 - xLen * xCos),
-            Offset(cx2 - xLen * xSin, cy2 + xLen * xCos),
-            strokeWidth = symStroke, cap = StrokeCap.Round)
-
-        // ── Plus + (bottom-left)
-        val s3 = symScale(sym3)
-        drawLine(tint, Offset(cx3 - symSize * s3, cy3), Offset(cx3 + symSize * s3, cy3),
-            strokeWidth = symStroke, cap = StrokeCap.Round)
-        drawLine(tint, Offset(cx3, cy3 - symSize * s3), Offset(cx3, cy3 + symSize * s3),
-            strokeWidth = symStroke, cap = StrokeCap.Round)
-
-        // ── Equals = (bottom-right)
-        val s4 = symScale(sym4)
-        val eqGap = h * 0.05f
-        drawLine(tint, Offset(cx4 - symSize * s4, cy4 - eqGap), Offset(cx4 + symSize * s4, cy4 - eqGap),
-            strokeWidth = symStroke, cap = StrokeCap.Round)
-        drawLine(tint, Offset(cx4 - symSize * s4, cy4 + eqGap), Offset(cx4 + symSize * s4, cy4 + eqGap),
-            strokeWidth = symStroke, cap = StrokeCap.Round)
-
-        // ── Divider lines (subtle grid) ──
-        val divAlpha = 0.3f
-        drawLine(tint.copy(alpha = divAlpha), Offset(w * 0.5f, h * 0.15f), Offset(w * 0.5f, h * 0.85f),
-            strokeWidth = stroke * 0.4f)
-        drawLine(tint.copy(alpha = divAlpha), Offset(w * 0.15f, h * 0.5f), Offset(w * 0.85f, h * 0.5f),
-            strokeWidth = stroke * 0.4f)
-
-        // ── Electric sparks during transition ──
-        if (glowPulse > 0.3f && glowPulse < 0.95f) {
-            val sparkColor = Color(0xFF82B1FF).copy(alpha = (glowPulse - 0.3f) * 0.7f)
-            val sparkLen = w * 0.08f * glowPulse
-            drawLine(sparkColor, Offset(w * 0.85f, h * 0.10f), Offset(w * 0.85f + sparkLen, h * 0.10f - sparkLen),
-                strokeWidth = stroke * 0.5f, cap = StrokeCap.Round)
-            drawLine(sparkColor, Offset(w * 0.15f, h * 0.90f), Offset(w * 0.15f - sparkLen, h * 0.90f + sparkLen),
-                strokeWidth = stroke * 0.5f, cap = StrokeCap.Round)
-            drawLine(sparkColor, Offset(w * 0.10f, h * 0.15f), Offset(w * 0.10f - sparkLen, h * 0.15f - sparkLen * 0.7f),
-                strokeWidth = stroke * 0.5f, cap = StrokeCap.Round)
+            withTransform({
+                rotate(degrees = rotDeg, pivot = Offset(cx, cy))
+            }) {
+                drawRoundRect(
+                    color = Color.White.copy(alpha = alpha * 0.95f),
+                    topLeft = Offset(cx - cardW / 2f, cy - cardH / 2f),
+                    size = Size(cardW, cardH),
+                    cornerRadius = CornerRadius(w * 0.04f)
+                )
+                drawRoundRect(
+                    color = tint.copy(alpha = alpha * 0.55f),
+                    topLeft = Offset(cx - cardW / 2f, cy - cardH / 2f),
+                    size = Size(cardW, cardH),
+                    cornerRadius = CornerRadius(w * 0.04f),
+                    style = Stroke(width = stroke * 0.4f)
+                )
+                val letterStyle = TextStyle(
+                    color = gradeGreen.copy(alpha = alpha),
+                    fontSize = with(density) { (h * 0.18f).toSp() },
+                    fontWeight = FontWeight.ExtraBold
+                )
+                val layout = textMeasurer.measure(params.grade, letterStyle)
+                drawText(
+                    textLayoutResult = layout,
+                    topLeft = Offset(
+                        cx - layout.size.width / 2f,
+                        cy - layout.size.height / 2f
+                    )
+                )
+            }
         }
 
-        // ── Settled state: warm "screen on" display glow ──
-        if (glowPulse > 0.8f) {
-            val settled = (glowPulse - 0.8f) / 0.2f // 0→1 as it settles
-            // Inner display glow — like a calculator screen lit up
-            drawRoundRect(
-                color = Color(0xFF1A237E).copy(alpha = settled * 0.25f),
-                topLeft = Offset(w * 0.12f, h * 0.12f),
-                size = Size(w * 0.76f, h * 0.76f),
-                cornerRadius = CornerRadius(w * 0.10f)
+        drawGradeCard(card1.value, cardParams[0])
+        drawGradeCard(card2.value, cardParams[1])
+        drawGradeCard(card3.value, cardParams[2])
+        drawGradeCard(card4.value, cardParams[3])
+
+        // Sparkles around top corners while cards drop
+        if (sparkle > 0.1f) {
+            val sCol = Color(0xFFFFD600).copy(alpha = sparkle * 0.85f)
+            val sparks = listOf(
+                Offset(w * 0.10f, h * 0.10f),
+                Offset(w * 0.88f, h * 0.08f),
+                Offset(w * 0.92f, h * 0.30f),
+                Offset(w * 0.06f, h * 0.30f)
             )
-            // Subtle highlight at top of "screen" (specular reflection)
-            drawLine(
-                color = Color.White.copy(alpha = settled * 0.2f),
-                start = Offset(w * 0.20f, h * 0.14f),
-                end = Offset(w * 0.80f, h * 0.14f),
-                strokeWidth = stroke * 0.5f,
-                cap = StrokeCap.Round
-            )
+            for (sp in sparks) {
+                val sl = w * 0.05f * sparkle
+                drawLine(
+                    color = sCol,
+                    start = Offset(sp.x - sl, sp.y),
+                    end = Offset(sp.x + sl, sp.y),
+                    strokeWidth = stroke * 0.45f,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    color = sCol,
+                    start = Offset(sp.x, sp.y - sl),
+                    end = Offset(sp.x, sp.y + sl),
+                    strokeWidth = stroke * 0.45f,
+                    cap = StrokeCap.Round
+                )
+            }
         }
+    }
+}
+
+/** Per-card random grade-card parameters, regenerated on each GPA tap. */
+private data class GradeCardParam(
+    val startXOffsetMag: Float,
+    val startYOffsetMag: Float,
+    val rotMagnitude: Float,
+    val grade: String
+)
+
+private fun generateGradeCardParams(): List<GradeCardParam> {
+    val grades = listOf("A+", "A", "O", "B+", "B", "S")
+    val rng = java.util.Random()
+    return List(4) {
+        val xOff = -0.25f + rng.nextFloat() * 0.5f
+        val yOff = rng.nextFloat() * 0.3f
+        val rot = (-30f + rng.nextFloat() * 60f)
+        GradeCardParam(xOff, yOff, rot, grades[rng.nextInt(grades.size)])
     }
 }
 
@@ -1491,6 +1677,208 @@ fun RoseFourLoader(modifier: Modifier = Modifier) {
             val py = (50f + sin(t) * r * roseScale) * cs
             val fade = (1f - tailOffset).pow(0.56f)
             drawCircle(Color.White.copy(alpha = 0.04f + fade * 0.96f), radius = (0.9f + fade * 2.7f).dp.toPx(), center = Offset(px, py))
+        }
+    }
+}
+
+/**
+ * Horizontally scrollable row of glass pill tabs that drift in from the right
+ * with a staggered, slow "out of mist" entry. All pills share the widest pill's
+ * width so they look uniform, even when [subText] returns null for some items.
+ *
+ * Pass [liquidState] (the same cardState the screen uses) to make pills sample
+ * the gradient + weather behind them like the bottom dashboard tray.
+ *
+ * [subText] returns secondary text (label + color) shown below the main label.
+ * Return ("n/e", muted) to mark a sem with no data — every pill stays the same
+ * height so the row never jumps.
+ */
+@Composable
+fun AnimatedSlideInTabs(
+    items: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    animationKey: Any = Unit,
+    liquidState: LiquidState? = null,
+    showSubTextRow: Boolean = false,
+    subText: (@Composable (Int) -> Pair<String, Color>?)? = null,
+) {
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+
+    val labelStyle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    val subStyle = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Bold)
+
+    val sizing = remember(items, showSubTextRow) {
+        val labelMax = items.maxOfOrNull { textMeasurer.measure(it, labelStyle).size.width } ?: 0
+        // For sub text row, use a sane fixed allowance instead of measuring per
+        // composition (caller-provided values vary per recompose).
+        val subMax = if (showSubTextRow) textMeasurer.measure("9.99", subStyle).size.width else 0
+        val widthPx = maxOf(labelMax, subMax)
+        with(density) { widthPx.toDp() }
+    }
+    // 28dp horizontal padding total inside pill, plus a hair of breathing room
+    val pillWidth = sizing + 32.dp
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        items.forEachIndexed { index, label ->
+            SlideInPill(
+                label = label,
+                selected = index == selectedIndex,
+                index = index,
+                animationKey = animationKey,
+                liquidState = liquidState,
+                showSubTextRow = showSubTextRow,
+                subText = subText?.invoke(index),
+                fixedWidth = pillWidth,
+                onClick = { onSelect(index) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SlideInPill(
+    label: String,
+    selected: Boolean,
+    index: Int,
+    animationKey: Any,
+    liquidState: LiquidState?,
+    showSubTextRow: Boolean,
+    subText: Pair<String, Color>?,
+    fixedWidth: Dp,
+    onClick: () -> Unit,
+) {
+    val density = LocalDensity.current
+    val isDark = isSystemInDarkTheme()
+
+    // Mist entry: drift from right + soft fade + slight scale + Modifier.blur.
+    // Using a long, low-stiffness spring so it eases in slowly without overshoot.
+    val translateXPx = remember { Animatable(with(density) { 96.dp.toPx() }) }
+    val alpha = remember { Animatable(0f) }
+    val scale = remember { Animatable(0.86f) }
+    val blur = remember { Animatable(10f) }
+
+    LaunchedEffect(animationKey) {
+        translateXPx.snapTo(with(density) { 96.dp.toPx() })
+        alpha.snapTo(0f)
+        scale.snapTo(0.86f)
+        blur.snapTo(10f)
+        delay(index * 80L)
+        launch {
+            translateXPx.animateTo(
+                targetValue = 0f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = 70f,
+                ),
+            )
+        }
+        launch {
+            scale.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = 90f,
+                ),
+            )
+        }
+        launch {
+            alpha.animateTo(1f, tween(durationMillis = 760))
+        }
+        blur.animateTo(0f, tween(durationMillis = 720))
+    }
+
+    val haptic = LocalHapticFeedback.current
+    val pillShape = RoundedCornerShape(percent = 50)
+
+    val targetTint = if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+    } else if (isDark) {
+        Color(0xFF0D1117).copy(alpha = 0.40f)
+    } else {
+        Color.White.copy(alpha = 0.50f)
+    }
+    val targetBorder = if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+    } else if (isDark) {
+        Color.White.copy(alpha = 0.10f)
+    } else {
+        Color.White.copy(alpha = 0.45f)
+    }
+    val animatedTint by animateColorAsState(targetTint, tween(220), label = "pill-tint")
+    val animatedBorder by animateColorAsState(targetBorder, tween(220), label = "pill-border")
+    val textColor by animateColorAsState(
+        targetValue = if (selected)
+            MaterialTheme.colorScheme.primary
+        else
+            MaterialTheme.colorScheme.onSurface,
+        animationSpec = tween(220),
+        label = "pill-text",
+    )
+
+    val glassMod: Modifier = if (liquidState != null) {
+        Modifier.liquid(liquidState) {
+            frost = 22.dp
+            refraction = 0.12f
+            curve = 0.5f
+            shape = pillShape
+            edge = 0.06f
+            tint = animatedTint
+            saturation = 1.25f
+            contrast = 1.10f
+            dispersion = 0.03f
+        }
+    } else {
+        Modifier.background(animatedTint, pillShape)
+    }
+
+    Box(
+        modifier = Modifier
+            .graphicsLayer {
+                translationX = translateXPx.value
+                this.alpha = alpha.value
+                scaleX = scale.value
+                scaleY = scale.value
+            }
+            .blur(blur.value.dp)
+            .width(fixedWidth)
+            .clip(pillShape)
+            .then(glassMod)
+            .border(0.7.dp, animatedBorder, pillShape)
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = label,
+                fontSize = 13.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                color = textColor,
+                maxLines = 1,
+            )
+            if (showSubTextRow) {
+                val resolved = subText ?: ("n/e" to MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f))
+                Text(
+                    text = resolved.first,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = resolved.second,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }

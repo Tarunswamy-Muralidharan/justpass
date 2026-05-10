@@ -24,6 +24,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.Department
 import com.justpass.app.data.model.Regulation
 import com.justpass.app.data.model.SyllabusSubject
+import com.justpass.app.ui.components.AnimatedSlideInTabs
 import com.justpass.app.ui.components.GlassCardShapeSmall
 import com.justpass.app.ui.components.GlassListCard
 import com.justpass.app.ui.components.RoseFourLoader
@@ -110,50 +111,29 @@ fun SyllabusScreen(
             }
         }
 
-        // Semester filter tabs
+        // Semester filter tabs (slide-in-from-right with stagger)
         if (uiState.semesters.isNotEmpty()) {
-            val isDark = isSystemInDarkTheme()
+            val tabLabels = remember(uiState.semesters) {
+                listOf("All") + uiState.semesters.map { sem ->
+                    if (sem == 0) "Electives" else "Sem $sem"
+                }
+            }
+            val selectedIdx = if (uiState.selectedSemester == 0) 0
+                else (uiState.semesters.indexOf(uiState.selectedSemester) + 1).coerceAtLeast(0)
             GlassListCard(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 shape = GlassCardShapeSmall
             ) {
-                ScrollableTabRow(
-                    selectedTabIndex = if (uiState.selectedSemester == 0) 0
-                        else uiState.semesters.indexOf(uiState.selectedSemester) + 1,
-                    edgePadding = 4.dp,
-                    containerColor = Color.Transparent,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    divider = {}, indicator = {}
-                ) {
-                    // "All" tab
-                    val allSelected = uiState.selectedSemester == 0
-                    Tab(
-                        selected = allSelected,
-                        onClick = { viewModel.selectSemester(0) },
-                        modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp),
-                        text = {
-                            Text("All", fontSize = 12.sp,
-                                fontWeight = if (allSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (allSelected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurface)
-                        }
-                    )
-                    uiState.semesters.forEach { sem ->
-                        val selected = uiState.selectedSemester == sem
-                        val label = if (sem == 0) "Electives" else "Sem $sem"
-                        Tab(
-                            selected = selected,
-                            onClick = { viewModel.selectSemester(sem) },
-                            modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp),
-                            text = {
-                                Text(label, fontSize = 12.sp,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (selected) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurface)
-                            }
-                        )
-                    }
-                }
+                AnimatedSlideInTabs(
+                    items = tabLabels,
+                    selectedIndex = selectedIdx,
+                    onSelect = { idx ->
+                        if (idx == 0) viewModel.selectSemester(0)
+                        else viewModel.selectSemester(uiState.semesters[idx - 1])
+                    },
+                    animationKey = uiState.semesters,
+                    liquidState = cardState,
+                )
             }
         }
 
