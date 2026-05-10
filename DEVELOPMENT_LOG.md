@@ -6947,3 +6947,373 @@ After all three pct ranges verified, dropped the `if (com.justpass.app.BuildConf
 - **Screen-record + ffmpeg frame-extract + Read tool on key frames is a viable visual debugging loop on Windows.** `MSYS_NO_PATHCONV=1 adb pull /sdcard/x.mp4` works around Git Bash's path conversion.
 
 ---
+
+## Session: 2026-05-10 — Privacy policy rejection fix, pill tabs polish, weather modes, ColorOS APK reverse-engineering, testing toggle
+
+Long session. Six discrete pieces of work landed in roughly this order: privacy-policy publish-rejection fix → CGPA / Syllabus pill tab redesign → cycle-toggle weather background system (Sunny / Cloudy / Rain / Thunderstorm) → splash + cloud feedback iterations → glass-droplet "rocksdanister" layer on top of the cards → ColorOS Weather APK reverse-engineering → a Testing Mode switch that swaps in the ColorOS-derived sprite-bolt + parallax rain.
+
+### 1. Play Store rejection: "Privacy Policy link does not lead to the Privacy Policy page"
+
+Google enforced rejection on 2026-05-10 against v3.0.3 (versionCode 12) Closed Testing → Production submission. Issue Details screen quoted the rule verbatim: "Privacy Policy link provided in the designated field in Play Developer Console does not direct to the Privacy Policy page." The screenshot evidence showed the JustPass login dialog — which is what the rejected URL `https://justpass-eta.vercel.app/privacy` was actually rendering. The PWA's `/privacy` route 404'd into the auth shell.
+
+#### Fix: serve a real privacy policy from the Cloudflare Worker that already runs the chess lobby
+
+The chess Worker (`chess-lobby.tmswamy10.workers.dev`) is the only production endpoint we own that doesn't redirect or auth-gate by default. Added a third route to `chess-lobby/src/worker.ts`:
+
+- `/health` (existing) → liveness probe
+- `/privacy` (new) → static HTML
+- `/ws` (existing) → Firebase-token-gated WebSocket upgrade
+- everything else → 404 JSON
+
+Inlined a single `PRIVACY_POLICY_HTML` constant (~10 sections: data handling, what we don't collect, permissions, third parties — Firebase, Cloudflare, Lichess, AdMob — retention, rights, children, security, changes, contact). Mobile-responsive, light/dark via `prefers-color-scheme`, no external CSS or JS.
+
+`Cache-Control: public, max-age=3600` + `X-Content-Type-Options: nosniff` set on the route's response. Total worker upload bumped from 13 KB to 25 KB gzip; one cold deploy via `npx wrangler deploy`.
+
+`curl -sI https://chess-lobby.tmswamy10.workers.dev/privacy` → 200 + `Content-Type: text/html`. Done.
+
+#### Round 2: dark-mode regression on the privacy page
+
+User screenshotted the rendered policy on Edge with Windows dark mode forced. The body text was readable but every `<code>` chip — package name, `EncryptedSharedPreferences`, etc. — had a near-white background with white text on it, completely illegible.
+
+Cause: `<code>` had `background: #eee` outside any `@media` block, and the dark-mode block only overrode `body`, `a`, and `code`. The browser's "force dark site" path wasn't activating `prefers-color-scheme: dark` (Edge maps forced-dark to a CSS engine pass that doesn't trip the media query reliably for fresh-cached HTML).
+
+Fix: removed the dark-mode `code` override entirely; replaced the light-mode rule with a theme-agnostic `background: rgba(127, 127, 127, 0.18); color: inherit` on `code`. Now the chip background is a translucent neutral gray that overlays whatever the body's actual text colour is, and the text colour is inherited from `body`. Reads correctly under any combination of forced/native light/dark themes.
+
+Pattern: **for any HTML you might render under "force dark" on devices/browsers you don't control, never rely on `prefers-color-scheme`-gated colour swaps for foreground text.** Use `currentColor` for borders/strokes and `rgba(neutral)` for chip backgrounds — they degrade gracefully under any inversion.
+
+#### Play Console resubmission flow via Claude-in-Chrome
+
+I cannot log into Play Console for the user (their browser session, their creds), but the in-tab Claude extension can drive their existing logged-in session. Walked the flow manually in browser_batch:
+
+1. `navigate(https://play.google.com/console/u/0/developers)` → "Choose developer account" → click `zyzz`.
+2. App-list → `View JustPass` → app dashboard.
+3. Sidebar: `Monitor and Improve` → expand → `Policy and programs` → expand → `App content`.
+4. Direct nav to `/app/<appId>/app-content/overview` 404'd back to app-list when accessed before the in-app sidebar had been touched at least once. Same nav after expanding the sidebar group worked. So the Play Console SPA gates URL-based deep linking on prior client-state setup, not URL alone.
+5. App content → "Privacy Policy" issue card → `Edit declaration` → field already populated with the broken Vercel URL → `triple_click` + `ctrl+a` + `Delete` + `type` the new worker URL → `Save`.
+6. Confirmation dialog "Go to Publishing overview?" → chose `Not now` (didn't want to auto-bundle the unrelated staged production rollout into the privacy-policy-only review).
+7. Manual `/publishing` nav → 4 staged changes appear (privacy URL fix + the previously-staged 12 (3.0.3) full rollout + 2 country-region adds). Asked the user which to send. They picked **A** (everything).
+8. `Send 4 changes for review` → confirmation modal → confirm. Page reads `Changes in review`.
+
+Lessons from driving Play Console headlessly:
+
+- The in-app sidebar's group-expansion state is required before deep-link URLs to nested settings will resolve. The router validates against a client-side route map that gets populated from sidebar-mount metadata.
+- `find` natural-language refs are stable across navigations within Play Console as long as the page hasn't refreshed; switching to a new sub-tab invalidates them. Re-`find` after every navigate.
+- Several screenshot calls timed out with `CDP sendCommand Page.captureScreenshot timed out after 30000ms`. Retry once unblocked it. Likely the renderer was busy in a paint of the sliding sidebar.
+- Tab title doesn't update synchronously with `navigate()`; verifying URL via the next `Tab Context` block is the reliable signal.
+
+### 2. CGPA Calculator + Syllabus: pill tabs with right-side mist-entry animation
+
+Reference: a 7-second clip the user supplied of a planner app with horizontal pill tabs that drift in from the right side, staggered, fading from a slight scale-up + blur. User wanted the same on the existing `ScrollableTabRow` (Sem 1 / Sem 2 / ... in CGPA, All / Electives / Sem N / ... in Syllabus).
+
+Built `AnimatedSlideInTabs` + private `SlideInPill` in `GlassComponents.kt`. Swap-in replacement for the two `ScrollableTabRow` blocks.
+
+#### First pass
+
+- `RoundedCornerShape(14.dp)` outer pill
+- `MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)` background
+- Stagger: `delay(index * 45L)` then a `MediumBouncy` spring on `translationX` from `64.dp` → 0
+- Alpha tween 280ms
+
+User feedback after install: "make it more pill shaped, add the glass affect to it like how its in the bottom dashboard tray, also make it appear more smoother and slower, like its appearing out of nowhere from the right, like from mist, also make it all equal size even if that sem doesnt have marks entered, mark it as n/e".
+
+#### Second pass — five fixes
+
+1. **Full pill shape**: `RoundedCornerShape(percent = 50)` instead of fixed dp radius.
+2. **Liquid glass on the pill itself**: added `liquidState: LiquidState? = null` parameter to `AnimatedSlideInTabs`; threaded `cardState` down from `LiquidGlassScaffold` callers via a new `cardState` parameter on `CgpaCalculatorScreen`. When the parameter is non-null the pill applies `Modifier.liquid(state) { frost = 22.dp; refraction = 0.12f; curve = 0.5f; edge = 0.06f; tint = animatedTint; saturation = 1.25f; contrast = 1.10f; dispersion = 0.03f }` — same engine and similar parameter shape as `LiquidGlassBottomBar`. When null (callers without a state), falls back to a plain `background(animatedTint, pillShape)` so the component degrades gracefully.
+3. **Mist entry**: kept the spring-based translation-X but added `Modifier.blur(blur.value.dp)` (silently no-ops on API < 31) animated 10 → 0 over 720 ms tween, plus `scale 0.86 → 1f` on a separate `Spring.StiffnessMediumLow` (~70 N/m) low-stiffness spring with no bounce. Translate-X distance bumped from 64dp → 96dp, stagger 45ms → 80ms per index. Result: pills drift in slowly from the right, expand slightly, deblur, fade up — much closer to the reference.
+4. **Equal size**: used `rememberTextMeasurer()` to measure the widest label (`"Sem 12"`) in the active TextStyle, took max with a measured `"9.99"` for the optional sub-text row, plus 32dp horizontal padding to compute a single `pillWidth` shared across every pill. Every pill `Modifier.width(pillWidth)`.
+5. **n/e fallback**: added `showSubTextRow: Boolean = false` parameter. When true, every pill renders the second-row `Text` slot — if the caller's `subText(index)` returns null, the slot shows `"n/e"` in `MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)`. Heights stay constant whether the sem has SGPA data or not. CGPA passes `showSubTextRow = true` + computes SGPA/colour pair via `viewModel.getSGPA()` + `getGpaColor(sgpa)` (returns `null` when sgpa is 0 → resolves to "n/e"). Syllabus passes `showSubTextRow = false` + no `subText` — single-line tabs.
+
+Compile error during this pass: the receiver of the `liquid {}` lambda exposes `tint: Color` as a settable property. I'd named the outer `val tint = if (selected) primary.copy(...) else surface.copy(...)` — Kotlin shadowed the receiver's `tint` with the outer `val`, so `tint = animatedTint` inside the lambda tried to reassign a `val` and failed at line 1825. Fix was rename outer to `targetTint` / `targetBorder`. Lesson: **for any DSL receiver that has settable properties, pick prop-distinct names for outer captures** so the shadowing direction is the safe direction.
+
+Subtle Kotlin compile error during the first pass: `subText: ((Int) -> Pair<String, Color>?)?` was a plain Kotlin lambda but the call site invoked `getGpaColor(sgpa)` which is `@Composable`. Fixed by annotating the parameter type as `subText: (@Composable (Int) -> Pair<String, Color>?)? = null`. Once a callback type is `@Composable`, every invocation of it inside a `@Composable` is composable-context-valid.
+
+The original `ScrollableTabRow` was also weirdly stateful around the "All" / "Electives" duality in `SyllabusScreen` — both options resolved to `selectedSemester == 0` in the source-of-truth state, so the original code couldn't visually distinguish them and always showed "All" highlighted even when the user clicked "Electives". I preserved that legacy behaviour rather than fix it in this pass — lifted the indexer logic into `AnimatedSlideInTabs`'s `selectedIndex` parameter mapped via `if (uiState.selectedSemester == 0) 0 else (uiState.semesters.indexOf(uiState.selectedSemester) + 1).coerceAtLeast(0)`. Documented as an existing semantics quirk to revisit.
+
+### 3. Weather modes: Sunny / Cloudy / Rain / Thunderstorm with persistent toggle
+
+User asked for a configurable visual mode behind every glass tile. Five states (Off + four weather conditions). All effects must be **inside the cardState liquefiable** so glass cards refract them; bottom bar (which uses `barState` and captures the entire stack including cards) refracts everything as before.
+
+#### Architecture
+
+New file `app/src/main/java/com/justpass/app/ui/components/WeatherBackground.kt`. Top-level enum + a single `@Composable WeatherBackground(mode, modifier)` entry that dispatches to per-mode private composables. The composable is mounted exactly once inside `LiquidGlassScaffold`, sandwiched between the gradient `background(...)` brush and the content `BoxScope` lambda. Bottom bar still receives `barState` from outside that subtree — unchanged.
+
+Persistence: new key on `SecurePreferences`:
+
+```kotlin
+var weatherMode: String
+    get() = regularPrefs.getString(KEY_WEATHER_MODE, "OFF") ?: "OFF"
+    set(value) = regularPrefs.edit().putString(KEY_WEATHER_MODE, value).apply()
+```
+
+(stored in regular SharedPrefs, not encrypted — non-sensitive). Read on `MainActivity` composition, kept in a `var weatherMode by mutableStateOf(...)`, threaded into `LiquidGlassScaffold(weatherMode = weatherMode, ...)`, and a setter is passed into `ProfileScreen` for the cycle-button toggle.
+
+`WeatherMode` enum has a `next()` method that returns the cyclic successor — Profile screen tap simply calls `onWeatherModeChange(weatherMode.next())`.
+
+#### Effect implementations (initial pass)
+
+- **Sunny**: `rememberInfiniteTransition` driving a slow `rayAngle` (38 s loop) + `pulse` (4.2 s reverse-repeating). One radial gradient sun + 14 rotating thin-stroke rays at low alpha. Top-right anchor (0.82w, 0.18h).
+- **Cloudy**: 7 multi-circle "puff" clusters (5 overlapping circles each) drifting horizontally over 22 s. Tinted by theme: light-mode `Color.White.copy(alpha = 0.55f)`, dark-mode `Color(0xFFB7C0CE).copy(alpha = 0.10f)`, "dark cloud" override (used by rain) `Color(0xFF1A2230).copy(alpha = 0.62f)`.
+- **Rain**: dark cloud layer + 22% black overlay + 90 blue streaks + 1.0 s splash ripple rings spawned at random positions.
+- **Thunderstorm**: same as rain at higher density (140 streaks, 32% darken) + double-flash (50 → 10 → 85 → 20% screen-tint) every 4–11 s + a procedural Path bolt with 8–12 segments and 1–2 forks.
+
+User reviewed against a Lucknow weather screenshot (Mi Weather) and flagged two gaps:
+
+1. **Splashes weren't tiny enough** and they weren't anchored to the *edge* of glass cards — they were big rings drawn at random positions across the whole screen. The reference shows a few specks of water hitting the *upper rim* of the "Moderate" card and bouncing in a tight cluster.
+2. **Clouds were too puffy / cumulus-shaped**. The reference shows soft horizontal mist bands layered behind the foreground.
+
+#### Rewrite: edge-line splatters + horizontal mist bands
+
+Splash system rewrite:
+
+- Replaced the single `Splash(x, y, startTime, maxRadius)` with `Speck(xPx, yPx, vx, vy, radius, startTime, lifetime)` — each impact spawns a *cluster* of 6–13 specks (0.8–2.2 px white circles) that scatter via velocity + tiny gravity and fade over 0.4–0.9 s.
+- Impact Y-positions are sampled from a fixed array `floatArrayOf(0.18f, 0.30f, 0.42f, 0.55f, 0.68f, 0.82f, 0.92f)` — these line up roughly with the canonical card top-edge fractions across the app's screens. Rounded to ±0.012 fraction noise per impact so it doesn't look mechanical. Net: the screen has a few tight horizontal streaks of speckles every second instead of giant ring bursts.
+- Spawn rate: 1–4 impacts per ~60-100 ms tick depending on `intense` flag. Specks self-cull when `time - startTime > lifetime`.
+
+Cloud system rewrite:
+
+- New `BandSeed(yFraction, heightFraction, widthScale, phase, speedFactor, alphaScale)` data class.
+- 9 (dark mode) / 7 (light mode) bands, each rendered as a single `drawRect` with a `Brush.radialGradient` whose horizontal radius is much larger than vertical (~`bandW * 0.55f` × `bandH * 0.6f`). Soft falloff: full-alpha center → mid-alpha → transparent. Drift cycle 28 s.
+- The bands overlap and blend additively (default Compose alpha blending). At 9 bands the result reads as continuous fog, not discrete clouds. Speed factors and phases vary per band so the layers don't move in lockstep.
+
+Pattern: **for "stretched mist" cloud aesthetics, abandon multi-circle puffs entirely**. A single `drawRect(brush = radialGradient(center, radius = bandW * ratio))` with `width:height` aspect ~ 4:1 reads as a soft mist layer. Layer 7–9 of these at varied y/phase/speed, you get fog. The geometry is "rect with circular brush" because Compose's radial gradient is symmetric — using a stretched rect to mask the gradient gives the elliptical falloff you want without the brush itself supporting an ellipse.
+
+### 4. Glass droplets layer (rocksdanister-inspired) on top of cards
+
+User pointed at https://github.com/rocksdanister/weather and said "I want the exact same effect on my app". That repo is a Windows wallpaper using HLSL/D3D12 shader pipelines for realistic drop-on-glass refraction. We're on Android Compose, no portable HLSL path, and `RuntimeShader` (AGSL) is API 33+. So I implemented a Canvas-based approximation that captures the *behaviour* (drops form, slide, leave trails) without trying to do real refraction.
+
+New section in `WeatherBackground.kt`:
+
+```kotlin
+@Composable
+fun GlassRainDroplets(modifier, intense: Boolean) { ... }
+```
+
+drawn **on top of** the content lambda's cards (drops sit on the glass surface). Mounted from `LiquidGlassScaffold`'s content `BoxScope` immediately after `content(cardState)`, gated on `weatherMode == RAIN || THUNDERSTORM`.
+
+Two species:
+
+- **Static beads**: 55–80 small (1.2–3.4 px) random-position drops with 4–10 s lifetime. Easing: 15% fade-in at start, linear fade-out for the remaining 85%.
+- **Sliding drops**: 5–14 active. Spawn at top with random x. Each frame: `velocity += acceleration * dt; yFrac += velocity * dt / 2400f` (the 2400 is a rough px-height divisor; calibrated visually rather than tied to actual screen height because Android density variance means we want consistent visible motion across phones). Acceleration 60–140 px/s² randomised per drop. When `yFrac > 1.05f` retire.
+- **Trails per sliding drop**: every 40–80 ms (`trailEveryS` per drop) emit a `TrailBead(xFrac, yFrac, radius, bornAt, ttl)`. Trail beads are smaller (35–65% of parent radius), live 2.5–4.5 s, fade out. They form a vertical dotted streak the parent leaves behind, simulating the wet path.
+
+Per-drop rendering is a 3-pass composite to fake refraction:
+
+```kotlin
+private fun drawDrop(cx, cy, radius, alpha, highlight, edge, core) {
+  drawCircle(core, radius)                              // semi-transparent body
+  drawCircle(edge, radius, style = Stroke(radius*0.28)) // dark lower-right edge ring
+  drawCircle(highlight, radius*0.35,                    // bright top-left specular
+             center = Offset(cx - radius*0.30, cy - radius*0.32))
+}
+```
+
+Cost: `(beadsCount + activeCount + sumTrails) × 3 drawCircle ops/frame`. Worst case at intense: 80 + 14 + 14×~30 ≈ 514 circles × 3 = ~1540 simple draws per frame. On a Moto G54 at 1080p this stayed at 60 FPS with no jank during gallery testing.
+
+Lesson: **`drawCircle(core) → drawCircle(edge, Stroke) → drawCircle(highlight)` reads as a glass lens to the human eye 90% of the time**. The "lens" illusion comes from contrast between the dark lower-edge ring and the bright top-left highlight — the brain fills in refraction. You don't need an actual shader for small drops on a complex background.
+
+Caveat documented for future: real per-drop refraction (sampling the underlying gradient + cards through a normal-mapped lens) needs `RuntimeShader` (API 33+). If we want it on capable devices later, that's an AGSL fragment shader with `Shader.runtime` + a `ColorBlendState` pass; everything else in the composable can stay.
+
+### 5. ColorOS Weather APK reverse-engineering
+
+User: "yes look i want you to reverse engineer it first and extract their technique, then we will think of our own method". Targeting `com.coloros.weather2 16.27.2`.
+
+#### Tooling install
+
+- `apktool 2.11.0` JAR (24 MB) → `~/bin/re/apktool.jar`. Decoder for Android resources + smali.
+- `jadx 1.5.4` → `~/bin/re/bin/jadx`. DEX decompiler.
+- Java already on path via Android Studio's bundled JBR (`JAVA_HOME='/c/Program Files/Android/Android Studio/jbr'`) so apktool works without an extra JRE install.
+
+#### APK acquisition
+
+APKMirror requires real-browser flow (cookies, JS-set tokens, redirects). Drove the entire flow through Claude-in-Chrome:
+
+1. `navigate(/apk/coloros/oppo-weather/coloros-weather-16-27-2-release/)`
+2. Click "Scroll to available downloads" → pick the APK row (not Bundle — single file is decoder-friendlier) for Feb 6, 2026 release
+3. Variant page → click `Download APK` (38.99 MB) → "Your download is starting..." text → file lands in `~/Downloads/com.coloros.weather2_16.27.2-16027002_minAPI28(arm64-v8a)(nodpi)_apkmirror.com.apk`. 40 MB on disk after decompression.
+
+#### Decode
+
+```bash
+java -jar ~/bin/re/apktool.jar d -f -o decoded weather.apk
+```
+
+Top-level structure of `decoded/`:
+- `assets/` — Lottie + textures + a custom asset bundle
+- `lib/arm64-v8a/` — 8 native `.so` files including `libnaiveEngine.so` (OPPO's in-house Cocos-derived 3D engine)
+- `res/raw/` — Lottie-format JSON for UI loading + animation states
+- `smali/`, `smali_classes2/`, `smali_classes3/` — decoded DEX
+
+Key file: `assets/weather.coz2` — 8.1 MB Zip archive (custom container format, `file` reports `Zip archive data, at least v1.0 to extract, compression method=store`). `unzip` opens it directly.
+
+#### `weather.coz2` internals
+
+```
+coz2/
+├── MainScene + MainScene.anim       (root Naive scene + animator timeline)
+├── prefab/   ~50 prefab combos      (e.g. 21_2_thunder-noon, 6_2_L-rain-noon, 10_2_L-snow-noon)
+│             one per (weather × time × intensity)
+├── shader/   32 GLSL ES 3.0/3.2 source files (HASH-named, plain text, NOT compiled binary)
+├── particle/ 50 particle systems × 2 compute-shader sources (effect0.cs, effect1.cs)
+├── material/ ~600 material JSONs    (link a vertex+fragment shader pair to a property set)
+├── sharedTexture/ ASTC compressed atlases
+├── script/   game-logic .ts/.cs    (engine-script bytecode/source mix)
+└── prop.json (master DataSheet, found empty in the 16.27.2 build)
+```
+
+Sanity: shader files are PLAIN GLSL with `// @Texture(MainTex)=[1,1,0,0]`-style annotations in comments. Naive's editor parses these annotations to build the inspector UI. Means I could read every shader source in the archive in plain `cat`.
+
+#### Thunder shader reverse-engineered
+
+`prefab/21_2_thunder-noon.anim` JSON:
+
+```json
+{"animators":[{"id":2130861884,"name":"thunder_4/thunder_animator",
+  "currentTime":0.8851,
+  "animLines":[
+    {"key":"ThunderStom.u_lightStrength","name":"u_lightStrength","type":"float", ...},
+    {"key":"ThunderStom.u_flashStrength","name":"u_flashStrength","type":"float",
+     "animKeys":{"value":[
+       {"time":0,"value":0,"bezier":[0.33,0,0.67,1],"ipol":"bezier"},
+       {"time":0.07,"value":0.3,...},
+       ...
+     ]}}
+  ]}]}
+```
+
+So the thunder *system* is one material with two animated `float` uniforms keyframed via Bezier interpolation. Internal name is `ThunderStom` (typo). Found the material by `grep "ThunderStom" coz2/material/*` → `material/2bed1a89-...`. JSON points at:
+
+- VS shader `9e8d87a7410c1cddcf158e9873eecfaf`
+- FS shader `56de31756e4cebb2f31789a6643c2813`
+- Blend: `SRC_ALPHA, ONE` (additive)
+- Uniforms: `u_lightStrength`, `u_flashStrength`, `u_alpha`, `u_DissolveValue`, `u_time`, plus `u_lightResolution`, `u_flashResolution` `vec2`s
+- Textures: `u_texLight0` (lightning bolt sprite — pre-painted), `u_texFlash` (radial flash gradient with R/G/B = 3 packed flash variants, picked via `u_flashIndex`)
+
+Read the actual fragment shader. The key technique:
+
+```glsl
+float lightStrength = smoothstep(0.0, 0.444445, u_lightStrength) -
+                      smoothstep(0.777778, 1.0, u_lightStrength);
+vec3 finalColor = blendAdd(lightColor.rgb * lightStrength * lightColor.a,
+                           vec3(flashAlpha), flashAlpha);
+```
+
+The triangular ramp `smoothstep(0, 0.444, t) - smoothstep(0.778, 1, t)` is the signature flicker shape: ramps from 0 → 1 over the first ~44% of the lifetime, then ramps from 1 → 0 over the last ~22%. Peak around `t = 0.6`. Same input curve drives bolt brightness; the flash uniform drives a separate radial flash. So the *whole* lightning system is:
+
+1. Two pre-painted ASTC textures (bolt + radial flash, both static).
+2. Two animated floats with Bezier keyframes feeding the strengths.
+3. A 60-line GLSL fragment shader.
+
+That's it. No procedural geometry, no jagged-line generators. The bolt shapes are *art assets*. Three flash variants (R/G/B channels of one texture, picked via `u_flashIndex`) give per-strike visual variety.
+
+#### Rain shader reverse-engineered
+
+`material/38c73277-... → particle_rain`:
+- VS `fed3c29f...`, FS `9dc6c25f...`
+- Blend: `SRC_ALPHA, ONE_MINUS_SRC_ALPHA` (standard alpha)
+- Drop sprite: 1080×2400 ASTC4x4 single texture `root/particle/rain-p.astc` with R + G channels = 2 different drop variants, picked per-particle via `step(0.5, vs_in.randseed)`
+
+Fragment shader:
+
+```glsl
+vec2 normalSpeed = normalize(vs_in.speed.xy);
+float angle = atan(normalSpeed.x, normalSpeed.y) + calcPromt();
+vec2 rainUV = rotateUV(angle, gl_PointCoord);
+FragColor.a *= mix(rainAlpha.r, rainAlpha.g, step(0.5, vs_in.randseed));
+```
+
+Each drop is a `GL_POINTS` particle. `gl_PointCoord` is rotated by the velocity vector's angle, so the drop's drawn elongation aligns with motion direction. This is a major visual upgrade over my axis-aligned streak rendering and explains why ColorOS rain reads as natural even on a tilted display.
+
+`particle/<uuid>/effect0.cs` is a `#version 320 es` **compute shader** (`layout(local_size_x = 256, local_size_y = 1)`) running particle physics on the GPU via two SSBOs (double-buffered). Uniforms include `activeParticeNumber [sic]`, `emitterPosition`, `emitterSize`, `direcMin/direcMax`, `speed/speedRandom`, `lifeTime/lifeRandom`, `closeSpeed`, `closeSize`, `depthRatio` (parallax foreground/background split). All scriptable per prefab.
+
+Particle system has two materials per scene: `particle_rain` (back layer) + `particle_rainfront` (front layer). Same shader pair, different uniform values for parallax depth. `depthRatio.xy` cuts the particle population into foreground (close) / background (far) buckets with separate speed/size scaling.
+
+#### Findings summary
+
+ColorOS uses:
+1. Pre-painted lightning bolt + radial flash sprites (NOT procedural).
+2. Bezier-keyframed float uniforms (`u_lightStrength`, `u_flashStrength`) feeding a triangular-ramp shader.
+3. Compute-shader particle physics on the GPU (SSBOs, 256-thread workgroups).
+4. Velocity-aligned point sprite rotation for raindrops.
+5. Two-layer parallax (back + front) with separate uniform tuning.
+
+What ColorOS does **not** do: glass-droplet refraction (rocksdanister-style). No drops-on-screen layer, no per-drop lensing. They paint rain in 3D space against a sky background. Confirmed by `grep -i "drop|glass|blur|distort|refract" material/*` → 0 hits.
+
+### 6. Testing toggle: ColorOS-style sprite-bolt + parallax tilted rain
+
+User: "ok can add a seperate toggle called testing and add this affect do c". Wanted both options C from the technique-mapping summary: sprite-bolt rewrite + velocity-aligned parallax rain. Behind a separate switch so the original Compose-drawn effects remain the default.
+
+#### Pref + state plumbing
+
+- `SecurePreferences.weatherTestingMode: Boolean` (regular SharedPrefs, default false), key `weather_testing`.
+- `LiquidGlassScaffold(weatherTesting = ..., ...)` parameter added next to `weatherMode`.
+- `WeatherBackground(mode, testing)` parameter added; passed through to per-mode dispatchers.
+- `RainOverlay(modifier, withLightning, testing)`. When `testing == true`: dispatch to `ParallaxRain` instead of `RainAndSplashes`, and to `SpriteLightningOverlay` instead of `LightningOverlay`.
+- `MainActivity` reads `securePrefs.weatherTestingMode` into a `mutableStateOf`, threads through to scaffold + ProfileScreen.
+- `ProfileScreen` gets a new `Switch`-bearing `ListItem` directly under the Weather Mode cycle row. Switch toggle calls `onWeatherTestingChange(!weatherTesting)` which writes both the in-memory state and `securePrefs.weatherTestingMode`.
+
+#### `ParallaxRain` — two-layer velocity-aligned rain
+
+`TiltedDrop(xSeed, phase, speedFactor, lengthFactor, sizeFactor, depth)`. `depth = 0f` (front, fast/big/bright) or `1f` (back, slow/small/dim). Counts: 60+80 (default) or 90+130 (intense / thunderstorm).
+
+`tiltRad = 0.20f` (~11.5° from vertical). `sinT, cosT` precomputed outside the per-frame loop. Each drop renders as a single line from `(baseX, baseY)` to `(baseX - sinT*len, baseY - cosT*len)` — the line direction vector matches the rain motion vector, so the streak is implicitly velocity-aligned. Front layer alpha 0.55, back layer 0.30; colours `Color(0xFFC4D8FF)` and `Color(0xFF8AA2C4)` respectively (blue-tinted but front is brighter for parallax pop).
+
+#### `SpriteLightningOverlay` — bezier-driven multi-stroke composite bolt
+
+Implements the ColorOS triangular ramp directly:
+
+```kotlin
+fun colorOSRamp(t: Float): Float {
+    val a = if (t <= 0f) 0f else if (t >= 0.444f) 1f
+        else { val u = (t / 0.444f); u * u * (3 - 2 * u) }
+    val b = if (t <= 0.778f) 0f else if (t >= 1f) 1f
+        else { val u = (t - 0.778f) / 0.222f; u * u * (3 - 2 * u) }
+    return (a - b).coerceIn(0f, 1f)
+}
+```
+
+`u * u * (3 - 2*u)` is the smoothstep polynomial. Subtracting two smoothsteps offset along `t` gives a triangular peak — same shape as the GLSL `smoothstep(0, 0.444, x) - smoothstep(0.778, 1, x)`.
+
+Driving loop spawns a bolt every 3–10 s: pick `xCenter ∈ [0.20, 0.80]`, `topY ∈ [-0.05, 0.05]`, `bottomY ∈ [0.55, 0.85]`, 9–12 segments, width 9–15 px. For 480 ms, `lightStrength = colorOSRamp(t)` and `flashStrength = colorOSRamp(t) * (0.55 + 0.45 * |sin(t * 12π)|)` — flash modulated by an absolute-sine for the double-peak flicker.
+
+Bolt rendered as a 4-stroke composite: halo (3.5× width, alpha 0.35), glow (2× width, alpha 0.55), edge (1× width, alpha 0.80), core (0.35× width, full alpha). All sharing one path. Plus 1–2 fork branches (smaller strokes on a child path with a randomised endpoint).
+
+Flash rendered as a separate radial gradient `Brush.radialGradient(colors = listOf(<bright> at flashStrength*0.85, <mid> at flashStrength*0.40, transparent), center = bolt.flashCenter, radius = minDimension*0.95)`. Single full-screen `drawCircle(brush=...)`. Mimics the `u_texFlash` radial sprite but procedural — not a sampled texture (we don't ship the OPPO art asset; that would be IP infringement).
+
+Pattern: **for stylised effects whose timing curve is the design**, the curve is the IP-free part. Reproducing the triangular ramp and bezier keyframe shape from a closed-source app is a clean-room job — it's a 3-line math function. Reproducing the bolt sprite would not be (those are someone else's textures). So the implementation paraphrases the *technique* (ramp, additive blend, two strength uniforms, full-screen flash radial) using our own pixel-level rendering.
+
+#### Render order
+
+```
+LiquidGlassScaffold:
+  Box (root, .liquefiable(barState))
+    Box (.liquefiable(cardState))
+      gradient.background(...)
+      WeatherBackground(weatherMode, testing)   ← all weather effects here
+      ↑ both glass layers refract this stack
+    content(cardState)
+    GlassRainDroplets if RAIN/THUNDERSTORM       ← drops sit ON glass
+  bottomBar(barState)                            ← refracts everything below
+```
+
+### 7. Misc
+
+- ColorOS APK extraction artifacts left at `C:\Users\tmswa\re\coloros\` (~50 MB). User can rm anytime — not in repo, not in any build path.
+- Tools cached at `C:\Users\tmswa\bin\re\` (apktool jar + jadx unzipped). Will reuse for future RE work.
+- Frame extraction directory used by ffmpeg passes: `/tmp/animframes/`, `/tmp/waterframes/`, `/tmp/thunderframes/` etc — under Git Bash these resolve to `C:\Users\tmswa\AppData\Local\Temp\<dir>\`. Read tool can open the Windows path directly.
+
+### Patterns established this session
+
+- **Privacy policy on a non-auth-gated CDN-cached endpoint is a one-line fix to "URL doesn't lead to policy" rejections.** The URL field in Play Console doesn't care which app or domain owns the page — only that it 200s with HTML. A single Cloudflare Worker route with inlined HTML and `Cache-Control: public, max-age=3600` is the lowest-friction host.
+- **For HTML rendered under unknown forced-dark conditions, use `currentColor` / `rgba(neutral)` for everything that has both fg and bg colours.** Don't gate text or chip-bg colours on `prefers-color-scheme` — the media query's reliability under forced-dark is browser-dependent.
+- **Driving Play Console flows headlessly via Claude-in-Chrome works** but requires expanding sidebar groups before deep-link URLs to nested settings will resolve, and `find` refs invalidate on every navigate.
+- **Replacing `ScrollableTabRow` with a custom horizontal-scroll Row of `Modifier.liquid(state) {...}` pills gives you full control over animation, sizing, and glass tint** at the cost of losing Material's tab indicator. For pill-style tabs that need to match a glass aesthetic, the rewrite is short (one composable + `TextMeasurer`-based equal-width sizing).
+- **For staggered "drift in from the right" entrance animations, combine `translationX` (long, low-stiffness spring), `scale` (no-bounce spring), `alpha` (tween), and `Modifier.blur` (tween) on different specs.** A spring on every property reads as wobbly; a tween on every property reads as mechanical. Mixing one spring with two tweens reads as natural.
+- **Compose `liquid {}` DSL receivers expose properties (`tint`, `frost`, etc.) as settable.** Don't shadow them with outer `val`s of the same name in the enclosing scope — Kotlin will let you name-collide and the assignment compiles against the outer val, then fails with "val cannot be reassigned" inside the lambda. Prefix outer captures with `target` / `current` / `final`.
+- **For "stretched mist" cloud aesthetics, use one rectangular drawRect with a radial-gradient brush at extreme aspect ratio**, layered ~7-9 times at varying y and phase. Multi-circle puffs read as cumulus; this reads as fog.
+- **Splash-on-edge effects need fixed Y-fraction anchors that mimic typical card top edges**. Random-y placement looks wrong because rain in a real video bounces off horizontal surfaces, not random screen locations. A 7-element fixed array of canonical card-top fractions covers most layouts.
+- **3-pass `drawCircle` (core fill, dark edge stroke, bright top-left highlight) reads as a glass lens** without needing a real refraction shader. Works for any drop size up to ~30px on a complex background. Larger drops need real lensing.
+- **Reverse-engineering a closed-source weather app for technique extraction (not asset extraction) is a clean-room exercise**. Apktool decode + grep `material/*` for material names + read the GLSL shader sources + read the animator JSON keyframes — the design is in the curves, the uniforms, and the blend modes, not in the textures. Reproduce the curve in your own code, draw your own pixels, ship that.
+- **Velocity-aligned point sprites are the missing piece in most procedural rain renderings.** ColorOS rotates `gl_PointCoord` by `atan(speed.x, speed.y)` so each drop's UV aligns with motion direction. Compose port: rotate the drawn line vector by the wind-tilt angle. Same effect, no fragment shader needed.
+
+---
