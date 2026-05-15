@@ -7317,3 +7317,292 @@ LiquidGlassScaffold:
 - **Velocity-aligned point sprites are the missing piece in most procedural rain renderings.** ColorOS rotates `gl_PointCoord` by `atan(speed.x, speed.y)` so each drop's UV aligns with motion direction. Compose port: rotate the drawn line vector by the wind-tilt angle. Same effect, no fragment shader needed.
 
 ---
+
+## Session: 2026-05-15/16 — Play Store launch, old-user migration release, weather rewrite to 16 scenes (HANDOFF), iterative polish
+
+Two big arcs in this session: (1) v3.0.3 (versionCode 12) cleared review and went live on the Play Store, then I had to push a GitHub-based migration notification to the friends still running the old sideloaded v2.0.1 APK; (2) the weather background system I built last session was thrown out and rewritten from scratch against a drop-in spec the user supplied as `~/Downloads/HANDOFF.md` — 16 scenes, tile-anchored splashes via `CompositionLocal`, vector lightning, moon phases, etc.
+
+### 1. Play Store launch
+
+Confirmed live at `https://play.google.com/store/apps/details?id=com.justpass.app`. The four-staged changes submitted 2026-05-10 (privacy URL fix + Production 12 (3.0.3) full rollout + 176 countries + rest of world) all cleared together. User drafted WhatsApp announcements; I provided two variants (short + detailed feature list) with the Play Store URL inline so WhatsApp auto-generates a rich preview card.
+
+#### Phone install conflict — ADB cleanup
+
+User reported "incompatible version" when trying to install from Play Store on their phone. `adb shell pm list packages` showed only `com.justpass.games` (a separate app). But `pm list packages -u` (which includes uninstalled-but-tracked records) revealed `com.justpass.app` as an orphan record — left over from the Closed Testing track APK that was previously installed and later uninstalled. The orphan's signing certificate didn't match the Production AAB → Play Store install blocked.
+
+Cleared with `adb uninstall com.justpass.app` (returned `Success` despite the orphan state). Confirmed gone with `pm list packages -u | grep justpass` → only `com.justpass.games` remained.
+
+Pattern: **Closed Testing → Production transitions leave orphan package records on devices that were testers.** Symptom is "incompatible version" on Play Store install even when the app appears uninstalled. Fix: `adb uninstall <pkg>` clears the orphan; `pm list packages -u` confirms.
+
+### 2. GitHub release for old sideloaded users
+
+The friends who installed v2.0.1 (package `com.example.attendancewidgetlaudea`, released 2026-03-20) had no in-app path to discover that the Play Store version was now live. Their v2.0.1 has an `UpdateChecker` that polls `api.github.com/repos/Tarunswamy-Muralidharan/-AttendanceWidgetLaudea/releases/latest` every 6h on a `WorkManager` schedule.
+
+#### Plumbing rediscovered
+
+Reading `UpdateChecker.kt`:
+- Returns `UpdateInfo?` only if (a) latest release tag is numerically newer than current installed version AND (b) at least one asset on that release ends with `.apk`.
+- `UpdateInfo.downloadUrl` = the GitHub asset's `browser_download_url`.
+- `MainActivity` shows the release body verbatim in an `AlertDialog`; the Download button calls `Intent.ACTION_VIEW` on `downloadUrl`.
+
+So old users can ONLY be reached if a GitHub release tag > 2.0.1 exists with an `.apk` asset attached. The asset filename matters (`.endsWith(".apk")` check) but the file content doesn't — clicking Download just opens the URL.
+
+#### Repo was PRIVATE — UpdateChecker was broken
+
+Memory note from 2026-04-25 audit: both repos PRIVATE since then. `curl -s https://api.github.com/repos/Tarunswamy-Muralidharan/-AttendanceWidgetLaudea/releases/latest` returned `{ "message": "Not Found", "status": "404" }` (unauthenticated public call against private repo = 404). Old users hadn't been getting update notifications since April 25.
+
+To re-enable: `gh repo edit Tarunswamy-Muralidharan/-AttendanceWidgetLaudea --visibility public --accept-visibility-change-consequences`. Verified `curl` now returns 200 + JSON. Repo public again — user can flip back to private later. Audit memo from April said the repo was clean except for a Calendar API key that belongs to the college's GCP project, not the user's, so visible exposure risk was acceptable.
+
+#### Release notes designed for migration, not download
+
+The whole point of this release is to NOT make people install a new APK — they should go to the Play Store instead. But UpdateChecker REQUIRES an APK asset to fire at all. Solution:
+
+- Used the old v2.0.1 APK (at `C:\Users\tmswa\Desktop\AttendanceWidget-v2.0.1.apk`) as the placeholder asset. If a user does tap Download by accident, they reinstall the same version they already have — harmless.
+- Release body leads with `🚀 JustPass IS ON PLAY STORE!` + Play Store URL on its own line + `⚠️ DO NOT tap "Download" below`.
+- First-line of release body is what `AttendanceRefreshWorker` shows in the foreground notification, so the Play Store mention is the first thing the user sees before opening the app.
+
+`gh release create v3.0.3 ~/Desktop/AttendanceWidget-v2.0.1.apk --title "v3.0.3 — JustPass is now on Play Store!" --notes-file /tmp/release_notes.md` shipped it. URL: `https://github.com/Tarunswamy-Muralidharan/-AttendanceWidgetLaudea/releases/tag/v3.0.3`.
+
+Pattern: **for a closed-source app you can't push code updates to, the `UpdateChecker → GitHub releases → ACTION_VIEW(downloadUrl)` chain is your only out-of-band push channel.** Force the release notes to be informative, put the redirect URL in the first line, accept that the actual APK asset is just a tripwire to satisfy the schema check.
+
+### 3. Weather rewrite per `HANDOFF.md` — full demolition
+
+User dropped `C:\Users\tmswa\Downloads\HANDOFF.md` and said "stip that completely from the latest debug we were working on and accourding to this md, redesign the whole app". The previous session's weather system (5 modes + Testing toggle + ColorOS-derived sprite-bolt + GlassRainDroplets) — ~990 lines of `WeatherBackground.kt` — was deleted wholesale.
+
+#### Strip phase
+
+- `rm app/src/main/java/com/justpass/app/ui/components/WeatherBackground.kt`
+- Removed `weatherMode` / `weatherTestingMode` keys from `SecurePreferences`, replaced with `weatherScene` (String, default `"OFF"`).
+- Removed `weatherMode` + `weatherTesting` params from `LiquidGlassScaffold`. Replaced with `weatherScene: WeatherScene = WeatherScene.OFF`.
+- Removed two cycle-button rows from `ProfileScreen` (Weather Mode + Weather Testing). Replaced with a single "Weather Scene" row that opens a `LazyColumn` of 17 radio-button rows.
+- Updated `MainActivity` state.
+
+#### Build phase — 16 scenes per HANDOFF
+
+New `WeatherBackground.kt` (~1100 lines). Top-level structure:
+
+```
+WeatherScene enum { OFF, CLEAR_DAY, CLEAR_NIGHT, PARTLY_DAY, PARTLY_NIGHT, CLOUDY,
+                    OVERCAST, SUNSET, SUNRISE, RAIN, HEAVY_RAIN, THUNDERSTORM,
+                    SNOW, FOG, HAZE, WINDY, AURORA }
+WeatherBackgroundLayer(scene, drawSplashes, moonPhase) — mounted twice by scaffold
+  drawSplashes=false → SkyGradient + scene effects + readability scrim, BEHIND cards
+  drawSplashes=true  → splash particles, ON TOP of cards
+SceneRenderer(scene, moonPhase) — when() dispatch table mapping each scene to layers
+Primitives: SkyGradient, CornerGlow, HorizonGlow, MoonDisc(phase), SunRays,
+            Cloudscape (4 enum tints × density), RainCanvas (with fallSpeedMul),
+            SnowCanvas, Stars (with twinkle envelope), LightningCanvas,
+            FogBands, HazyClouds, WindyStreaks, AuroraBands, MistyBottomSpray
+```
+
+Scene → layers dispatch table directly mirrors HANDOFF's "Per-scene configuration" section.
+
+#### Splash zones via `CompositionLocal`
+
+HANDOFF section 3 specifies that rain drops should `splatter on the top edge of glass tiles`. Wiring:
+
+```kotlin
+val LocalSplashZones = compositionLocalOf<SnapshotStateList<Rect>?> { null }
+
+fun Modifier.registerAsSplashTarget(): Modifier = composed {
+    val zones = LocalSplashZones.current
+    if (zones == null) this
+    else onGloballyPositioned { coords ->
+        val r = coords.boundsInRoot()
+        val existingIdx = zones.indexOfFirst { /* within 1px duplicate check */ }
+        if (existingIdx == -1) zones.add(r) else zones[existingIdx] = r
+    }
+}
+```
+
+`LiquidGlassScaffold` provides the list via `CompositionLocalProvider(LocalSplashZones provides splashZones)`. `RainCanvas` reads `LocalSplashZones.current`, converts each `Rect.top / sceneHeight` to a Y fraction, watches drops with `depth > 0.55` cross it within `[Rect.left/w, Rect.right/w]`, spawns a splash burst at the impact point.
+
+#### Obstacle 1 — auto-register everywhere was wrong
+
+Initially I applied `.registerAsSplashTarget()` inside `LiquidGlassCard` and `GlassListCard` so every glass tile in the app would contribute zones automatically. Result: rain splashed on the welcome header, the date pill, every list row, everywhere. User: "rain hitting i want it to be one top of of the attendance box, not on the welcome box".
+
+Fix: removed registration from both `LiquidGlassCard` and `GlassListCard`. Made it opt-in. Then added `.registerAsSplashTarget()` explicitly to ONLY the attendance `LiquidGlassCard` in `DashboardScreen.kt`. Pattern: **don't auto-wire `CompositionLocal` registrations from generic components — caller decides which instances participate.**
+
+#### Obstacle 2 — daytime scenes washed out tile text
+
+The clear-day / partly-day / sunrise / haze gradients use very bright bottom colors (`#b9d8f5`, `#a8cbed`, `#fce5b8`, `#d4ba94`). With low-alpha light-mode tile tints, the white text was invisible against the bright sky.
+
+Fix: added a per-scene black vertical-gradient scrim drawn AFTER `SceneRenderer`, scaled per scene:
+
+| Scenes | Scrim alpha cap |
+|---|---|
+| CLEAR_DAY, PARTLY_DAY, SUNRISE, HAZE | 0.28 |
+| CLOUDY, SUNSET, WINDY, SNOW | 0.22 |
+| OVERCAST, FOG | 0.18 |
+| RAIN, HEAVY_RAIN, THUNDERSTORM, CLEAR_NIGHT, PARTLY_NIGHT, AURORA | 0.08 |
+| OFF | 0 |
+
+Gradient stops `Transparent → 0.35α → 1.0α → 0.95α` from top to bottom. Top 25% of the screen is untouched so the sky stays luminous; cards (which always sit in the lower 75%) get the readability gain. Pattern: **scene brightness scrims are per-scene; one universal scrim either kills the sky or doesn't fix the readability problem.**
+
+#### Obstacle 3 — `Size.center` doesn't exist on DrawScope
+
+First SunRays draft used `size.center.x` — compile error `Unresolved reference 'center'`. `Size` has `.width` + `.height`; the center accessor `DrawScope.center` is on `DrawScope` itself, but only one of those forms returns an `Offset`. Replaced with explicit `size.width / 2f` and `size.height / 2f`. Trivial but cost a build cycle to discover.
+
+#### Obstacle 4 — Kotlin `val` shadowing the liquid DSL receiver
+
+The `liquid {}` DSL receiver has settable properties (`tint`, `frost`, `refraction`, etc.). I had an outer `val tint = ...` and inside the lambda wrote `tint = animatedTint`. Kotlin resolved the assignment against the OUTER `val` (which is read-only) → `e: 'val' cannot be reassigned.` at the lambda line. Renamed outer captures to `targetTint` / `targetBorder`. Pattern: **never name local captures the same as settable properties of any DSL receiver in scope.**
+
+#### Obstacle 5 — sun rays drew as 50 distinct lines
+
+First SunRays implementation walked perpendicular offsets and drew thin `drawLine` strokes for each ray. ~50 lines covering the screen. User: "bro why are they so many lines in sun rays". Rewrote as a single repeating-linear-gradient brush with 3-stop bell per 260px period and `tileMode = TileMode.Repeated`, plus a `BlendMode.DstOut` radial vignette so beams fade at edges. One `drawRect` call instead of 100 lines, soft volumetric look matching HANDOFF section 2.
+
+```kotlin
+drawRect(
+    brush = Brush.linearGradient(
+        colorStops = arrayOf(
+            0.00f to Transparent,
+            0.31f to Transparent,
+            0.385f to rayColor.copy(alpha = a05),
+            0.442f to rayColor.copy(alpha = a08),
+            0.500f to rayColor.copy(alpha = a05),
+            0.60f to Transparent,
+            1.00f to Transparent,
+        ),
+        start = startOffset,
+        end = endOffset,             // start..end = ONE period along perpendicular
+        tileMode = TileMode.Repeated, // repeats the bell across the entire rect
+    ),
+    blendMode = BlendMode.Screen,
+)
+```
+
+Pattern: **for repeating parallel-stripe effects (godrays, hatching, shadows), use `Brush.linearGradient(tileMode = Repeated)` as a single brush filling the screen, not N `drawLine` calls.** Compose's shader-based gradient is dramatically cheaper AND looks softer because the falloff between rays uses anti-aliased gradient stops instead of stroke caps.
+
+#### Obstacle 6 — refraction through glass cards warped rain weirdly
+
+User: "the transparent box of the attendance card makes the rain feel so weird". With weather behind cards getting refracted by `liquid(cardState)` configured at `refraction = 0.25, curve = 0.5, dispersion = 0.06`, rain streaks visible through the attendance card bent into curved fluorescent threads. Looked like camera-lens distortion, not glass.
+
+Tuned `LiquidGlassCard` params: `refraction 0.25 → 0.14`, `curve 0.50 → 0.35`, `dispersion 0.06 → 0.025`, `frost 0.dp → 2.dp` (slight blur softens the warp). Refraction still visible — rain still bends through the card — but the chromatic aberration + extreme curvature are gone. Now reads as soft frosted glass instead of a fisheye lens.
+
+#### Obstacle 7 — thunderstorm rain too slow
+
+User: "can u make it rain faster for thunderstorms". `RainCanvas` had a single `speed = (440f + rng.nextFloat() * 380f) * depth` line — same for all scenes. Added `fallSpeedMul: Float = 1.0f` parameter:
+
+```
+RainCanvas(intensity = 1.2f, fallSpeedMul = 1.0f)   // RAIN
+RainCanvas(intensity = 2.6f, fallSpeedMul = 1.45f, dropColor = lighter)  // HEAVY_RAIN
+RainCanvas(intensity = 2.8f, fallSpeedMul = 1.9f, dropColor = brightest) // THUNDERSTORM
+```
+
+Drops in thunderstorm now fall almost 2× the speed of regular rain. Visual identity per HANDOFF expectations.
+
+#### Obstacle 8 — moon was a flat white circle, then a "completely white blob"
+
+First moon attempt was a flat `drawCircle(EAEEF8, r, center)` + radial glow halo. User: "make the moon really realistic, and it must look like the moon in each phase".
+
+Built `MoonPhase` enum (9 entries: `AUTO` + 8 phases) with a `resolveAuto()` companion that computes the current phase from `System.currentTimeMillis()` using:
+
+```
+synodicMs = 29.53058868 * 86_400_000.0
+knownNewMoonMs = 947_182_440_000L  // 2000-01-06 18:14 UTC
+age = ((nowMs - knownNewMoonMs) % synodicMs + synodicMs) % synodicMs
+frac = age / synodicMs  // 0..1, 0 = new, 0.5 = full
+```
+
+Then a `when` mapping `frac` to one of 8 phase enums with 3.03%-wide bands at the 4 cardinal phases and 18.94%-wide bands at the 4 between-phases.
+
+Second moon attempt: r = 0.072 of minDim, radial gradient body `#F5F0E2 → #D9D2BD → #A39B82`, 8 deterministic crater circles at 30% alpha, phase shadow drawn as offset dark circle clipped to moon path. User: "now it looks like its completely white, why cant u made it proper".
+
+(Side note: turned out "completely white" was actually a complaint about the FOG bands, not the moon — but I responded to it as a moon issue first and ended up rewriting the moon anyway, which improved it.)
+
+Third moon attempt:
+- r = 0.055 of minDim (significantly smaller — was overshadowing the sky)
+- Halo radius dropped 4.5× → 3×, alpha 0.22 → 0.10 (no more bright washout)
+- Body gradient with REAL contrast: `#E2D9C0 → #A89E80 → #5E5640` (warm off-white → mid → real dark brown rim)
+- Tighter gradient radius `r * 1.25` instead of `r * 1.6` so the sphere fall-off is visible
+- Craters now 2-layer (outer dark bowl at 0.55α + inner mid bowl offset for shading)
+- Shadow at 0.97α near-black, clipped to moon disc via `clipPath(moonOval) { drawCircle(shadow, r * 1.04, offsetCenter) }`
+- Limb darkening ring drawn LAST at `r * 0.06` stroke width, `#1A1610` at 0.50α — locks the silhouette in both lit and unlit halves
+
+Phase geometry: positive `offsetX` shifts the shadow disc LEFT of moon center → covers left half → lit on right (waxing). `offsetX = 0` gives full shadow (NEW). `offsetX = 1.0r` puts shadow's right edge exactly at moon center → half-lit (FIRST_QUARTER). `offsetX = 1.5r` leaves only a thin dark sliver on the left (WAXING_GIBBOUS). Negative for waning. Astronomically the terminator is an ellipse not a circle, but at this rendering scale (a ~30px disc in the corner of the screen) the circle approximation is indistinguishable.
+
+Profile gets a second picker row "Moon Phase — Clear Night scene" that opens a 9-option `LazyColumn` dialog. Pref `SecurePreferences.moonPhase` (String, default `"AUTO"`). When AUTO, the renderer calls `MoonPhase.resolveAuto()` per composition; otherwise it uses the stored override.
+
+Pattern: **for moon-phase rendering at a small scale, an offset-circle clip approximation is close enough to true astronomical geometry.** The terminator is an ellipse only when you can SEE the ellipse curve — below about 60px disc diameter, a circular clip looks identical and is far cheaper.
+
+#### Obstacle 9 — fog was "completely white bars"
+
+User: "for fog can do u see how its showing bars for some reason, like weird horizontal bars". First fog implementation was 5 horizontal radial gradient bands (`FogBandConfig(yFrac, widthMul, durSec)`). Each band was wider than the screen but only ~16% tall, so the gradient falloff above and below each band was visible AS THE BAND'S EDGES — and they read as 5 distinct horizontal stripes.
+
+First fix attempt: more bands (5 → 7), taller (`ry = h * 0.08 → h * 0.18`), softer 4-stop alpha (0.40/0.22/0.10/transparent). Added a final flat vertical-gradient veil to bind them together. STILL showed bars — the band-edge problem wasn't fixed, just smeared.
+
+Second fix (the keeper): demolished all banding entirely. Replaced with:
+
+```kotlin
+@Composable
+private fun FogBands() {
+    // 3 huge cross-screen drifting blobs, each 3× screen width, 1.8× screen height
+    val blobA by transition.animateFloat(... tween 90_000, Restart)
+    val blobB by transition.animateFloat(... tween 130_000, Reverse)
+    val blobC by transition.animateFloat(... tween 160_000, Restart)
+    Canvas(Modifier.fillMaxSize()) {
+        drawRect(Brush.verticalGradient(/* base 0.06 → 0.22 → 0.25 → 0.18 → 0.05 */))
+        // 3 huge density blobs that NEVER bring their gradient edges into the viewport
+        listOf(BlobDrift(blobA, 0.32, 0.35), BlobDrift(blobB, 0.56, 0.45), BlobDrift(blobC, 0.80, 0.40)).forEach { b ->
+            drawRect(brush = Brush.radialGradient(
+                colors = listOf(/* 0.22 → 0.10 → Transparent */),
+                center = Offset(-bw/2f + b.drift * (w + bw), b.yFrac * h),
+                radius = bw * 0.45f,
+            ), topLeft = ..., size = Size(3*w, 1.8*h))
+        }
+    }
+}
+```
+
+Key trick: each blob's `topLeft` is offset by `cx - bw / 2f` where `bw = 3*w`. So the blob's bounding rect ALWAYS extends past both screen edges. The radial gradient's falloff ring (the visible edge of the blob) is OUTSIDE the viewport at all times → no visible band edge possible. Only the smoothly-changing density in the middle of the blob is on-screen.
+
+Pattern: **for atmospheric effects (fog, mist, haze), use blob radii at least 3× the screen dimension so the gradient falloff is always offscreen. Compose's `drawRect(brush = radialGradient(...))` renders the brush across the entire rect — by sizing the rect way larger than the screen and centering it past the edges, you get uniform-feeling density variation with zero visible edges.**
+
+#### Obstacle 10 — water vibration after long sessions
+
+User: "ive noticed the water starts to vibrate a lot if we stay on the app for very long". The attendance-card water animation (`WaterPhysics.kt`) has an existing velocity sanitiser that catches NaN/Inf and caps at 3× `maxPerturbVelocity` — but only catches RUNAWAY energy.
+
+Diagnosis: over hours of use, repeated small unidirectional impulses (sensor noise on a phone resting on a table, scroll delta that doesn't perfectly cancel, idle ripple LFO floating-point drift) accumulate a small constant RIGID-BODY velocity across all nodes. The spring restoring force tries to restore positions relative to baseline, but it can't restore against a DC offset — every step the same bias gets added back. After hours, the surface develops a visible drift / vibration pattern that has nothing to do with the wave model.
+
+Fix: added a DC-offset bleed pass at the top of `step()`. Every 360 frames (~6s @ 60fps):
+
+```kotlin
+driftFrameCounter += 1
+if (driftFrameCounter >= 360) {
+    driftFrameCounter = 0
+    var sum = 0f
+    for (i in 0 until nodeCount) sum += velocities[i]
+    val mean = sum / nodeCount
+    if (kotlin.math.abs(mean) > 0.00005f) {
+        for (i in 0 until nodeCount) velocities[i] -= mean
+    }
+}
+```
+
+Mean removal preserves WAVE motion (relative differences between nodes) while zeroing rigid-body translation. Threshold avoids touching velocities every cycle when nothing's drifting. Saved as a memory pattern: **any physics solver that accepts unbounded external impulses and runs continuously for >1h on consumer hardware should periodically subtract the mean velocity from its velocity buffer.**
+
+### 4. Wiring summary
+
+- `SecurePreferences.weatherScene: String` (default `"OFF"`) — 17-option picker
+- `SecurePreferences.moonPhase: String` (default `"AUTO"`) — 9-option picker
+- `LiquidGlassScaffold(weatherScene, moonPhase)` — both threaded through, mounted twice (BEHIND cards via `drawSplashes=false`, ABOVE cards via `drawSplashes=true`)
+- `MainActivity` reads both prefs into `mutableStateOf`, threads to scaffold + ProfileScreen
+- `ProfileScreen` has two `ListItem` rows, each opens an `AlertDialog` with a `LazyColumn` of radio-button rows
+- `DashboardScreen` attaches `.registerAsSplashTarget()` to the attendance `LiquidGlassCard` only (welcome header NOT registered)
+
+### Patterns established this session
+
+- **`adb uninstall <pkg>` clears orphan Closed-Testing→Production records that block Play Store install** with "incompatible version" error. `pm list packages -u` confirms.
+- **For closed-source apps you can't push code to, the `UpdateChecker → GitHub releases → ACTION_VIEW(downloadUrl)` chain is the only out-of-band push channel.** Force notes to be the message, put redirect URLs in the first line, use a harmless APK file as the schema-required asset.
+- **`CompositionLocal` zone registries should NEVER auto-wire from generic components.** Don't put `.registerAsSplashTarget()` inside `LiquidGlassCard` — let the caller opt in per instance. Otherwise every screen leaks zones.
+- **Per-scene brightness scrims are not one-size-fits-all.** A single global darkening either kills the sky or doesn't fix readability. Map each scene to a scrim alpha, scrim TOP 25% transparent so the sky stays luminous.
+- **`Size` has no `center` accessor on `DrawScope`.** Use `size.width / 2f` and `size.height / 2f` explicitly.
+- **Never name local captures the same as settable properties of any DSL receiver in scope.** Kotlin will silently shadow the receiver and fail with `'val' cannot be reassigned` at the lambda's assignment line. Prefix with `target` / `current` / `final`.
+- **For repeating parallel-stripe effects (godrays, hatching), use `Brush.linearGradient(tileMode = TileMode.Repeated)` filling a screen rect, not N `drawLine` calls.** Single GPU shader pass, soft anti-aliased falloff between stripes, no `strokeWidth` quantisation.
+- **Tune card lens parameters DOWN when weather is on.** `refraction = 0.25` with rain behind looks like a fisheye lens; `0.14` with `frost = 2.dp` reads as soft glass.
+- **Moon phase at small scale (<60px disc) — circular-clip approximation is indistinguishable from the true elliptical terminator.** Spend complexity on rim darkening + 2-layer craters instead of correct ellipse math.
+- **For atmospheric effects (fog, mist, haze), size the blob rect 3× larger than the screen so the gradient falloff is always offscreen.** Visible band edges = bug. Offscreen falloff = uniform density variation.
+- **Physics solvers running >1h on consumer hardware need a periodic mean-velocity zero pass.** Spring + damping won't restore against DC offset. Subtract `sum(velocities) / nodeCount` from all nodes every ~6s. Cheap, invisible, kills long-session drift.
+- **Conway synodic-month formula gives accurate moon phase from `System.currentTimeMillis()`** seeded from a known new-moon epoch (2000-01-06 18:14 UTC, 947182440000 ms). Synodic period 29.53058868 days. Good enough for visual phase, no API call needed.
+
+---
