@@ -35,6 +35,7 @@ class WaterPhysics(
 ) {
     val positions: FloatArray = FloatArray(nodeCount)
     private val velocities: FloatArray = FloatArray(nodeCount)
+    private var driftFrameCounter = 0
     private val leftDelta: FloatArray = FloatArray(nodeCount)
     private val rightDelta: FloatArray = FloatArray(nodeCount)
 
@@ -133,6 +134,25 @@ class WaterPhysics(
                 velocities[i] = 0f
             } else if (v > vCap) velocities[i] = vCap
             else if (v < -vCap) velocities[i] = -vCap
+        }
+
+        // DC-offset bleed — every 6 seconds (~360 frames @60fps) compute the
+        // mean velocity across all nodes and subtract it. Floating-point drift
+        // + repeated unidirectional impulses (sensor noise on a phone resting
+        // on a table, scroll input that doesn't perfectly cancel) accumulate a
+        // small constant velocity bias the spring can't restore against. After
+        // a few hours that bias becomes visible vibration. Removing the mean
+        // preserves wave motion (relative differences between nodes) while
+        // zeroing the rigid-body drift component.
+        driftFrameCounter += 1
+        if (driftFrameCounter >= 360) {
+            driftFrameCounter = 0
+            var sum = 0f
+            for (i in 0 until nodeCount) sum += velocities[i]
+            val mean = sum / nodeCount
+            if (kotlin.math.abs(mean) > 0.00005f) {
+                for (i in 0 until nodeCount) velocities[i] -= mean
+            }
         }
 
         // Spring pass
