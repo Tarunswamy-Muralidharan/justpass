@@ -46,7 +46,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +69,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -87,7 +90,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import com.justpass.app.R
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -115,8 +117,8 @@ val GlassCardShapeSmall = RoundedCornerShape(14.dp)
 fun LiquidGlassScaffold(
     modifier: Modifier = Modifier,
     variant: BackgroundVariant = BackgroundVariant.Default,
-    weatherMode: WeatherMode = WeatherMode.OFF,
-    weatherTesting: Boolean = false,
+    weatherScene: WeatherScene = WeatherScene.OFF,
+    moonPhase: MoonPhase = MoonPhase.AUTO,
     bottomBar: @Composable BoxScope.(barState: LiquidState) -> Unit = {},
     content: @Composable BoxScope.(cardState: LiquidState) -> Unit
 ) {
@@ -126,47 +128,50 @@ fun LiquidGlassScaffold(
     val isDark = isSystemInDarkTheme()
     val gradientColors = getGradientColors(variant, isDark)
 
-    Box(modifier = modifier.fillMaxSize()) {
-        // barState liquefiable: captures gradient + cards + everything for the frosted bar
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .liquefiable(barState)
-        ) {
-            // cardState liquefiable: captures the gradient AND the weather effects
-            // for card refraction.
+    // Per-screen splash zone registry — LiquidGlassCard registers its top-edge
+    // bounds here via Modifier.registerAsSplashTarget. SplashCanvas reads these
+    // to spawn rain splatters only where there's actual glass to bounce off.
+    val splashZones = remember { mutableStateListOf<androidx.compose.ui.geometry.Rect>() }
+
+    CompositionLocalProvider(LocalSplashZones provides splashZones) {
+        Box(modifier = modifier.fillMaxSize()) {
+            // barState liquefiable: captures gradient + cards + everything for the frosted bar
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .liquefiable(cardState)
-                    .background(
-                        brush = Brush.linearGradient(
-                            colors = gradientColors,
-                            start = Offset(0f, 0f),
-                            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-                        )
-                    )
+                    .liquefiable(barState)
             ) {
-                // Weather effects sit on top of the gradient but inside both
-                // liquefiable layers so glass tiles refract them.
-                WeatherBackground(weatherMode, testing = weatherTesting)
+                // cardState liquefiable: captures the gradient AND the weather effects
+                // for card refraction.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .liquefiable(cardState)
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = gradientColors,
+                                start = Offset(0f, 0f),
+                                end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                            )
+                        )
+                ) {
+                    // Weather effects sit on top of the gradient but inside both
+                    // liquefiable layers so glass tiles refract them. Rain drops
+                    // fall *behind* cards from inside this Box; splash particles
+                    // are drawn separately on top of content().
+                    WeatherBackgroundLayer(weatherScene, drawSplashes = false, moonPhase = moonPhase)
+                }
+
+                // Screen content — cards use liquid(cardState), list items use lightweight
+                content(cardState)
+
+                // Splash particles draw on top of glass tiles (drops bouncing off rim).
+                WeatherBackgroundLayer(weatherScene, drawSplashes = true, moonPhase = moonPhase)
             }
 
-            // Screen content — cards use liquid(cardState), list items use lightweight
-            content(cardState)
-
-            // Glass raindrops sit ON TOP of cards (drops stick to glass surface).
-            // Only active in rain / thunderstorm.
-            if (weatherMode == WeatherMode.RAIN || weatherMode == WeatherMode.THUNDERSTORM) {
-                GlassRainDroplets(
-                    modifier = Modifier.fillMaxSize(),
-                    intense = weatherMode == WeatherMode.THUNDERSTORM,
-                )
-            }
+            // Floating glass bottom bar — uses liquid(barState) to blur everything
+            bottomBar(barState)
         }
-
-        // Floating glass bottom bar — uses liquid(barState) to blur everything
-        bottomBar(barState)
     }
 }
 
@@ -192,15 +197,15 @@ fun LiquidGlassCard(
     Column(
         modifier = modifier
             .liquid(cardState) {
-                frost = 0.dp             // No blur — see-through with distortion
-                refraction = 0.25f       // Strong light bending
-                curve = 0.5f             // Visible curvature/lensing
+                frost = 2.dp             // Tiny blur softens hard refraction
+                refraction = 0.14f       // Reduced — less warping of rain/effects
+                curve = 0.35f            // Gentler lens curvature
                 edge = 0.08f             // Bright edge reflections
                 this.shape = shape
                 tint = defaultTint
-                saturation = 1.5f        // Vivid refracted colors
-                contrast = 1.4f          // High contrast for clarity
-                dispersion = 0.06f       // Chromatic aberration at edges
+                saturation = 1.35f       // Slightly less vivid
+                contrast = 1.25f
+                dispersion = 0.025f      // Reduced chromatic aberration
             },
         content = content
     )
@@ -248,7 +253,9 @@ fun LiquidGlassBottomBar(
     tabs: List<TabItemData>,
     selectedIndex: Int,
     onTabSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onCenterTap: (() -> Unit)? = null,
+    centerSelected: Boolean = false
 ) {
     val isDark = isSystemInDarkTheme()
     val density = LocalDensity.current
@@ -420,13 +427,14 @@ fun LiquidGlassBottomBar(
             verticalAlignment = Alignment.Bottom
         ) {
             tabs.forEachIndexed { index, tab ->
-                val selected = index == selectedIndex
                 val isCenter = index == centerIndex
+                val selected = if (isCenter) centerSelected else (index == selectedIndex)
                 val selectedColor = MaterialTheme.colorScheme.primary
                 val unselectedColor = if (isDark) Color.White.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.5f)
                 val tint = if (selected) selectedColor else unselectedColor
 
                 val bounceScale = remember { Animatable(1f) }
+                var centerTapCount by remember { mutableStateOf(0) }
                 val coroutineScope = rememberCoroutineScope()
 
                 Box(
@@ -445,7 +453,12 @@ fun LiquidGlassBottomBar(
                                         spring(dampingRatio = 0.4f, stiffness = 400f)
                                     )
                                 }
-                                onTabSelected(index)
+                                if (isCenter && onCenterTap != null) {
+                                    centerTapCount++
+                                    onCenterTap()
+                                } else {
+                                    onTabSelected(index)
+                                }
                             }
                         ),
                     contentAlignment = Alignment.Center
@@ -475,11 +488,15 @@ fun LiquidGlassBottomBar(
                                 animationSpec = tween(500),
                                 label = "chessLabel"
                             )
-                            AnimatedChessIcon(selected = selected, tint = tint, size = 70.dp)
+                            AnimatedControllerIcon(
+                                selected = selected,
+                                tint = tint,
+                                size = 70.dp,
+                                tapCounter = centerTapCount
+                            )
                             Spacer(Modifier.height(1.dp))
-                            Text(tab.label, fontSize = 16.sp,
-                                fontFamily = FontFamily(Font(R.font.great_vibes)),
-                                fontWeight = FontWeight.Bold,
+                            Text(tab.label, fontSize = 12.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                 color = chessLabelColor, textAlign = TextAlign.Center)
                         }
                     } else {
@@ -1194,6 +1211,254 @@ private fun AnimatedStarIcon(selected: Boolean, tint: Color) {
 }
 
 /**
+ * Animated game controller icon — gamepad silhouette with two grips,
+ * D-pad cross, four face buttons, twin thumbsticks. Tapping triggers
+ * a quick wiggle (rotate -8° → +8° → 0) + scale pulse on the right
+ * action-buttons cluster. When [selected] (popup open) → controller
+ * tilts slightly + buttons glow.
+ */
+@Composable
+private fun AnimatedControllerIcon(
+    selected: Boolean,
+    tint: Color,
+    size: Dp = 70.dp,
+    tapCounter: Int
+) {
+    // Trace-in sweep that plays once when the bottom bar first composes
+    // (i.e. when the app is opened). A clipRect grows left→right exposing
+    // each stroke segment as it passes, with a glowing leading edge.
+    val trace = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        trace.snapTo(0f)
+        trace.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
+    }
+
+    // Tap response: wiggle rotation + scale-down "press" + buttons flash.
+    val wiggle = remember { Animatable(0f) }
+    val press = remember { Animatable(0f) }
+    LaunchedEffect(tapCounter) {
+        if (tapCounter == 0) return@LaunchedEffect
+        kotlinx.coroutines.coroutineScope {
+            launch {
+                wiggle.snapTo(-1f)
+                wiggle.animateTo(1f, tween(140, easing = FastOutSlowInEasing))
+                wiggle.animateTo(0f, spring(dampingRatio = 0.45f, stiffness = 600f))
+            }
+            launch {
+                press.snapTo(1f)
+                press.animateTo(0f, tween(420, easing = FastOutSlowInEasing))
+            }
+        }
+    }
+
+    // Idle tilt when popup is open
+    val tilt by animateFloatAsState(
+        targetValue = if (selected) 6f else 0f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 200f),
+        label = "ctrlTilt"
+    )
+
+    Canvas(
+        modifier = Modifier
+            .size(size)
+            .graphicsLayer {
+                rotationZ = wiggle.value * 10f + tilt
+                val s = 1f - press.value * 0.07f
+                scaleX = s
+                scaleY = s
+            }
+    ) {
+        val w = this.size.width
+        val h = this.size.height
+        val reveal = trace.value.coerceIn(0f, 1f)
+        val pressV = press.value
+
+        // ── PS5 DualSense geometry ──
+        // Wider, flatter top with subtle PS-button dip, more angular grip
+        // lobes drooping below, large central touchpad.
+        val bodyTop = h * 0.34f
+        val bodyLeft = w * 0.06f
+        val bodyRight = w * 0.94f
+        val gripBottom = h * 0.86f
+        val cxBody = w * 0.50f
+
+        // Stroke widths — outline-first, minimal interior fill.
+        val outlineStroke = w * 0.038f
+        val detailStroke = w * 0.028f
+
+        // Touchpad — large rounded rect on the upper centre
+        val tpRect = Rect(w * 0.38f, h * 0.40f, w * 0.62f, h * 0.54f)
+
+        // D-pad plus (left of touchpad)
+        val dpadCx = w * 0.22f
+        val dpadCy = h * 0.50f
+        val dpadArmL = w * 0.075f
+        val dpadArmT = w * 0.025f
+
+        // Face buttons — 4 in a diamond (right of touchpad)
+        val faceCx = w * 0.78f
+        val faceCy = h * 0.50f
+        val faceR = w * 0.030f
+        val faceOff = w * 0.062f
+        val faceCenters = listOf(
+            Offset(faceCx, faceCy - faceOff),
+            Offset(faceCx + faceOff, faceCy),
+            Offset(faceCx, faceCy + faceOff),
+            Offset(faceCx - faceOff, faceCy),
+        )
+
+        // Twin sticks — both at the same height in the lower-centre body
+        val stickR = w * 0.065f
+        val stickInnerR = w * 0.025f
+        val stickY = h * 0.66f
+        val leftStick = Offset(w * 0.36f, stickY)
+        val rightStick = Offset(w * 0.64f, stickY)
+
+        // ── PS5 body outline path ──
+        val bodyOutline = Path().apply {
+            // Start at top-left shoulder
+            moveTo(bodyLeft, bodyTop + h * 0.06f)
+            // Top edge: slight upward shoulder bump → centre dip → matching
+            // bump on right side. This gives the DualSense its profile.
+            cubicTo(
+                bodyLeft + w * 0.02f, bodyTop - h * 0.015f,
+                w * 0.22f, bodyTop - h * 0.025f,
+                w * 0.34f, bodyTop + h * 0.005f,
+            )
+            cubicTo(
+                w * 0.42f, bodyTop + h * 0.025f,
+                w * 0.58f, bodyTop + h * 0.025f,
+                w * 0.66f, bodyTop + h * 0.005f,
+            )
+            cubicTo(
+                w * 0.78f, bodyTop - h * 0.025f,
+                bodyRight - w * 0.02f, bodyTop - h * 0.015f,
+                bodyRight, bodyTop + h * 0.06f,
+            )
+            // Right side curving down to right grip
+            cubicTo(
+                w * 1.00f, h * 0.56f,
+                w * 0.96f, h * 0.72f,
+                w * 0.84f, h * 0.76f,
+            )
+            // Right grip lobe (more angular for DualSense)
+            cubicTo(
+                w * 0.86f, gripBottom,
+                w * 0.74f, gripBottom + h * 0.025f,
+                w * 0.64f, h * 0.80f,
+            )
+            // Bottom centre dip between grips
+            cubicTo(
+                w * 0.58f, h * 0.74f,
+                w * 0.42f, h * 0.74f,
+                w * 0.36f, h * 0.80f,
+            )
+            // Left grip lobe
+            cubicTo(
+                w * 0.26f, gripBottom + h * 0.025f,
+                w * 0.14f, gripBottom,
+                w * 0.16f, h * 0.76f,
+            )
+            // Left side back up to top-left
+            cubicTo(
+                w * 0.04f, h * 0.72f,
+                w * 0.00f, h * 0.56f,
+                bodyLeft, bodyTop + h * 0.06f,
+            )
+            close()
+        }
+
+        // Subtle "white shade" fill — very low alpha so it reads as a hint
+        // of glass behind the outline, not a solid silhouette.
+        val innerShade = Color.White.copy(alpha = 0.08f)
+
+        clipRect(left = 0f, top = 0f, right = w * reveal, bottom = h) {
+            // 1) Thin interior fill — barely visible glass tint.
+            drawPath(bodyOutline, color = innerShade)
+
+            // 2) Body outline (the highlight border).
+            drawPath(
+                bodyOutline,
+                color = tint,
+                style = Stroke(width = outlineStroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
+
+            // 3) Touchpad — outline only, slightly lighter shade behind.
+            drawRoundRect(
+                color = innerShade,
+                topLeft = Offset(tpRect.left, tpRect.top),
+                size = Size(tpRect.width, tpRect.height),
+                cornerRadius = CornerRadius(w * 0.015f, w * 0.015f),
+            )
+            drawRoundRect(
+                color = tint,
+                topLeft = Offset(tpRect.left, tpRect.top),
+                size = Size(tpRect.width, tpRect.height),
+                cornerRadius = CornerRadius(w * 0.015f, w * 0.015f),
+                style = Stroke(width = detailStroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
+
+            // 4) D-pad — plus rendered as two thin lines, rounded caps.
+            drawLine(
+                tint,
+                Offset(dpadCx - dpadArmL, dpadCy), Offset(dpadCx + dpadArmL, dpadCy),
+                strokeWidth = dpadArmT * 2f, cap = StrokeCap.Round,
+            )
+            drawLine(
+                tint,
+                Offset(dpadCx, dpadCy - dpadArmL), Offset(dpadCx, dpadCy + dpadArmL),
+                strokeWidth = dpadArmT * 2f, cap = StrokeCap.Round,
+            )
+
+            // 5) Face buttons — hollow rings. On tap they fill briefly.
+            for (c in faceCenters) {
+                if (pressV > 0.05f) {
+                    drawCircle(tint.copy(alpha = pressV), faceR * 0.85f, c)
+                }
+                drawCircle(tint, faceR, c, style = Stroke(width = detailStroke))
+            }
+
+            // 6) Thumbsticks — outer ring + inner nub.
+            drawCircle(tint, stickR, leftStick, style = Stroke(width = detailStroke))
+            drawCircle(tint, stickR, rightStick, style = Stroke(width = detailStroke))
+            drawCircle(tint, stickInnerR, leftStick)
+            drawCircle(tint, stickInnerR, rightStick)
+
+            // 7) PS button — small dot below touchpad centre.
+            drawCircle(
+                tint,
+                radius = w * 0.012f,
+                center = Offset(cxBody, tpRect.bottom + h * 0.04f),
+            )
+
+            // Status pip when popup is open.
+            if (selected) {
+                drawCircle(
+                    tint.copy(alpha = 0.9f),
+                    radius = h * 0.016f,
+                    center = Offset(cxBody, bodyTop - h * 0.04f),
+                )
+            }
+        }
+
+        // Glowing leading edge during trace-in sweep.
+        if (reveal < 1f) {
+            val edgeX = w * reveal
+            val edgeHalfW = w * 0.045f
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    listOf(Color.Transparent, tint.copy(alpha = 0.85f), Color.Transparent),
+                    startX = edgeX - edgeHalfW,
+                    endX = edgeX + edgeHalfW,
+                ),
+                topLeft = Offset(edgeX - edgeHalfW, h * 0.10f),
+                size = Size(edgeHalfW * 2f, h * 0.80f),
+            )
+        }
+    }
+}
+
+/**
  * Animated Chess icon — true isometric 3D chessboard with thick rounded base,
  * raised diamond tiles, knight L-hops + bishop diagonal slides. Infinite loop.
  */
@@ -1881,4 +2146,181 @@ private fun SlideInPill(
             }
         }
     }
+}
+
+// ─── Games popup (Chess / HumanBenchmark) ────────────────────────────────────
+
+/**
+ * Floating popup that emerges above the bottom bar when the controller
+ * (center tab) is tapped. Two circular cards float up: Brain (left) +
+ * Chess (right). Stagger fade + slide-in. Tap scrim to dismiss.
+ *
+ * [open] toggles visibility. [onDismiss] called on scrim tap.
+ * [onChess] / [onBrain] = navigation actions.
+ */
+@Composable
+fun GamesPopup(
+    open: Boolean,
+    onDismiss: () -> Unit,
+    onChess: () -> Unit,
+    onBrain: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val scrimAlpha by animateFloatAsState(
+        targetValue = if (open) 0.55f else 0f,
+        animationSpec = tween(220),
+        label = "popupScrim"
+    )
+    val brainProgress by animateFloatAsState(
+        targetValue = if (open) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = 280f),
+        label = "brainProg"
+    )
+    val chessProgress by animateFloatAsState(
+        targetValue = if (open) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = 220f),
+        label = "chessProg"
+    )
+
+    if (!open && scrimAlpha < 0.01f && brainProgress < 0.01f && chessProgress < 0.01f) return
+
+    // Full-screen scrim + button row
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = scrimAlpha))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismiss
+            )
+    ) {
+        // Floating buttons aligned just above the bottom bar
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 132.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            GamePopupButton(
+                progress = brainProgress,
+                label = "Brain",
+                accent = Color(0xFFD8FF3C),
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onBrain()
+                },
+                icon = { iconTint, iconSize ->
+                    PopupBrainIcon(tint = iconTint, size = iconSize)
+                }
+            )
+            GamePopupButton(
+                progress = chessProgress,
+                label = "Chess",
+                accent = Color(0xFFB68CFF),
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onChess()
+                },
+                framed = false,
+                icon = { iconTint, iconSize ->
+                    PopupChessIcon(tint = iconTint, size = iconSize)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun GamePopupButton(
+    progress: Float,
+    label: String,
+    accent: Color,
+    onClick: () -> Unit,
+    icon: @Composable (tint: Color, size: Dp) -> Unit,
+    framed: Boolean = true,
+) {
+    val isDark = isSystemInDarkTheme()
+    val bg = if (isDark) Color(0xFF1B1F2A).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.92f)
+    val textColor = if (isDark) Color.White else Color(0xFF1B1F2A)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .graphicsLayer {
+                alpha = progress
+                translationY = (1f - progress) * 60f
+                scaleX = 0.7f + progress * 0.3f
+                scaleY = 0.7f + progress * 0.3f
+            }
+    ) {
+        // Framed: circular pill with accent border (default — used by Brain).
+        // Unframed: bare icon floating on the scrim (used by Chess so the
+        // isometric board stands alone without a circle around it).
+        val containerModifier = if (framed) {
+            Modifier
+                .size(72.dp)
+                .clip(CircleShape)
+                .background(bg)
+                .border(2.dp, accent, CircleShape)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onClick,
+                )
+        } else {
+            Modifier
+                .size(72.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onClick,
+                )
+        }
+        Box(modifier = containerModifier, contentAlignment = Alignment.Center) {
+            icon(accent, if (framed) 40.dp else 64.dp)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            label.uppercase(),
+            color = textColor,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 1.6.sp,
+        )
+    }
+}
+
+/** Brain icon for the HumanBenchmark popup button. */
+@Composable
+private fun PopupBrainIcon(tint: Color, size: Dp) {
+    Canvas(modifier = Modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val cx = w / 2f
+        val cy = h / 2f
+        // Two brain hemispheres
+        drawCircle(tint.copy(alpha = 0.35f), radius = w * 0.30f, center = Offset(cx - w * 0.13f, cy))
+        drawCircle(tint.copy(alpha = 0.35f), radius = w * 0.30f, center = Offset(cx + w * 0.13f, cy))
+        drawCircle(tint, radius = w * 0.30f, center = Offset(cx - w * 0.13f, cy), style = Stroke(width = w * 0.05f))
+        drawCircle(tint, radius = w * 0.30f, center = Offset(cx + w * 0.13f, cy), style = Stroke(width = w * 0.05f))
+        // Center divider
+        drawLine(tint, Offset(cx, cy - h * 0.25f), Offset(cx, cy + h * 0.25f), strokeWidth = w * 0.04f)
+        // Sparkle/synapse dots
+        drawCircle(tint, radius = w * 0.04f, center = Offset(cx - w * 0.20f, cy - h * 0.08f))
+        drawCircle(tint, radius = w * 0.04f, center = Offset(cx + w * 0.20f, cy + h * 0.10f))
+    }
+}
+
+/**
+ * Chess icon for the Games popup — reuses the bottom-bar's old isometric
+ * 3D chessboard with knight L-hops + bishop diagonal slides. `selected=true`
+ * so the loop runs while the popup is visible (the popup unmounts once
+ * dismissed, naturally stopping the animation).
+ */
+@Composable
+private fun PopupChessIcon(tint: Color, size: Dp) {
+    AnimatedChessIcon(selected = true, tint = tint, size = size)
 }

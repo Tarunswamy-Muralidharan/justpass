@@ -8,656 +8,1010 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.dp
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.random.Random
 
-enum class WeatherMode {
-    OFF,
-    SUNNY,
-    CLOUDY,
-    RAIN,
-    THUNDERSTORM;
+/* ===================================================================
+ * 16-scene weather background per HANDOFF.md spec.
+ * Scenes: clear-day, clear-night, partly-day, partly-night, cloudy,
+ * overcast, sunset, sunrise, rain, heavy-rain, thunderstorm, snow,
+ * fog, haze, windy, aurora.
+ * =================================================================== */
 
-    fun next(): WeatherMode = entries[(ordinal + 1) % entries.size]
-
-    val displayName: String
-        get() = when (this) {
-            OFF -> "Off"
-            SUNNY -> "Sunny"
-            CLOUDY -> "Cloudy"
-            RAIN -> "Rain"
-            THUNDERSTORM -> "Thunderstorm"
-        }
+enum class MoonPhase(val displayName: String) {
+    AUTO("Auto (current date)"),
+    NEW("New"),
+    WAXING_CRESCENT("Waxing Crescent"),
+    FIRST_QUARTER("First Quarter"),
+    WAXING_GIBBOUS("Waxing Gibbous"),
+    FULL("Full"),
+    WANING_GIBBOUS("Waning Gibbous"),
+    LAST_QUARTER("Last Quarter"),
+    WANING_CRESCENT("Waning Crescent");
 
     companion object {
-        fun fromString(s: String): WeatherMode =
+        fun fromString(s: String): MoonPhase = entries.firstOrNull { it.name == s } ?: AUTO
+
+        /**
+         * Resolve AUTO → an actual phase based on system date. Uses a simple
+         * synodic-month calculation (29.53059 days) seeded from the known new
+         * moon on 2000-01-06 18:14 UTC.
+         */
+        fun resolveAuto(): MoonPhase {
+            val knownNewMoonEpochMs = 947_182_440_000L // 2000-01-06 18:14 UTC
+            val synodicMs = 29.53058868 * 86_400_000.0
+            val nowMs = System.currentTimeMillis().toDouble()
+            val age = ((nowMs - knownNewMoonEpochMs) % synodicMs + synodicMs) % synodicMs
+            val frac = age / synodicMs // 0..1, 0 = new, 0.5 = full
+            return when {
+                frac < 0.0303 || frac >= 0.9697 -> NEW
+                frac < 0.2197 -> WAXING_CRESCENT
+                frac < 0.2803 -> FIRST_QUARTER
+                frac < 0.4697 -> WAXING_GIBBOUS
+                frac < 0.5303 -> FULL
+                frac < 0.7197 -> WANING_GIBBOUS
+                frac < 0.7803 -> LAST_QUARTER
+                else -> WANING_CRESCENT
+            }
+        }
+    }
+}
+
+enum class WeatherScene(val displayName: String) {
+    OFF("Off"),
+    CLEAR_DAY("Clear Day"),
+    CLEAR_NIGHT("Clear Night"),
+    PARTLY_DAY("Partly Day"),
+    PARTLY_NIGHT("Partly Night"),
+    CLOUDY("Cloudy"),
+    OVERCAST("Overcast"),
+    SUNSET("Sunset"),
+    SUNRISE("Sunrise"),
+    RAIN("Rain"),
+    HEAVY_RAIN("Heavy Rain"),
+    THUNDERSTORM("Thunderstorm"),
+    SNOW("Snow"),
+    FOG("Fog"),
+    HAZE("Haze"),
+    WINDY("Windy"),
+    AURORA("Aurora");
+
+    companion object {
+        fun fromString(s: String): WeatherScene =
             entries.firstOrNull { it.name == s } ?: OFF
     }
 }
 
+/* ---------- splash zone registry (HANDOFF section 3) ---------- */
+
 /**
- * Full-screen weather effect drawn between the base gradient and the glass tiles.
- * Sits inside the cardState liquefiable so glass cards refract these effects.
+ * List of glass-tile rects in root coordinates. SplashCanvas reads this list
+ * to know where rain should bounce. LiquidGlassCard registers itself via
+ * [registerAsSplashTarget].
  */
-@Composable
-fun WeatherBackground(
-    mode: WeatherMode,
-    modifier: Modifier = Modifier,
-    testing: Boolean = false,
-) {
-    when (mode) {
-        WeatherMode.OFF -> Unit
-        WeatherMode.SUNNY -> SunnyOverlay(modifier)
-        WeatherMode.CLOUDY -> CloudyOverlay(modifier, dark = false)
-        WeatherMode.RAIN -> RainOverlay(modifier, withLightning = false, testing = testing)
-        WeatherMode.THUNDERSTORM -> RainOverlay(modifier, withLightning = true, testing = testing)
+val LocalSplashZones = compositionLocalOf<SnapshotStateList<Rect>?> { null }
+
+fun Modifier.registerAsSplashTarget(): Modifier = composed {
+    val zones = LocalSplashZones.current
+    if (zones == null) this
+    else onGloballyPositioned { coords ->
+        val r = coords.boundsInRoot()
+        // Replace any near-duplicate (within 1px) instead of stacking many copies
+        val existingIdx = zones.indexOfFirst {
+            kotlin.math.abs(it.top - r.top) < 1f &&
+                kotlin.math.abs(it.left - r.left) < 1f &&
+                kotlin.math.abs(it.right - r.right) < 1f
+        }
+        if (existingIdx == -1) zones.add(r) else zones[existingIdx] = r
     }
 }
 
-/* ----- Sunny: warm radial glow + slowly rotating sun rays ----- */
+/* ---------- public entrypoint ---------- */
+
+/**
+ * Renders the weather scene. Mounted twice by LiquidGlassScaffold:
+ *  - drawSplashes=false → sky/clouds/rain/lightning behind glass cards.
+ *  - drawSplashes=true → splash particles ON TOP of cards.
+ */
 @Composable
-private fun SunnyOverlay(modifier: Modifier) {
-    val transition = rememberInfiniteTransition(label = "sunny")
-    val rayAngle by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 38_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "rays",
-    )
-    val pulse by transition.animateFloat(
-        initialValue = 0.92f,
-        targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 4200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulse",
-    )
+fun WeatherBackgroundLayer(
+    scene: WeatherScene,
+    drawSplashes: Boolean,
+    moonPhase: MoonPhase = MoonPhase.AUTO,
+) {
+    if (scene == WeatherScene.OFF) return
+    if (drawSplashes) {
+        // Only some scenes spawn splashes
+        when (scene) {
+            WeatherScene.RAIN, WeatherScene.HEAVY_RAIN, WeatherScene.THUNDERSTORM ->
+                SplashLayer(
+                    intensity = when (scene) {
+                        WeatherScene.RAIN -> 1.2f
+                        WeatherScene.HEAVY_RAIN -> 2.6f
+                        else -> 2.8f
+                    }
+                )
+            else -> Unit
+        }
+        return
+    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        SceneRenderer(scene, moonPhase)
+        // Readability scrim — darkens lower 75% so tile text contrasts against
+        // bright daytime gradients (clear/partly/sunrise/sunset/haze/etc).
+        // Strength scales by scene: bright daytime = heavier, dark scenes
+        // (storm/night/aurora) = lighter so the sky doesn't get muddy.
+        val scrimAlpha = when (scene) {
+            WeatherScene.CLEAR_DAY,
+            WeatherScene.PARTLY_DAY,
+            WeatherScene.SUNRISE,
+            WeatherScene.HAZE -> 0.28f
+            WeatherScene.CLOUDY,
+            WeatherScene.SUNSET,
+            WeatherScene.WINDY,
+            WeatherScene.SNOW -> 0.22f
+            WeatherScene.OVERCAST,
+            WeatherScene.FOG -> 0.18f
+            WeatherScene.RAIN,
+            WeatherScene.HEAVY_RAIN,
+            WeatherScene.THUNDERSTORM,
+            WeatherScene.CLEAR_NIGHT,
+            WeatherScene.PARTLY_NIGHT,
+            WeatherScene.AURORA -> 0.08f
+            WeatherScene.OFF -> 0f
+        }
+        if (scrimAlpha > 0f) {
+            Canvas(Modifier.fillMaxSize()) {
+                // Sky stays untouched (top 25%) → scrim ramps up to full strength
+                // by 50% of screen height. Cards typically sit below this band.
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Black.copy(alpha = scrimAlpha * 0.35f),
+                            Color.Black.copy(alpha = scrimAlpha),
+                            Color.Black.copy(alpha = scrimAlpha * 0.95f),
+                        ),
+                        startY = 0f,
+                        endY = size.height,
+                    ),
+                )
+            }
+        }
+    }
+}
 
-    Canvas(modifier = modifier.fillMaxSize()) {
-        val sunCenter = Offset(size.width * 0.82f, size.height * 0.18f)
-        val sunRadius = size.minDimension * 0.32f * pulse
+@Composable
+private fun SceneRenderer(scene: WeatherScene, moonPhase: MoonPhase) {
+    when (scene) {
+        WeatherScene.OFF -> Unit
+        WeatherScene.CLEAR_DAY -> {
+            SkyGradient(listOf(Color(0xFF2A6FC4), Color(0xFFB9D8F5)))
+            CornerGlow(0.75f, 0.22f, Color(0xFFFFF1D6).copy(alpha = 0.55f), radiusFrac = 0.45f)
+            SunRays(angleDeg = 115f, durationSec = 90, intensity = 0.9f)
+            Cloudscape(tint = CloudTint.WHITE, density = 0.4f, layers = 3, baseDurSec = 280)
+        }
+        WeatherScene.CLEAR_NIGHT -> {
+            SkyGradient(listOf(Color(0xFF02030A), Color(0xFF131A3A)))
+            CornerGlow(0.75f, 0.22f, Color(0xFFD6E6FF).copy(alpha = 0.45f), radiusFrac = 0.40f)
+            Stars(density = 1.4f, brightness = 1f)
+            MoonDisc(moonPhase)
+        }
+        WeatherScene.PARTLY_DAY -> {
+            SkyGradient(listOf(Color(0xFF3A78C9), Color(0xFFA8CBED)))
+            CornerGlow(0.75f, 0.22f, Color(0xFFFFF1D6).copy(alpha = 0.42f), radiusFrac = 0.42f)
+            SunRays(angleDeg = 115f, durationSec = 80, intensity = 0.85f)
+            Cloudscape(tint = CloudTint.WHITE, density = 0.5f, layers = 3, baseDurSec = 280)
+        }
+        WeatherScene.PARTLY_NIGHT -> {
+            SkyGradient(listOf(Color(0xFF050816), Color(0xFF1A2148)))
+            Stars(density = 0.8f, brightness = 0.85f)
+            Cloudscape(tint = CloudTint.NIGHT, density = 0.7f, layers = 3, baseDurSec = 300)
+        }
+        WeatherScene.CLOUDY -> {
+            SkyGradient(listOf(Color(0xFF6A93C0), Color(0xFFC2D7E8)))
+            CornerGlow(0.78f, 0.20f, Color(0xFFFFE9C0).copy(alpha = 0.32f), radiusFrac = 0.38f)
+            Cloudscape(tint = CloudTint.WHITE, density = 1.0f, layers = 4, baseDurSec = 260)
+        }
+        WeatherScene.OVERCAST -> {
+            SkyGradient(listOf(Color(0xFF4A5460), Color(0xFF7A8390)))
+            Cloudscape(tint = CloudTint.OVERCAST, density = 1.35f, layers = 4, baseDurSec = 300)
+        }
+        WeatherScene.SUNSET -> {
+            SkyGradient(listOf(Color(0xFF2A1A4A), Color(0xFFF8B06A)))
+            HorizonGlow(Color(0xFFFF9E5A).copy(alpha = 0.55f))
+            SunRays(angleDeg = 72f, durationSec = 100, intensity = 1.1f,
+                rayColor = Color(0xFFFFC896))
+            Cloudscape(tint = CloudTint.SUNSET, density = 1.0f, layers = 3, baseDurSec = 280)
+        }
+        WeatherScene.SUNRISE -> {
+            SkyGradient(listOf(Color(0xFF1A3A6E), Color(0xFFFCE5B8)))
+            HorizonGlow(Color(0xFFFFC080).copy(alpha = 0.55f))
+            SunRays(angleDeg = 72f, durationSec = 110, intensity = 1.0f,
+                rayColor = Color(0xFFFFDCA0))
+            Cloudscape(tint = CloudTint.SUNSET, density = 0.9f, layers = 3, baseDurSec = 280)
+        }
+        WeatherScene.RAIN -> {
+            SkyGradient(listOf(Color(0xFF2C3744), Color(0xFF4D5868)))
+            Cloudscape(tint = CloudTint.STORM, density = 1.4f, layers = 3, baseDurSec = 220)
+            RainCanvas(intensity = 1.2f)
+        }
+        WeatherScene.HEAVY_RAIN -> {
+            SkyGradient(listOf(Color(0xFF1A2230), Color(0xFF2E3A4A)))
+            Cloudscape(tint = CloudTint.STORM, density = 1.5f, layers = 4, baseDurSec = 200)
+            RainCanvas(intensity = 2.6f, dropColor = Color(0xFFB4C3DC), fallSpeedMul = 1.45f)
+            MistyBottomSpray()
+        }
+        WeatherScene.THUNDERSTORM -> {
+            SkyGradient(listOf(Color(0xFF14181F), Color(0xFF28303C)))
+            Cloudscape(tint = CloudTint.STORM, density = 1.6f, layers = 4, baseDurSec = 180)
+            RainCanvas(intensity = 2.8f, dropColor = Color(0xFFC8D7F0), fallSpeedMul = 1.9f)
+            LightningCanvas()
+        }
+        WeatherScene.SNOW -> {
+            SkyGradient(listOf(Color(0xFF5A6878), Color(0xFFA4AFBE)))
+            Cloudscape(tint = CloudTint.OVERCAST, density = 1.2f, layers = 3, baseDurSec = 280)
+            SnowCanvas(density = 1.4f)
+        }
+        WeatherScene.FOG -> {
+            SkyGradient(listOf(Color(0xFF788490), Color(0xFFB8C0C9)))
+            FogBands()
+        }
+        WeatherScene.HAZE -> {
+            SkyGradient(listOf(Color(0xFF8A7A64), Color(0xFFD4BA94)))
+            HazyClouds()
+        }
+        WeatherScene.WINDY -> {
+            SkyGradient(listOf(Color(0xFF6A8AA6), Color(0xFFB4C6D8)))
+            WindyStreaks()
+        }
+        WeatherScene.AURORA -> {
+            SkyGradient(listOf(Color(0xFF030519), Color(0xFF1A2660)))
+            Stars(density = 1.6f, brightness = 0.9f)
+            AuroraBands()
+        }
+    }
+}
 
-        // Warm radial glow
+/* ---------- sky + glow primitives ---------- */
+
+@Composable
+private fun SkyGradient(stops: List<Color>) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(
+            brush = Brush.verticalGradient(stops)
+        )
+    )
+}
+
+@Composable
+private fun CornerGlow(cx: Float, cy: Float, color: Color, radiusFrac: Float) {
+    Canvas(Modifier.fillMaxSize()) {
+        val r = size.minDimension * radiusFrac
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(color, color.copy(alpha = color.alpha * 0.35f), Color.Transparent),
+                center = Offset(size.width * cx, size.height * cy),
+                radius = r,
+            ),
+            radius = r,
+            center = Offset(size.width * cx, size.height * cy),
+        )
+    }
+}
+
+@Composable
+private fun HorizonGlow(color: Color) {
+    Canvas(Modifier.fillMaxSize()) {
+        val cx = size.width * 0.5f
+        val cy = size.height * 0.90f
+        val rx = size.width * 0.65f
+        val ry = size.height * 0.28f
+        // Approximate ellipse via radial gradient masked by aspect-ratio rect
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(color, color.copy(alpha = color.alpha * 0.40f), Color.Transparent),
+                center = Offset(cx, cy),
+                radius = rx,
+            ),
+            topLeft = Offset(cx - rx, cy - ry),
+            size = Size(rx * 2f, ry * 2f),
+        )
+    }
+}
+
+@Composable
+private fun MoonDisc(phase: MoonPhase) {
+    val resolved = if (phase == MoonPhase.AUTO) MoonPhase.resolveAuto() else phase
+    Canvas(Modifier.fillMaxSize()) {
+        val center = Offset(size.width * 0.78f, size.height * 0.18f)
+        val r = size.minDimension * 0.055f
+
+        // Soft halo — small + dim so the moon doesn't wash out the surrounding sky
+        val haloAlpha = if (resolved == MoonPhase.NEW) 0.04f else 0.10f
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
-                    Color(0xFFFFE08A).copy(alpha = 0.55f),
-                    Color(0xFFFFB347).copy(alpha = 0.18f),
+                    Color(0xFFEAEEF8).copy(alpha = haloAlpha),
                     Color.Transparent,
                 ),
-                center = sunCenter,
-                radius = sunRadius,
+                center = center,
+                radius = r * 3.0f,
             ),
-            radius = sunRadius,
-            center = sunCenter,
+            radius = r * 3.0f,
+            center = center,
         )
 
-        // Subtle sun rays
-        val rayCount = 14
-        val rayLen = sunRadius * 1.4f
-        for (i in 0 until rayCount) {
-            val a = (rayAngle + i * (360f / rayCount)) * PI.toFloat() / 180f
-            val end = Offset(
-                sunCenter.x + cos(a) * rayLen,
-                sunCenter.y + sin(a) * rayLen,
+        // Moon body — radial gradient with off-center highlight → spherical look.
+        // Darker mid/rim makes craters + terminator readable. Was too washed out.
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFFE2D9C0),       // highlight (warm off-white)
+                    Color(0xFFA89E80),       // mid
+                    Color(0xFF5E5640),       // dark rim — real shadow at limb
+                ),
+                center = Offset(center.x - r * 0.35f, center.y - r * 0.35f),
+                radius = r * 1.25f,
+            ),
+            radius = r,
+            center = center,
+        )
+
+        // Crater spots — darker, larger, layered (rim + bowl) so they read
+        // even at small sizes. Deterministic positions.
+        val craters = listOf(
+            Triple(-0.28f, -0.08f, 0.18f),
+            Triple(0.22f, 0.26f, 0.22f),
+            Triple(0.06f, -0.42f, 0.11f),
+            Triple(-0.42f, 0.30f, 0.14f),
+            Triple(0.38f, -0.28f, 0.13f),
+            Triple(-0.12f, 0.50f, 0.10f),
+            Triple(0.28f, 0.06f, 0.09f),
+        )
+        craters.forEach { (dx, dy, cr) ->
+            val cx = center.x + dx * r
+            val cy = center.y + dy * r
+            // Outer dark bowl
+            drawCircle(
+                color = Color(0xFF3D3829).copy(alpha = 0.55f),
+                radius = cr * r,
+                center = Offset(cx, cy),
             )
-            drawLine(
-                color = Color(0xFFFFD480).copy(alpha = 0.08f),
-                start = sunCenter,
-                end = end,
-                strokeWidth = 6f,
-                cap = StrokeCap.Round,
+            // Inner mid tone for depth
+            drawCircle(
+                color = Color(0xFF7A7058).copy(alpha = 0.45f),
+                radius = cr * r * 0.55f,
+                center = Offset(cx + cr * r * 0.18f, cy + cr * r * 0.18f),
             )
         }
+
+        // Phase shadow — overlay a dark disc whose intersection with the moon
+        // disc covers the unlit portion. Positive offsetX → shadow on LEFT
+        // (lit right = waxing). Solid black so the contrast is unambiguous.
+        val shadow = Color(0xFF010204).copy(alpha = 0.97f)
+        val shadowOffsetX: Float? = when (resolved) {
+            MoonPhase.FULL -> null
+            MoonPhase.NEW -> 0f
+            MoonPhase.WAXING_CRESCENT -> 0.55f
+            MoonPhase.FIRST_QUARTER -> 1.0f
+            MoonPhase.WAXING_GIBBOUS -> 1.45f
+            MoonPhase.WANING_GIBBOUS -> -1.45f
+            MoonPhase.LAST_QUARTER -> -1.0f
+            MoonPhase.WANING_CRESCENT -> -0.55f
+            MoonPhase.AUTO -> null
+        }
+        if (shadowOffsetX != null) {
+            val moonPath = Path().apply {
+                addOval(Rect(center.x - r, center.y - r, center.x + r, center.y + r))
+            }
+            clipPath(moonPath) {
+                if (shadowOffsetX == 0f) {
+                    drawCircle(shadow, r * 1.02f, center)
+                } else {
+                    drawCircle(shadow, r * 1.04f, Offset(center.x - shadowOffsetX * r, center.y))
+                }
+            }
+        }
+
+        // Limb darkening — thin dark ring at moon edge for shape definition.
+        // Applied AFTER shadow so it works in both lit and unlit halves.
+        drawCircle(
+            color = Color(0xFF1A1610).copy(alpha = 0.50f),
+            radius = r,
+            center = center,
+            style = Stroke(width = r * 0.06f),
+        )
     }
 }
 
-/* ----- Cloudy: layered horizontal mist bands drifting across ----- */
+/* ---------- SunRays ---------- */
+
 @Composable
-private fun CloudyOverlay(modifier: Modifier, dark: Boolean) {
-    val transition = rememberInfiniteTransition(label = "cloudy")
+private fun SunRays(
+    angleDeg: Float,
+    durationSec: Int,
+    intensity: Float,
+    rayColor: Color = Color(0xFFFFE8C8),
+) {
+    val transition = rememberInfiniteTransition(label = "sun-rays")
     val drift by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
+        initialValue = -0.08f,
+        targetValue = 0.08f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 28_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
+            animation = tween(durationMillis = durationSec * 1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
         ),
         label = "drift",
     )
+    val angleRad = angleDeg * (PI.toFloat() / 180f)
 
-    val isDark = isSystemInDarkTheme()
-    val baseColor = when {
-        dark -> Color(0xFF1F2A3A)
-        isDark -> Color(0xFFB7C0CE)
-        else -> Color.White
-    }
-    val maxAlpha = when {
-        dark -> 0.55f
-        isDark -> 0.14f
-        else -> 0.50f
-    }
-
-    // Each band is a long horizontal soft blob. Multiple bands at different
-    // y-positions create overlapping layered mist like the reference video.
-    val bands = remember(dark) {
-        List(if (dark) 9 else 7) { i ->
-            BandSeed(
-                yFraction = Random(i * 53).nextFloat() * 0.95f + 0.02f,
-                heightFraction = 0.10f + Random(i * 53 + 7).nextFloat() * 0.18f,
-                widthScale = 1.4f + Random(i * 53 + 11).nextFloat() * 0.9f,
-                phase = Random(i * 53 + 17).nextFloat(),
-                speedFactor = 0.55f + Random(i * 53 + 23).nextFloat() * 0.7f,
-                alphaScale = 0.55f + Random(i * 53 + 29).nextFloat() * 0.45f,
-            )
-        }
-    }
-
-    Canvas(modifier = modifier.fillMaxSize()) {
+    Canvas(Modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
-        bands.forEach { b ->
-            val bandW = w * b.widthScale
-            val bandH = h * b.heightFraction
-            val travel = w + bandW
-            val x = -bandW + ((drift * b.speedFactor + b.phase) % 1f) * travel
-            val cy = b.yFraction * h
-            val cx = x + bandW / 2f
+        // HANDOFF section 2: repeating-linear-gradient with bell-shaped 3-stop
+        // per period. ~260px period (HANDOFF: 0..260 covers transparent + bell).
+        // Few wide soft beams instead of many thin lines.
+        val periodPx = 260f
+        val perpX = -(-cos(angleRad))   // = cos(angleRad) but explicit for clarity
+        val perpY = sin(angleRad)
+        val centerShift = drift * w
 
-            // Radial gradient gives the soft, diffuse fog look. The brush is
-            // anchored to a moving center, with horizontal radius >> vertical
-            // so the band reads as a stretched mist layer rather than a puff.
-            val rH = bandW * 0.55f
-            val rV = bandH * 0.6f
-            val gradient = Brush.radialGradient(
-                colors = listOf(
-                    baseColor.copy(alpha = maxAlpha * b.alphaScale),
-                    baseColor.copy(alpha = maxAlpha * b.alphaScale * 0.55f),
-                    Color.Transparent,
+        // Build the linearGradient brush spanning ONE period along the
+        // perpendicular direction. tileMode = Repeated fills the screen.
+        val startOff = Offset(perpX * 0f + centerShift, perpY * 0f)
+        val endOff = Offset(perpX * periodPx + centerShift, perpY * periodPx)
+        val a05 = (0.05f * intensity).coerceIn(0f, 1f)
+        val a08 = (0.08f * intensity).coerceIn(0f, 1f)
+        drawRect(
+            brush = Brush.linearGradient(
+                colorStops = arrayOf(
+                    0.00f to Color.Transparent,
+                    0.31f to Color.Transparent,
+                    0.385f to rayColor.copy(alpha = a05),
+                    0.442f to rayColor.copy(alpha = a08),
+                    0.500f to rayColor.copy(alpha = a05),
+                    0.60f to Color.Transparent,
+                    1.00f to Color.Transparent,
                 ),
-                center = Offset(cx, cy),
-                radius = rH,
-            )
-            // Approximate ellipse-shaped brush via a wide rectangle with the
-            // radial gradient centered inside; wider-than-tall feels right.
-            drawRect(
-                brush = gradient,
-                topLeft = Offset(cx - rH, cy - rV),
-                size = androidx.compose.ui.geometry.Size(rH * 2f, rV * 2f),
-            )
-        }
-    }
-}
-
-private data class BandSeed(
-    val yFraction: Float,
-    val heightFraction: Float,
-    val widthScale: Float,
-    val phase: Float,
-    val speedFactor: Float,
-    val alphaScale: Float,
-)
-
-/* ----- Rain (and thunderstorm): falling streaks + splash ripples + dark overlay ----- */
-@Composable
-private fun RainOverlay(
-    modifier: Modifier,
-    withLightning: Boolean,
-    testing: Boolean = false,
-) {
-    Box(modifier = modifier.fillMaxSize()) {
-        CloudyOverlay(Modifier, dark = true)
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color(0xFF000000).copy(alpha = if (withLightning) 0.34f else 0.24f))
+                start = startOff,
+                end = endOff,
+                tileMode = androidx.compose.ui.graphics.TileMode.Repeated,
+            ),
+            blendMode = BlendMode.Screen,
         )
-        if (testing) {
-            ParallaxRain(Modifier, intense = withLightning)
-        } else {
-            RainAndSplashes(Modifier, intense = withLightning)
-        }
-        if (withLightning) {
-            if (testing) SpriteLightningOverlay(Modifier)
-            else LightningOverlay(Modifier)
-        }
+        // Radial center mask — beams brightest in middle, fade at edges.
+        // Drawn with DstIn... but BlendMode.Screen + DstIn don't compose well
+        // on a single Canvas. Instead overlay a center-bright multiply:
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color.Transparent,
+                    Color.Black.copy(alpha = 0.30f),
+                    Color.Black.copy(alpha = 0.55f),
+                ),
+                center = Offset(w * 0.55f, h * 0.40f),
+                radius = (w + h) * 0.55f,
+            ),
+            blendMode = BlendMode.DstOut,
+        )
     }
 }
 
-/* ===== Testing-only: ColorOS-style parallax rain (2 layers, drops aligned to velocity) ===== */
-private data class TiltedDrop(
-    val xSeed: Float,
+/* ---------- Cloudscape ----------
+ *
+ * Photographic-style multi-layer parallax clouds. Each layer = drifting band of
+ * stretched radial-gradient blobs whose densities and softness vary per layer.
+ * Approximates iOS Weather's photographic clouds without a fractal shader.
+ */
+
+enum class CloudTint(val top: Color, val bottom: Color, val skyBlend: Color) {
+    WHITE(Color(0xFFFFFFFF), Color(0xFFC3CDDC), Color(0xAAB7C7D7)),
+    OVERCAST(Color(0xFFC4CCD6), Color(0xFF66707E), Color(0xAA3C4654)),
+    STORM(Color(0xFF6E7887), Color(0xFF28303C), Color(0xAA141C28)),
+    SUNSET(Color(0xFFFFE8C8), Color(0xFFC47678), Color(0xAA8C4862)),
+    NIGHT(Color(0xFF5E6C8A), Color(0xFF222A3E), Color(0xAA121828)),
+}
+
+private data class CloudBlob(
+    val yFrac: Float,
+    val widthFrac: Float,
+    val heightFrac: Float,
     val phase: Float,
-    val speedFactor: Float,
-    val lengthFactor: Float,
-    val sizeFactor: Float,
-    val depth: Float, // 0=front, 1=back
+    val opacityScale: Float,
+)
+
+private data class CloudLayer(
+    val blobs: List<CloudBlob>,
+    val speed: Float,                // +1 right, -1 left
+    val durationSec: Int,
+    val opacityScale: Float,
+    val yBand: Float,                 // 0..1 center band
 )
 
 @Composable
-private fun ParallaxRain(modifier: Modifier, intense: Boolean) {
-    val frontCount = if (intense) 90 else 60
-    val backCount = if (intense) 130 else 80
-    val drops = remember {
-        val list = mutableListOf<TiltedDrop>()
-        repeat(frontCount) { i ->
-            val s = i * 23
-            list += TiltedDrop(
-                xSeed = Random(s).nextFloat(),
-                phase = Random(s + 1).nextFloat(),
-                speedFactor = 1.4f + Random(s + 2).nextFloat() * 0.6f,
-                lengthFactor = 0.7f + Random(s + 3).nextFloat() * 0.4f,
-                sizeFactor = 1.6f + Random(s + 4).nextFloat() * 0.5f,
-                depth = 0f,
-            )
-        }
-        repeat(backCount) { i ->
-            val s = (i + 5000) * 23
-            list += TiltedDrop(
-                xSeed = Random(s).nextFloat(),
-                phase = Random(s + 1).nextFloat(),
-                speedFactor = 0.55f + Random(s + 2).nextFloat() * 0.35f,
-                lengthFactor = 0.4f + Random(s + 3).nextFloat() * 0.3f,
-                sizeFactor = 0.7f + Random(s + 4).nextFloat() * 0.4f,
-                depth = 1f,
-            )
-        }
-        list
-    }
+private fun Cloudscape(
+    tint: CloudTint,
+    density: Float,
+    layers: Int,
+    baseDurSec: Int,
+) {
+    val layerData = remember(tint, density, layers, baseDurSec) {
+        // Stratocumulus stack with 4 fixed depth bands. Top layer = slowest +
+        // softest (background), front layer = sharpest + fastest.
+        val depthSpecs = listOf(
+            Triple(0.95f, baseDurSec, -1),
+            Triple(0.85f, (baseDurSec * 0.72f).toInt(), +1),
+            Triple(0.70f, (baseDurSec * 0.52f).toInt(), -1),
+            Triple(0.55f, (baseDurSec * 0.40f).toInt(), +1),
+        ).take(layers)
 
-    var elapsedNs by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(Unit) {
-        var last = 0L
-        while (true) {
-            withFrameNanos { now ->
-                if (last == 0L) last = now
-                elapsedNs += now - last
-                last = now
-            }
-        }
-    }
-
-    // Wind tilt — drops fall at angle. Matches ColorOS rotateUV(atan(speed)).
-    val tiltRad = 0.20f // ~11.5deg
-    val sinT = sin(tiltRad)
-    val cosT = cos(tiltRad)
-
-    Canvas(modifier = modifier.fillMaxSize()) {
-        val w = size.width
-        val h = size.height
-        val time = elapsedNs / 1_000_000_000f
-
-        drops.forEach { d ->
-            val travel = h * 1.2f
-            val cycle = 1.1f / d.speedFactor
-            val frac = ((time / cycle) + d.phase) % 1f
-            val baseX = d.xSeed * w
-            val baseY = frac * travel - 30f
-            val len = h * 0.04f * d.lengthFactor + 6f
-            // Drop direction = (sinT, cosT) — fall down and slightly right
-            val dx = sinT * len
-            val dy = cosT * len
-            val sx = baseX
-            val sy = baseY
-            val ex = baseX - dx
-            val ey = baseY - dy
-            val alpha = if (d.depth == 0f) 0.55f else 0.30f
-            val color = if (d.depth == 0f)
-                Color(0xFFC4D8FF).copy(alpha = alpha)
-            else
-                Color(0xFF8AA2C4).copy(alpha = alpha)
-            drawLine(
-                color = color,
-                start = Offset(sx, sy),
-                end = Offset(ex, ey),
-                strokeWidth = 1.2f * d.sizeFactor,
-                cap = StrokeCap.Round,
-            )
-        }
-    }
-}
-
-/* ===== Testing-only: sprite-style bolt — wider painted bolt with bright halo + flash ===== */
-@Composable
-private fun SpriteLightningOverlay(modifier: Modifier) {
-    var nowMs by remember { mutableLongStateOf(0L) }
-    var bolt by remember { androidx.compose.runtime.mutableStateOf<SpriteBolt?>(null) }
-    var lightStrength by remember { mutableFloatStateOf(0f) }
-    var flashStrength by remember { mutableFloatStateOf(0f) }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            withFrameNanos { now -> nowMs = now / 1_000_000L }
-        }
-    }
-
-    // ColorOS triangular ramp: smoothstep(0, 0.444, x) - smoothstep(0.778, 1.0, x)
-    fun colorOSRamp(t: Float): Float {
-        val a = if (t <= 0f) 0f else if (t >= 0.444f) 1f
-            else { val u = (t / 0.444f); u * u * (3 - 2 * u) }
-        val b = if (t <= 0.778f) 0f else if (t >= 1f) 1f
-            else { val u = (t - 0.778f) / 0.222f; u * u * (3 - 2 * u) }
-        return (a - b).coerceIn(0f, 1f)
-    }
-
-    LaunchedEffect(Unit) {
-        val rng = Random(System.currentTimeMillis() xor 0xCAFE)
-        while (true) {
-            val waitMs = 3000L + rng.nextInt(7000).toLong()
-            kotlinx.coroutines.delay(waitMs)
-            val newBolt = SpriteBolt(
-                seed = rng.nextLong(),
-                xCenter = 0.20f + rng.nextFloat() * 0.60f,
-                topY = -0.05f + rng.nextFloat() * 0.10f,
-                bottomY = 0.55f + rng.nextFloat() * 0.30f,
-                segments = 9 + rng.nextInt(4),
-                width = 9f + rng.nextFloat() * 6f,
-                flashCenter = Offset(0.5f, 0.30f),
-            )
-            bolt = newBolt
-            // Drive uniforms ~480ms via colorOS-style triangular ramp
-            val total = 480L
-            val startMs = System.currentTimeMillis()
-            while (true) {
-                val elapsed = System.currentTimeMillis() - startMs
-                val t = (elapsed.toFloat() / total).coerceIn(0f, 1f)
-                lightStrength = colorOSRamp(t)
-                // Flash has 2 quick peaks
-                flashStrength = colorOSRamp(t) * (0.55f +
-                    0.45f * sin(t * 12f * PI.toFloat()).let { kotlin.math.abs(it) })
-                if (t >= 1f) break
-                kotlinx.coroutines.delay(16)
-            }
-            lightStrength = 0f
-            flashStrength = 0f
-            bolt = null
-        }
-    }
-
-    Box(modifier = modifier.fillMaxSize()) {
-        // u_texFlash equivalent — radial bright flash centered on bolt's top
-        val activeBolt = bolt
-        if (flashStrength > 0.01f && activeBolt != null) {
-            Canvas(Modifier.fillMaxSize()) {
-                val center = Offset(
-                    activeBolt.flashCenter.x * size.width,
-                    activeBolt.flashCenter.y * size.height,
+        depthSpecs.mapIndexed { idx, (opacity, dur, sign) ->
+            val blobCount = (12 + idx * 4) * density.coerceAtLeast(0.4f)
+            val blobs = (0 until blobCount.toInt()).map { i ->
+                val seed = idx * 137 + i * 23
+                CloudBlob(
+                    yFrac = Random(seed).nextFloat() * 0.55f + 0.05f + idx * 0.06f,
+                    widthFrac = (0.28f + Random(seed + 1).nextFloat() * 0.35f) * (1.2f - idx * 0.15f),
+                    heightFrac = 0.10f + Random(seed + 2).nextFloat() * 0.10f,
+                    phase = Random(seed + 3).nextFloat(),
+                    opacityScale = 0.5f + Random(seed + 4).nextFloat() * 0.5f,
                 )
-                drawCircle(
+            }
+            CloudLayer(
+                blobs = blobs,
+                speed = sign.toFloat(),
+                durationSec = dur,
+                opacityScale = opacity,
+                yBand = 0.25f + idx * 0.12f,
+            )
+        }
+    }
+
+    val transition = rememberInfiniteTransition(label = "cloudscape")
+    layerData.forEachIndexed { idx, layer ->
+        val anim by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(layer.durationSec * 1000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "layer-$idx",
+        )
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            layer.blobs.forEach { b ->
+                val bw = w * b.widthFrac
+                val bh = h * b.heightFrac
+                val travel = w + bw
+                val raw = (anim * layer.speed + b.phase) % 1f
+                val frac = if (raw < 0f) raw + 1f else raw
+                val cx = -bw + frac * travel
+                val cy = b.yFrac * h
+                val baseAlpha = layer.opacityScale * b.opacityScale *
+                    (density.coerceIn(0.4f, 1.6f) / 1.2f)
+                // Top half: bright tint. Bottom half: darker tint.
+                drawRect(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Color(0xFFE8F0FF).copy(alpha = flashStrength * 0.85f),
-                            Color(0xFFAEC8FF).copy(alpha = flashStrength * 0.40f),
+                            tint.top.copy(alpha = (baseAlpha * 0.85f).coerceIn(0f, 1f)),
+                            tint.bottom.copy(alpha = (baseAlpha * 0.55f).coerceIn(0f, 1f)),
                             Color.Transparent,
                         ),
-                        center = center,
-                        radius = size.minDimension * 0.95f,
+                        center = Offset(cx + bw / 2f, cy),
+                        radius = bw * 0.55f,
                     ),
-                    radius = size.minDimension * 0.95f,
-                    center = center,
+                    topLeft = Offset(cx, cy - bh),
+                    size = Size(bw, bh * 2f),
                 )
             }
         }
-        if (activeBolt != null && lightStrength > 0.01f) {
-            Canvas(Modifier.fillMaxSize()) {
-                drawSpriteBolt(activeBolt, lightStrength)
-            }
-        }
     }
 }
 
-private data class SpriteBolt(
-    val seed: Long,
-    val xCenter: Float,
-    val topY: Float,
-    val bottomY: Float,
-    val segments: Int,
-    val width: Float,
-    val flashCenter: Offset,
-)
+/* ---------- Rain ---------- */
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSpriteBolt(
-    b: SpriteBolt,
-    intensity: Float,
-) {
-    val rng = Random(b.seed)
-    val w = size.width
-    val h = size.height
-    val main = buildBoltPath(
-        rng = rng,
-        startX = b.xCenter * w,
-        startY = b.topY * h,
-        endY = b.bottomY * h,
-        segments = b.segments,
-        jitter = w * 0.10f,
-    )
-    // Outer halo (wide, soft)
-    drawPath(
-        path = main,
-        color = Color(0xFFAEC8FF).copy(alpha = intensity * 0.35f),
-        style = Stroke(width = b.width * 3.5f, cap = StrokeCap.Round),
-    )
-    drawPath(
-        path = main,
-        color = Color(0xFFCDE0FF).copy(alpha = intensity * 0.55f),
-        style = Stroke(width = b.width * 2f, cap = StrokeCap.Round),
-    )
-    drawPath(
-        path = main,
-        color = Color(0xFFE8F0FF).copy(alpha = intensity * 0.80f),
-        style = Stroke(width = b.width, cap = StrokeCap.Round),
-    )
-    drawPath(
-        path = main,
-        color = Color.White.copy(alpha = intensity),
-        style = Stroke(width = b.width * 0.35f, cap = StrokeCap.Round),
-    )
-    // 1-2 forks
-    val branchCount = 1 + rng.nextInt(2)
-    repeat(branchCount) {
-        val tBranch = 0.30f + rng.nextFloat() * 0.40f
-        val bx = b.xCenter * w + (rng.nextFloat() - 0.5f) * w * 0.16f
-        val by = b.topY * h + (b.bottomY * h - b.topY * h) * tBranch
-        val ex = bx + (rng.nextFloat() - 0.5f) * w * 0.30f
-        val ey = by + h * (0.10f + rng.nextFloat() * 0.18f)
-        val branch = buildBoltPath(
-            rng = rng,
-            startX = bx,
-            startY = by,
-            endY = ey,
-            segments = 4 + rng.nextInt(3),
-            jitter = w * 0.06f,
-            endX = ex,
-        )
-        drawPath(
-            path = branch,
-            color = Color(0xFFCDE0FF).copy(alpha = intensity * 0.45f),
-            style = Stroke(width = b.width * 1.2f, cap = StrokeCap.Round),
-        )
-        drawPath(
-            path = branch,
-            color = Color.White.copy(alpha = intensity * 0.85f),
-            style = Stroke(width = b.width * 0.30f, cap = StrokeCap.Round),
-        )
-    }
-}
-
-private data class RainDrop(
-    val xSeed: Float,
-    val phase: Float,
-    val speedFactor: Float,
-    val lengthFactor: Float,
-)
-
-/**
- * One impact = one cluster of tiny scattered droplet specks. They appear at a
- * fixed Y line (mimicking water hitting a card edge) and disperse outward, not
- * a big circular ring. Each speck is a 0.8–2.0 px dot that drifts a few px and
- * fades. Multiple impacts happen per second along several "edge" Y-lines so the
- * whole frame gets that wet-glass-rim look from the reference video.
- */
-private data class Speck(
-    val xPx: Float,
-    val yPx: Float,
-    val vx: Float,
-    val vy: Float,
-    val radius: Float,
-    val startTime: Float,
-    val lifetime: Float,
+private class RainDropMutable(
+    var xFrac: Float,
+    var yFrac: Float,
+    var lenFrac: Float,
+    var speed: Float,        // px/sec
+    var alpha: Float,
+    var depth: Float,
+    var splatted: Boolean,
 )
 
 @Composable
-private fun RainAndSplashes(modifier: Modifier, intense: Boolean) {
-    val dropCount = if (intense) 160 else 100
-    val drops = remember {
-        List(dropCount) { i ->
-            RainDrop(
-                xSeed = Random(i * 17).nextFloat(),
-                phase = Random(i * 17 + 3).nextFloat(),
-                speedFactor = 0.55f + Random(i * 17 + 9).nextFloat() * 0.65f,
-                lengthFactor = 0.35f + Random(i * 17 + 11).nextFloat() * 0.45f,
-            )
-        }
-    }
-
-    // Y-lines where splashes happen — these read as the top edges of glass
-    // cards. Distributed across visible card-zone fractions of the screen.
-    val edgeYFractions = remember {
-        floatArrayOf(0.18f, 0.30f, 0.42f, 0.55f, 0.68f, 0.82f, 0.92f)
-    }
-
-    val specks = remember { mutableStateListOf<Speck>() }
+private fun RainCanvas(
+    intensity: Float,
+    dropColor: Color = Color(0xFFAEC4E0),
+    fallSpeedMul: Float = 1.0f,
+) {
+    val drops = remember { mutableStateListOf<RainDropMutable>() }
+    val maxDrops = (240 * intensity).toInt().coerceAtMost(450)
     var elapsedNs by remember { mutableLongStateOf(0L) }
-    var lastSpawn by remember { mutableFloatStateOf(0f) }
-    val spawnInterval = if (intense) 0.06f else 0.10f
+    val rng = remember { Random(System.currentTimeMillis() xor 0xDEAD) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(intensity) {
         var last = 0L
-        val rng = Random(System.currentTimeMillis())
         while (true) {
             withFrameNanos { now ->
                 if (last == 0L) last = now
-                elapsedNs += (now - last)
+                val dtNs = now - last
                 last = now
+                elapsedNs += dtNs
+                val dt = dtNs / 1_000_000_000f
 
-                val time = elapsedNs / 1_000_000_000f
-                if (time - lastSpawn > spawnInterval) {
-                    lastSpawn = time
-                    // 1–2 impacts per tick, each spawns a cluster of tiny specks
-                    val impactCount = if (intense) 2 + rng.nextInt(2) else 1 + rng.nextInt(2)
-                    repeat(impactCount) {
-                        val edgeY = edgeYFractions[rng.nextInt(edgeYFractions.size)] +
-                            (rng.nextFloat() - 0.5f) * 0.012f
-                        val centerX = rng.nextFloat()
-                        val cluster = 6 + rng.nextInt(7)
-                        repeat(cluster) {
-                            // Specks scatter mostly horizontally + slight upward kick
-                            val angle = (-PI.toFloat() + rng.nextFloat() * 2f * PI.toFloat()) // any dir
-                            val speed = 6f + rng.nextFloat() * 22f
-                            specks.add(
-                                Speck(
-                                    xPx = centerX,                           // store fraction; px in render
-                                    yPx = edgeY,                              // store fraction; px in render
-                                    vx = cos(angle) * speed,
-                                    vy = sin(angle) * speed - rng.nextFloat() * 6f,
-                                    radius = 0.8f + rng.nextFloat() * 1.4f,
-                                    startTime = time,
-                                    lifetime = 0.4f + rng.nextFloat() * 0.5f,
-                                )
-                            )
-                        }
-                    }
-                    specks.removeAll { time - it.startTime > it.lifetime }
+                // Spawn drops up to maxDrops
+                while (drops.size < maxDrops) {
+                    val depth = 0.4f + rng.nextFloat() * 0.6f
+                    drops.add(
+                        RainDropMutable(
+                            xFrac = rng.nextFloat() * 1.2f - 0.10f,
+                            yFrac = -rng.nextFloat() * 0.5f,
+                            lenFrac = (0.018f + rng.nextFloat() * 0.022f) * depth,
+                            speed = (440f + rng.nextFloat() * 380f) * depth * fallSpeedMul,
+                            alpha = (0.45f + rng.nextFloat() * 0.47f) * depth,
+                            depth = depth,
+                            splatted = false,
+                        )
+                    )
+                }
+
+                // Update all drops
+                val iter = drops.iterator()
+                while (iter.hasNext()) {
+                    val d = iter.next()
+                    // px/sec → frac/sec: divide by approx scene height. We don't
+                    // know exact px here, use frac-relative speed of 1/(2400) scale.
+                    val moveFrac = d.speed * dt / 2400f
+                    d.yFrac += moveFrac
+                    d.xFrac += moveFrac * 0.18f // 18% slant per HANDOFF
+                    if (d.yFrac > 1.10f || d.xFrac > 1.20f) iter.remove()
                 }
             }
         }
     }
 
-    Canvas(modifier = modifier.fillMaxSize()) {
+    val zones = LocalSplashZones.current
+
+    Canvas(Modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
-        val time = elapsedNs / 1_000_000_000f
-
-        // Falling streaks
+        // Snapshot zone fractions
+        val zoneFracs = zones?.map {
+            ZoneFrac(it.top / h, it.left / w, it.right / w)
+        } ?: emptyList()
         drops.forEach { d ->
-            val travel = h + 60f
-            val cycle = 0.9f / d.speedFactor
-            val frac = ((time / cycle) + d.phase) % 1f
-            val x = d.xSeed * w - 20f + (frac * 40f)
-            val y = frac * travel - 30f
-            val len = h * 0.05f * d.lengthFactor + 8f
+            // Check splash crossing
+            if (!d.splatted && d.depth > 0.55f) {
+                zoneFracs.forEach { z ->
+                    if (d.yFrac >= z.y && d.yFrac - z.y < 0.01f &&
+                        d.xFrac in z.x1..z.x2) {
+                        spawnSplash(d.xFrac, z.y, intensity, rng)
+                        d.splatted = true
+                    }
+                }
+            }
+            val sx = d.xFrac * w
+            val sy = d.yFrac * h
+            val ex = sx - sin(0.18f) * d.lenFrac * h
+            val ey = sy - cos(0.18f) * d.lenFrac * h
             drawLine(
-                color = Color(0xFFAAC6FF).copy(alpha = 0.45f),
-                start = Offset(x, y),
-                end = Offset(x - 3f, y + len),
-                strokeWidth = 1.7f,
+                color = dropColor.copy(alpha = d.alpha.coerceIn(0f, 1f)),
+                start = Offset(sx, sy),
+                end = Offset(ex, ey),
+                strokeWidth = 1.6f * d.depth,
                 cap = StrokeCap.Round,
             )
-        }
-
-        // Speck droplets disperse from an edge line + fade
-        specks.forEach { s ->
-            val age = (time - s.startTime).coerceIn(0f, s.lifetime)
-            val t = age / s.lifetime
-            val px = s.xPx * w + s.vx * age * 14f
-            val py = s.yPx * h + s.vy * age * 14f + (age * age) * 30f // tiny gravity
-            val alpha = (1f - t) * 0.85f
-            if (alpha > 0.02f) {
-                drawCircle(
-                    color = Color.White.copy(alpha = alpha),
-                    radius = s.radius,
-                    center = Offset(px, py),
-                )
-            }
         }
     }
 }
 
-/* ----- Glass raindrops: static beads + sliding drops with trails ----- */
+private data class ZoneFrac(val y: Float, val x1: Float, val x2: Float)
 
-/** Drawn on TOP of glass tiles (the drops sit on the glass surface). */
+/* ---------- Splashes (separate Canvas above cards) ---------- */
+
+private data class SplashParticle(
+    var xFrac: Float,
+    var yFrac: Float,
+    var vx: Float,            // frac/sec
+    var vy: Float,
+    var life: Float,
+    var age: Float,
+    var radius: Float,        // px
+)
+
+private data class SplashRing(
+    val xFrac: Float,
+    val yFrac: Float,
+    val maxRx: Float,         // px
+    val maxRy: Float,
+    val life: Float,
+    val startDelay: Float,
+    var age: Float,
+)
+
+private val splashParticles = mutableStateListOf<SplashParticle>()
+private val splashRings = mutableStateListOf<SplashRing>()
+
+private fun spawnSplash(xFrac: Float, yFrac: Float, intensity: Float, rng: Random) {
+    val isBig = rng.nextFloat() < 0.15f
+    val burstN = if (isBig) 5 + rng.nextInt(7) else 2 + rng.nextInt(4)
+    val pIntensity = if (isBig) 0.85f + rng.nextFloat() * 0.55f
+                     else 0.45f + rng.nextFloat() * 0.45f
+    val ringCt = if (isBig) (if (rng.nextFloat() < 0.5f) 2 else 1)
+                 else (if (rng.nextFloat() < 0.55f) 1 else 0)
+    repeat(burstN) {
+        val sideways = rng.nextFloat() < 0.12f
+        val angle = if (sideways) {
+            // Wide horizontal scatter
+            -PI.toFloat() / 2f + (rng.nextFloat() - 0.5f) * 2f * PI.toFloat()
+        } else {
+            // Mostly upward fan ± 0.45π
+            -PI.toFloat() / 2f + (rng.nextFloat() - 0.5f) * 0.9f * PI.toFloat()
+        }
+        val speed = 60f + rng.nextFloat() * 180f
+        splashParticles.add(
+            SplashParticle(
+                xFrac = xFrac,
+                yFrac = yFrac,
+                vx = cos(angle) * speed * pIntensity,
+                vy = sin(angle) * speed * pIntensity,
+                life = (0.25f + rng.nextFloat() * 0.50f) * pIntensity,
+                age = 0f,
+                radius = 0.5f + rng.nextFloat() * 1.1f,
+            )
+        )
+    }
+    repeat(ringCt) { i ->
+        val scale = 0.5f + rng.nextFloat() * 0.5f
+        splashRings.add(
+            SplashRing(
+                xFrac = xFrac,
+                yFrac = yFrac,
+                maxRx = (1.8f + rng.nextFloat() * 5.5f) * scale,
+                maxRy = (0.5f + rng.nextFloat() * 1.5f) * scale,
+                life = (0.28f + rng.nextFloat() * 0.17f) * pIntensity,
+                startDelay = i * 0.03f,
+                age = 0f,
+            )
+        )
+    }
+}
+
 @Composable
-fun GlassRainDroplets(modifier: Modifier = Modifier, intense: Boolean) {
-    val beads = remember { mutableStateListOf<StaticBead>() }
-    val active = remember { mutableStateListOf<SlidingDrop>() }
+private fun SplashLayer(intensity: Float) {
     var elapsedNs by remember { mutableLongStateOf(0L) }
-    var lastBeadSpawn by remember { mutableFloatStateOf(0f) }
-    var lastDropSpawn by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        var last = 0L
+        while (true) {
+            withFrameNanos { now ->
+                if (last == 0L) last = now
+                val dtNs = now - last
+                last = now
+                elapsedNs += dtNs
+                val dt = dtNs / 1_000_000_000f
+                // Update particles
+                val it1 = splashParticles.iterator()
+                while (it1.hasNext()) {
+                    val p = it1.next()
+                    p.age += dt
+                    if (p.age > p.life) { it1.remove(); continue }
+                    p.vy += 360f * dt           // gravity in px/s² equivalent
+                    p.xFrac += p.vx * dt / 1080f // assume ~1080px width unit
+                    p.yFrac += p.vy * dt / 2400f
+                }
+                val it2 = splashRings.iterator()
+                while (it2.hasNext()) {
+                    val r = it2.next()
+                    r.age += dt
+                    if (r.age - r.startDelay > r.life) it2.remove()
+                }
+            }
+        }
+    }
+    Canvas(Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        splashRings.forEach { r ->
+            val t = ((r.age - r.startDelay) / r.life).coerceIn(0f, 1f)
+            if (t <= 0f) return@forEach
+            val a = (1f - t) * 0.45f
+            drawOval(
+                color = Color(0xFFDDEAFF).copy(alpha = a),
+                topLeft = Offset(
+                    r.xFrac * w - r.maxRx * t,
+                    r.yFrac * h - r.maxRy * t,
+                ),
+                size = Size(r.maxRx * 2f * t, r.maxRy * 2f * t),
+                style = Stroke(width = 1.2f),
+            )
+        }
+        splashParticles.forEach { p ->
+            val fade = (1f - p.age / p.life) * 0.95f
+            drawCircle(
+                color = Color.White.copy(alpha = fade.coerceIn(0f, 1f)),
+                radius = p.radius,
+                center = Offset(p.xFrac * w, p.yFrac * h),
+            )
+        }
+    }
+}
 
-    val maxBeads = if (intense) 80 else 55
-    val maxDrops = if (intense) 14 else 9
+/* ---------- Snow ---------- */
+
+private class FlakeMutable(
+    var xFrac: Float,
+    var yFrac: Float,
+    var fallSpeed: Float,
+    var alpha: Float,
+    var radius: Float,
+    val swayAmp: Float,
+    val swayFreq: Float,
+    val phase: Float,
+)
+
+@Composable
+private fun SnowCanvas(density: Float) {
+    val flakes = remember { mutableStateListOf<FlakeMutable>() }
+    val maxFlakes = (180 * density).toInt().coerceAtMost(300)
+    var elapsedNs by remember { mutableLongStateOf(0L) }
+    val rng = remember { Random(System.currentTimeMillis() xor 0xBEEF) }
+
+    LaunchedEffect(density) {
+        var last = 0L
+        while (true) {
+            withFrameNanos { now ->
+                if (last == 0L) last = now
+                val dtNs = now - last
+                last = now
+                elapsedNs += dtNs
+                val dt = dtNs / 1_000_000_000f
+                while (flakes.size < maxFlakes) {
+                    val depth = 0.4f + rng.nextFloat() * 0.6f
+                    flakes.add(
+                        FlakeMutable(
+                            xFrac = rng.nextFloat(),
+                            yFrac = -rng.nextFloat() * 0.3f,
+                            fallSpeed = (20f + rng.nextFloat() * 45f) * depth,
+                            alpha = (0.55f + rng.nextFloat() * 0.4f) * (0.4f + depth * 0.6f),
+                            radius = (0.8f + rng.nextFloat() * 2.4f) * depth,
+                            swayAmp = 8f + rng.nextFloat() * 20f,
+                            swayFreq = 0.3f + rng.nextFloat() * 0.6f,
+                            phase = rng.nextFloat() * 6.28f,
+                        )
+                    )
+                }
+                val it = flakes.iterator()
+                while (it.hasNext()) {
+                    val f = it.next()
+                    f.yFrac += f.fallSpeed * dt / 2400f
+                    if (f.yFrac > 1.10f) it.remove()
+                }
+            }
+        }
+    }
+    Canvas(Modifier.fillMaxSize()) {
+        val t = elapsedNs / 1_000_000_000f
+        val w = size.width
+        val h = size.height
+        flakes.forEach { f ->
+            val visualX = (f.xFrac * w) + sin(t * f.swayFreq + f.phase) * f.swayAmp
+            drawCircle(
+                color = Color.White.copy(alpha = f.alpha.coerceIn(0f, 1f)),
+                radius = f.radius,
+                center = Offset(visualX, f.yFrac * h),
+            )
+        }
+    }
+}
+
+/* ---------- Stars ---------- */
+
+@Composable
+private fun Stars(density: Float, brightness: Float) {
+    val seeds = remember(density) {
+        val count = (240 * density).toInt().coerceAtMost(380)
+        List(count) { i ->
+            val s = i * 19
+            StarSeed(
+                x = Random(s).nextFloat(),
+                y = Random(s + 1).nextFloat() * 0.85f,
+                r = 0.4f + Random(s + 2).nextFloat() * 1.2f,
+                baseAlpha = 0.35f + Random(s + 3).nextFloat() * 0.60f,
+                freq = 0.6f + Random(s + 4).nextFloat() * 1.6f,
+                phase = Random(s + 5).nextFloat() * 6.28f,
+            )
+        }
+    }
+    var elapsedNs by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        while (true) withFrameNanos { elapsedNs = it }
+    }
+    Canvas(Modifier.fillMaxSize()) {
+        val t = elapsedNs / 1_000_000_000f
+        val w = size.width
+        val h = size.height
+        seeds.forEach { s ->
+            val twinkle = ((sin(t * s.freq + s.phase) * 0.5f + 0.5f).pow(2) * 0.6f + 0.4f)
+            val a = (s.baseAlpha * twinkle * brightness).coerceIn(0f, 1f)
+            val center = Offset(s.x * w, s.y * h)
+            if (s.r > 1.1f) {
+                drawCircle(Color.White.copy(alpha = a * 0.25f), s.r * 2.5f, center)
+            }
+            drawCircle(Color.White.copy(alpha = a), s.r, center)
+        }
+    }
+}
+
+private data class StarSeed(
+    val x: Float,
+    val y: Float,
+    val r: Float,
+    val baseAlpha: Float,
+    val freq: Float,
+    val phase: Float,
+)
+
+/* ---------- Lightning ---------- */
+
+private class Bolt(
+    val startX: Float,         // fraction
+    val mainPath: List<Offset>,
+    val branches: List<List<Offset>>,
+    val originY: Float,
+    val durationSec: Float,
+    var age: Float,
+    val jitterSeed: Float,
+)
+
+@Composable
+private fun LightningCanvas() {
+    val bolts = remember { mutableStateListOf<Bolt>() }
+    var elapsedNs by remember { mutableLongStateOf(0L) }
+    var nextStrikeAt by remember { mutableFloatStateOf(3.5f) }
+    val rng = remember { Random(System.currentTimeMillis() xor 0xCAFE) }
 
     LaunchedEffect(Unit) {
         var last = 0L
-        val rng = Random(System.currentTimeMillis() xor 0xBADL)
         while (true) {
             withFrameNanos { now ->
                 if (last == 0L) last = now
@@ -667,326 +1021,391 @@ fun GlassRainDroplets(modifier: Modifier = Modifier, intense: Boolean) {
                 val dt = dtNs / 1_000_000_000f
                 val time = elapsedNs / 1_000_000_000f
 
-                // Spawn idle beads
-                if (time - lastBeadSpawn > (if (intense) 0.06f else 0.10f) && beads.size < maxBeads) {
-                    lastBeadSpawn = time
-                    beads.add(
-                        StaticBead(
-                            x = rng.nextFloat(),
-                            y = rng.nextFloat(),
-                            radius = 1.2f + rng.nextFloat() * 2.2f,
-                            bornAt = time,
-                            ttl = 4f + rng.nextFloat() * 6f,
-                        )
-                    )
-                }
-                beads.removeAll { time - it.bornAt > it.ttl }
-
-                // Spawn sliding drops
-                if (time - lastDropSpawn > (if (intense) 0.20f else 0.35f) && active.size < maxDrops) {
-                    lastDropSpawn = time
-                    active.add(
-                        SlidingDrop(
-                            xFrac = rng.nextFloat(),
-                            yFrac = -0.02f + rng.nextFloat() * 0.05f,
-                            radius = 4f + rng.nextFloat() * 6f,
-                            velocity = 30f + rng.nextFloat() * 80f, // px/sec
-                            acceleration = 60f + rng.nextFloat() * 80f,
-                            trailEveryS = 0.04f + rng.nextFloat() * 0.04f,
-                            lastTrailAt = time,
-                        )
-                    )
-                }
-
-                // Update sliding drops
-                val toRemove = mutableListOf<SlidingDrop>()
-                active.forEach { d ->
-                    d.velocity += d.acceleration * dt
-                    d.yFrac += d.velocity * dt / 2400f // assume ~2400 px height ref; calibrated visually
-                    if (time - d.lastTrailAt > d.trailEveryS) {
-                        d.lastTrailAt = time
-                        d.trail.add(
-                            TrailBead(
-                                xFrac = d.xFrac + (rng.nextFloat() - 0.5f) * 0.004f,
-                                yFrac = d.yFrac,
-                                radius = d.radius * (0.35f + rng.nextFloat() * 0.30f),
-                                bornAt = time,
-                                ttl = 2.5f + rng.nextFloat() * 2.0f,
-                            )
-                        )
+                if (time >= nextStrikeAt) {
+                    // Build a new bolt path (HANDOFF section 6)
+                    val w = 1080f // unit width
+                    val h = 2400f
+                    val startX = 0.25f + rng.nextFloat() * 0.50f
+                    val segLen = 36f + rng.nextFloat() * 12f
+                    val main = mutableListOf<Offset>()
+                    var px = startX * w
+                    var py = -8f
+                    main.add(Offset(px, py))
+                    while (py < h * (0.85f + rng.nextFloat() * 0.18f)) {
+                        py += 16f + rng.nextFloat() * 38f
+                        px += (rng.nextFloat() - 0.5f) * segLen * 1.4f
+                        main.add(Offset(px, py))
                     }
-                    d.trail.removeAll { time - it.bornAt > it.ttl }
-                    if (d.yFrac > 1.05f) toRemove += d
+                    val branches = (0 until rng.nextInt(3)).map {
+                        val anchorIdx = main.size / 4 + rng.nextInt(main.size / 2)
+                        val start = main[anchorIdx]
+                        val dir = if (rng.nextFloat() < 0.5f) -1f else +1f
+                        val pts = mutableListOf(start)
+                        var bx = start.x
+                        var by = start.y
+                        val segCount = 3 + rng.nextInt(4)
+                        repeat(segCount) {
+                            by += 14f + rng.nextFloat() * 36f
+                            bx += dir * (8f + rng.nextFloat() * 22f)
+                            pts.add(Offset(bx, by))
+                        }
+                        pts
+                    }
+                    bolts.add(
+                        Bolt(
+                            startX = startX,
+                            mainPath = main,
+                            branches = branches,
+                            originY = -8f,
+                            durationSec = 0.55f + rng.nextFloat() * 0.25f,
+                            age = 0f,
+                            jitterSeed = rng.nextFloat() * 100f,
+                        )
+                    )
+                    nextStrikeAt = time + 3.5f + rng.nextFloat() * 5.5f
                 }
-                active.removeAll(toRemove)
+
+                val it = bolts.iterator()
+                while (it.hasNext()) {
+                    val b = it.next()
+                    b.age += dt
+                    if (b.age > b.durationSec) it.remove()
+                }
             }
         }
     }
 
-    val highlightColor = Color.White.copy(alpha = 0.85f)
-    val edgeColor = Color(0xFF14202E).copy(alpha = 0.55f)
-    val coreColor = Color(0xFFE9F2FF).copy(alpha = 0.18f)
-
-    Canvas(modifier = modifier.fillMaxSize()) {
-        val w = size.width
-        val h = size.height
+    Canvas(Modifier.fillMaxSize()) {
         val time = elapsedNs / 1_000_000_000f
+        val sx = size.width / 1080f
+        val sy = size.height / 2400f
+        bolts.forEach { b ->
+            val u = (b.age / b.durationSec).coerceIn(0f, 1f)
+            val f = flashEnvelope(u)
+            if (f <= 0.01f) return@forEach
+            // Sky bloom
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color(0xFFE8F0FF).copy(alpha = f * 0.45f),
+                        Color.Transparent,
+                    ),
+                    center = Offset(b.mainPath.first().x * sx, size.height * 0.18f),
+                    radius = size.minDimension,
+                ),
+                radius = size.minDimension,
+                center = Offset(b.mainPath.first().x * sx, size.height * 0.18f),
+            )
 
-        // Static beads
-        beads.forEach { b ->
-            val age = time - b.bornAt
-            val t = (age / b.ttl).coerceIn(0f, 1f)
-            val alpha = if (t < 0.15f) (t / 0.15f) else (1f - (t - 0.15f) / 0.85f)
-            val cx = b.x * w
-            val cy = b.y * h
-            drawDrop(cx, cy, b.radius, alpha, highlightColor, edgeColor, coreColor)
-        }
-
-        // Sliding drops + their trails
-        active.forEach { d ->
-            d.trail.forEach { t ->
-                val age = time - t.bornAt
-                val ageT = (age / t.ttl).coerceIn(0f, 1f)
-                val alpha = (1f - ageT) * 0.85f
-                drawDrop(t.xFrac * w, t.yFrac * h, t.radius, alpha,
-                    highlightColor, edgeColor, coreColor)
+            fun shimmer(p: Offset, i: Int): Offset {
+                val jitter = sin(time * 65f + i + b.jitterSeed) * 0.6f
+                return Offset(p.x * sx + jitter, p.y * sy + jitter)
             }
-            drawDrop(d.xFrac * w, d.yFrac * h, d.radius, 1f,
-                highlightColor, edgeColor, coreColor)
+            // Helper to build a Path from points + shimmer
+            fun buildPath(pts: List<Offset>): Path {
+                val p = Path()
+                pts.forEachIndexed { i, point ->
+                    val s = shimmer(point, i)
+                    if (i == 0) p.moveTo(s.x, s.y) else p.lineTo(s.x, s.y)
+                }
+                return p
+            }
+
+            val main = buildPath(b.mainPath)
+            // Wide halo
+            drawPath(
+                main,
+                color = Color(0xFFB4D2FF).copy(alpha = f * 0.55f),
+                style = Stroke(width = 5f * sx, cap = StrokeCap.Round),
+            )
+            // Mid glow
+            drawPath(
+                main,
+                color = Color(0xFFE6F0FF).copy(alpha = f * 0.90f),
+                style = Stroke(width = 2.2f * sx, cap = StrokeCap.Round),
+            )
+            // White core
+            drawPath(
+                main,
+                color = Color.White.copy(alpha = f),
+                style = Stroke(width = 1f * sx, cap = StrokeCap.Round),
+            )
+            b.branches.forEach { bp ->
+                val path = buildPath(bp)
+                drawPath(
+                    path,
+                    color = Color(0xFFB4D2FF).copy(alpha = f * 0.45f),
+                    style = Stroke(width = 3f * sx, cap = StrokeCap.Round),
+                )
+                drawPath(
+                    path,
+                    color = Color.White.copy(alpha = f * 0.85f),
+                    style = Stroke(width = 0.8f * sx, cap = StrokeCap.Round),
+                )
+            }
         }
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDrop(
-    cx: Float,
-    cy: Float,
-    radius: Float,
-    alpha: Float,
-    highlight: Color,
-    edge: Color,
-    core: Color,
-) {
-    if (alpha < 0.02f || radius < 0.4f) return
-    // Subtle core fill (lens body)
-    drawCircle(
-        color = core.copy(alpha = core.alpha * alpha),
-        radius = radius,
-        center = Offset(cx, cy),
-    )
-    // Dark lower-right edge (refracted boundary)
-    drawCircle(
-        color = edge.copy(alpha = edge.alpha * alpha),
-        radius = radius,
-        center = Offset(cx, cy),
-        style = Stroke(width = (radius * 0.28f).coerceAtLeast(0.8f)),
-    )
-    // Bright top-left highlight (specular)
-    drawCircle(
-        color = highlight.copy(alpha = highlight.alpha * alpha),
-        radius = radius * 0.35f,
-        center = Offset(cx - radius * 0.30f, cy - radius * 0.32f),
-    )
+private fun flashEnvelope(u: Float): Float = when {
+    u < 0.04f -> u / 0.04f                                // attack 0→1
+    u < 0.18f -> 1f - (u - 0.04f) / 0.14f * 0.55f         // fade to 0.45
+    u < 0.26f -> 0.45f + (u - 0.18f) / 0.08f * 0.55f      // re-strike peak 1
+    u < 0.55f -> 1f - (u - 0.26f) / 0.29f * 0.75f         // long fade to 0.25
+    u < 1.00f -> 0.25f * (1f - (u - 0.55f) / 0.45f)       // tail
+    else -> 0f
 }
 
-private data class StaticBead(
-    val x: Float,
-    val y: Float,
-    val radius: Float,
-    val bornAt: Float,
-    val ttl: Float,
-)
-
-private data class TrailBead(
-    val xFrac: Float,
-    val yFrac: Float,
-    val radius: Float,
-    val bornAt: Float,
-    val ttl: Float,
-)
-
-private class SlidingDrop(
-    var xFrac: Float,
-    var yFrac: Float,
-    var radius: Float,
-    var velocity: Float,
-    var acceleration: Float,
-    var trailEveryS: Float,
-    var lastTrailAt: Float,
-    val trail: SnapshotStateList<TrailBead> = mutableStateListOf(),
-)
-
-/* ----- Lightning: jagged bolt path + screen flash ----- */
-private data class Bolt(
-    val seed: Long,
-    val startX: Float,        // 0..1
-    val startY: Float = 0f,
-    val endY: Float,          // 0..1
-    val segmentCount: Int,
-    val branchCount: Int,
-    val startTimeMs: Long,
-    val durationMs: Long,
-)
+/* ---------- Fog / Haze / Windy / Aurora / Misty spray ---------- */
 
 @Composable
-private fun LightningOverlay(modifier: Modifier) {
-    var flash by remember { mutableFloatStateOf(0f) }
-    var bolt by remember { androidx.compose.runtime.mutableStateOf<Bolt?>(null) }
-    var nowMs by remember { mutableLongStateOf(0L) }
-
-    // Frame ticker so the bolt fade can re-render each frame
-    LaunchedEffect(Unit) {
-        while (true) {
-            withFrameNanos { now ->
-                nowMs = now / 1_000_000L
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        val rng = Random(System.currentTimeMillis())
-        while (true) {
-            val waitMs = 3500L + rng.nextInt(6500).toLong()
-            kotlinx.coroutines.delay(waitMs)
-            // Spawn bolt
-            val newBolt = Bolt(
-                seed = rng.nextLong(),
-                startX = 0.20f + rng.nextFloat() * 0.60f,
-                endY = 0.55f + rng.nextFloat() * 0.30f,
-                segmentCount = 8 + rng.nextInt(4),
-                branchCount = 1 + rng.nextInt(2),
-                startTimeMs = System.currentTimeMillis(),
-                durationMs = 360L + rng.nextInt(140).toLong(),
-            )
-            bolt = newBolt
-            // Quick flash sequence
-            flash = 0.50f
-            kotlinx.coroutines.delay(60)
-            flash = 0.10f
-            kotlinx.coroutines.delay(70)
-            flash = 0.85f
-            kotlinx.coroutines.delay(90)
-            flash = 0.20f
-            kotlinx.coroutines.delay(120)
-            flash = 0f
-            // Let bolt linger past its duration then clear
-            kotlinx.coroutines.delay(newBolt.durationMs)
-            bolt = null
-        }
-    }
-
-    Box(modifier = modifier.fillMaxSize()) {
-        if (flash > 0f) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFFE8F0FF).copy(alpha = flash))
-            )
-        }
-
-        val activeBolt = bolt
-        if (activeBolt != null) {
-            val ageMs = nowMs - activeBolt.startTimeMs
-            val t = (ageMs.toFloat() / activeBolt.durationMs).coerceIn(0f, 1f)
-            val alpha = (1f - t).let { it * it } // ease-out
-            if (alpha > 0.01f) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawBolt(activeBolt, alpha)
-                }
-            }
-        }
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBolt(
-    bolt: Bolt,
-    alpha: Float,
-) {
-    val rng = Random(bolt.seed)
-    val w = size.width
-    val h = size.height
-
-    val main = buildBoltPath(
-        rng = rng,
-        startX = bolt.startX * w,
-        startY = bolt.startY * h,
-        endY = bolt.endY * h,
-        segments = bolt.segmentCount,
-        jitter = w * 0.08f,
-    )
-
-    // Outer halo
-    drawPath(
-        path = main,
-        color = Color(0xFFAEC8FF).copy(alpha = alpha * 0.45f),
-        style = Stroke(width = 14f, cap = StrokeCap.Round),
-    )
-    // Mid glow
-    drawPath(
-        path = main,
-        color = Color(0xFFE6EEFF).copy(alpha = alpha * 0.85f),
-        style = Stroke(width = 6f, cap = StrokeCap.Round),
-    )
-    // Hot core
-    drawPath(
-        path = main,
-        color = Color.White.copy(alpha = alpha),
-        style = Stroke(width = 2.4f, cap = StrokeCap.Round),
-    )
-
-    // Branches forking off the main path
-    repeat(bolt.branchCount) {
-        val branchStartT = 0.25f + rng.nextFloat() * 0.45f
-        val branchStartX = bolt.startX * w + (rng.nextFloat() - 0.5f) * w * 0.18f
-        val branchStartY = bolt.startY * h + (bolt.endY * h - bolt.startY * h) * branchStartT
-        val branchEndX = branchStartX + (rng.nextFloat() - 0.5f) * w * 0.30f
-        val branchEndY = branchStartY + h * (0.10f + rng.nextFloat() * 0.18f)
-        val branch = buildBoltPath(
-            rng = rng,
-            startX = branchStartX,
-            startY = branchStartY,
-            endY = branchEndY,
-            segments = 4 + rng.nextInt(3),
-            jitter = w * 0.05f,
-            endX = branchEndX,
-        )
-        drawPath(
-            path = branch,
-            color = Color(0xFFE6EEFF).copy(alpha = alpha * 0.55f),
-            style = Stroke(width = 3f, cap = StrokeCap.Round),
-        )
-        drawPath(
-            path = branch,
-            color = Color.White.copy(alpha = alpha * 0.85f),
-            style = Stroke(width = 1.2f, cap = StrokeCap.Round),
+private fun MistyBottomSpray() {
+    Canvas(Modifier.fillMaxSize()) {
+        val gradH = size.height * 0.30f
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color.White.copy(alpha = 0.12f),
+                ),
+                startY = size.height - gradH,
+                endY = size.height,
+            ),
+            topLeft = Offset(0f, size.height - gradH),
+            size = Size(size.width, gradH),
         )
     }
 }
 
-private fun buildBoltPath(
-    rng: Random,
-    startX: Float,
-    startY: Float,
-    endY: Float,
-    segments: Int,
-    jitter: Float,
-    endX: Float = startX + (rng.nextFloat() - 0.5f) * jitter * 1.4f,
-): Path {
-    val path = Path()
-    path.moveTo(startX, startY)
-    val totalDy = endY - startY
-    var cx = startX
-    var cy = startY
-    val targetEndX = endX
-    for (i in 1..segments) {
-        val t = i.toFloat() / segments
-        // Linear path from start to end with random horizontal jitter
-        val baseX = startX + (targetEndX - startX) * t
-        val baseY = startY + totalDy * t
-        val nx = baseX + (rng.nextFloat() - 0.5f) * jitter
-        val ny = baseY + (rng.nextFloat() - 0.3f) * jitter * 0.4f
-        path.lineTo(nx, ny)
-        cx = nx
-        cy = ny
+@Composable
+private fun FogBands() {
+    // Continuous atmospheric fog — single soft full-screen veil + 3 very wide
+    // slow-drifting density blobs that vary local thickness. No discrete
+    // banded geometry; nothing reads as a "bar".
+    val transition = rememberInfiniteTransition(label = "fog")
+    val blobA by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(90_000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "blob-a",
+    )
+    val blobB by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(130_000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "blob-b",
+    )
+    val blobC by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(160_000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "blob-c",
+    )
+
+    // Base uniform mist veil — vertical gradient peaks mid-screen, fades at
+    // top + bottom. Low alpha overall (~0.25 max) so cards underneath stay
+    // readable; the scrim is what carries readability, not the fog itself.
+    Canvas(Modifier.fillMaxSize()) {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.06f),
+                    Color.White.copy(alpha = 0.22f),
+                    Color.White.copy(alpha = 0.25f),
+                    Color.White.copy(alpha = 0.18f),
+                    Color.White.copy(alpha = 0.05f),
+                ),
+            ),
+        )
+
+        val w = size.width
+        val h = size.height
+        // 3 huge density blobs sliding horizontally at different speeds and y
+        // positions. Each is wider than the screen by 2× so the falloff is
+        // out of view → no visible edge anywhere in the viewport.
+        val blobs = listOf(
+            BlobDrift(blobA, 0.32f, 0.35f),
+            BlobDrift(blobB, 0.56f, 0.45f),
+            BlobDrift(blobC, 0.80f, 0.40f),
+        )
+        blobs.forEach { b ->
+            val bw = w * 3.0f
+            val bh = h * 1.8f
+            val cx = -bw / 2f + b.drift * (w + bw)
+            val cy = b.yFrac * h
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = b.alphaScale * 0.22f),
+                        Color.White.copy(alpha = b.alphaScale * 0.10f),
+                        Color.Transparent,
+                    ),
+                    center = Offset(cx, cy),
+                    radius = bw * 0.45f,
+                ),
+                topLeft = Offset(cx - bw / 2f, cy - bh / 2f),
+                size = Size(bw, bh),
+            )
+        }
     }
-    return path
+}
+
+private data class BlobDrift(val drift: Float, val yFrac: Float, val alphaScale: Float)
+
+@Composable
+private fun HazyClouds() {
+    val transition = rememberInfiniteTransition(label = "haze")
+    val pulse by transition.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(tween(11_000, easing = LinearEasing), RepeatMode.Reverse),
+        label = "pulse",
+    )
+    val drift by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(40_000, easing = LinearEasing), RepeatMode.Restart),
+        label = "drift",
+    )
+    Canvas(Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        // Diffused warm sun disc top-right
+        val sunCx = w * 0.62f
+        val sunCy = h * 0.22f
+        val sunR = w * 0.35f * pulse
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFFFFE4B5).copy(alpha = 0.50f),
+                    Color(0xFFFFB76E).copy(alpha = 0.20f),
+                    Color.Transparent,
+                ),
+                center = Offset(sunCx, sunCy),
+                radius = sunR,
+            ),
+            radius = sunR,
+            center = Offset(sunCx, sunCy),
+        )
+        // 4 large warm soft cloud blobs
+        repeat(4) { i ->
+            val phase = (drift + i * 0.31f) % 1f
+            val bw = w * (0.5f + i * 0.08f)
+            val cx = -bw + phase * (w + bw) + bw / 2f
+            val cy = h * (0.30f + i * 0.13f)
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color(0xFFE9C8A6).copy(alpha = 0.40f),
+                        Color(0xFFB89060).copy(alpha = 0.18f),
+                        Color.Transparent,
+                    ),
+                    center = Offset(cx, cy),
+                    radius = bw * 0.5f,
+                ),
+                topLeft = Offset(cx - bw / 2f, cy - h * 0.10f),
+                size = Size(bw, h * 0.20f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun WindyStreaks() {
+    val transition = rememberInfiniteTransition(label = "windy")
+    val streakConfigs = listOf(
+        WindyConfig(0.22f, 0.16f, +1, 32),
+        WindyConfig(0.36f, 0.20f, -1, 38),
+        WindyConfig(0.48f, 0.14f, +1, 42),
+        WindyConfig(0.60f, 0.18f, -1, 36),
+        WindyConfig(0.72f, 0.16f, +1, 46),
+        WindyConfig(0.84f, 0.20f, -1, 40),
+    )
+    streakConfigs.forEachIndexed { i, cfg ->
+        val drift by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(cfg.durSec * 1000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "wind-$i",
+        )
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val bandW = w * 1.4f
+            val cx = if (cfg.dir > 0)
+                -bandW + (drift % 1f) * (w + bandW) + bandW / 2f
+            else
+                w + bandW - (drift % 1f) * (w + bandW) - bandW / 2f
+            val cy = cfg.yFrac * h
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.45f),
+                        Color.White.copy(alpha = 0.18f),
+                        Color.Transparent,
+                    ),
+                    center = Offset(cx, cy),
+                    radius = bandW * 0.5f,
+                ),
+                topLeft = Offset(cx - bandW / 2f, cy - h * cfg.heightMul / 2f),
+                size = Size(bandW, h * cfg.heightMul),
+            )
+        }
+    }
+}
+
+private data class WindyConfig(val yFrac: Float, val heightMul: Float, val dir: Int, val durSec: Int)
+
+@Composable
+private fun AuroraBands() {
+    val transition = rememberInfiniteTransition(label = "aurora")
+    val bandColors = listOf(
+        listOf(Color(0xFF6CFFAE), Color(0xFF34D2FF)),
+        listOf(Color(0xFFFF7CE0), Color(0xFFFFB28A)),
+        listOf(Color(0xFF8AB6FF), Color(0xFF6CFFAE)),
+    )
+    bandColors.forEachIndexed { i, palette ->
+        val shimmer by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween((14 + i * 4) * 1000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "aurora-$i",
+        )
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val cy = h * (0.25f + i * 0.16f) + sin(shimmer * 2f * PI.toFloat()) * 20f
+            val bandH = h * 0.32f
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        palette[0].copy(alpha = 0.30f),
+                        palette[1].copy(alpha = 0.25f),
+                        Color.Transparent,
+                    ),
+                    startY = cy - bandH / 2f,
+                    endY = cy + bandH / 2f,
+                ),
+                topLeft = Offset(0f, cy - bandH / 2f),
+                size = Size(w, bandH),
+                blendMode = BlendMode.Screen,
+            )
+        }
+    }
 }

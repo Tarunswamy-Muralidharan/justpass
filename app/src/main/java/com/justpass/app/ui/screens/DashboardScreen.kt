@@ -77,6 +77,7 @@ import com.justpass.app.ui.components.GlassCardShapeSmall
 import com.justpass.app.ui.components.GlassListCard
 import com.justpass.app.ui.components.GlassListSurface
 import com.justpass.app.ui.components.LiquidGlassCard
+import com.justpass.app.ui.components.registerAsSplashTarget
 import com.justpass.app.ui.viewmodel.DashboardViewModel
 import com.justpass.app.data.model.TargetCgpaResult
 import io.github.fletchmckee.liquid.LiquidState
@@ -125,13 +126,41 @@ fun DashboardScreen(
     val securePrefs = remember { SecurePreferences.getInstance(context) }
     val attendanceTarget = remember { securePrefs.attendanceTarget }
 
-    // Load cached profile picture
-    val profileBitmap = remember {
-        securePrefs.cachedProfilePicPath?.let { path ->
+    // Load cached profile picture (survives offline / server-down because it's
+    // persisted in filesDir, not cacheDir which Android can wipe).
+    var profileBitmap by remember {
+        mutableStateOf<android.graphics.Bitmap?>(
+            securePrefs.cachedProfilePicPath?.let { path ->
+                try {
+                    val file = java.io.File(path)
+                    if (file.exists()) BitmapFactory.decodeFile(path) else null
+                } catch (_: Exception) { null }
+            }
+        )
+    }
+
+    // Refresh profile picture in background on every dashboard launch so the
+    // cached copy stays current. Failure (no network / 5xx) leaves the cached
+    // bitmap on screen — never blanks the UI.
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val file = java.io.File(path)
-                if (file.exists()) BitmapFactory.decodeFile(path) else null
-            } catch (_: Exception) { null }
+                val repo = com.justpass.app.data.repository.AttendanceRepository.getInstance(context)
+                val bytes = repo.fetchProfilePicture()
+                if (bytes != null && bytes.isNotEmpty()) {
+                    val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    if (bmp != null) {
+                        profileBitmap = bmp
+                        try {
+                            val cacheFile = java.io.File(context.filesDir, "profile_pic.jpg")
+                            cacheFile.outputStream().use { out ->
+                                bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
+                            }
+                            securePrefs.cachedProfilePicPath = cacheFile.absolutePath
+                        } catch (_: Exception) {}
+                    }
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -335,9 +364,10 @@ fun DashboardScreen(
                                 .border(1.5.dp, primaryColor.copy(alpha = 0.4f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (profileBitmap != null) {
+                            val pb = profileBitmap
+                            if (pb != null) {
                                 Image(
-                                    bitmap = profileBitmap.asImageBitmap(),
+                                    bitmap = pb.asImageBitmap(),
                                     contentDescription = "Profile",
                                     modifier = Modifier.fillMaxSize().clip(CircleShape),
                                     contentScale = ContentScale.Crop
@@ -571,7 +601,9 @@ fun DashboardScreen(
             scrollOffsetPx = dashboardScrollState.value.toFloat(),
         )
         LiquidGlassCard(cardState = cardState,
-            modifier = Modifier.fillMaxWidth().clickable { Analytics.logTileClicked("attendance"); onSubjectAttendanceClick() },
+            modifier = Modifier.fillMaxWidth()
+                .registerAsSplashTarget()
+                .clickable { Analytics.logTileClicked("attendance"); onSubjectAttendanceClick() },
             tintColor = attendanceTint) {
             Column(
                 modifier = Modifier
