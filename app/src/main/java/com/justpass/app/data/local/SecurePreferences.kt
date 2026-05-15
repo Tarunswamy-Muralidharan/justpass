@@ -82,13 +82,13 @@ class SecurePreferences(context: Context) {
         get() = regularPrefs.getString(KEY_CHESS_BOARD_THEME, "CHESS_COM") ?: "CHESS_COM"
         set(value) = regularPrefs.edit().putString(KEY_CHESS_BOARD_THEME, value).apply()
 
-    var weatherMode: String
-        get() = regularPrefs.getString(KEY_WEATHER_MODE, "OFF") ?: "OFF"
-        set(value) = regularPrefs.edit().putString(KEY_WEATHER_MODE, value).apply()
+    var weatherScene: String
+        get() = regularPrefs.getString(KEY_WEATHER_SCENE, "OFF") ?: "OFF"
+        set(value) = regularPrefs.edit().putString(KEY_WEATHER_SCENE, value).apply()
 
-    var weatherTestingMode: Boolean
-        get() = regularPrefs.getBoolean(KEY_WEATHER_TESTING, false)
-        set(value) = regularPrefs.edit().putBoolean(KEY_WEATHER_TESTING, value).apply()
+    var moonPhase: String
+        get() = regularPrefs.getString(KEY_MOON_PHASE, "AUTO") ?: "AUTO"
+        set(value) = regularPrefs.edit().putString(KEY_MOON_PHASE, value).apply()
 
     var programmeName: String?
         get() = regularPrefs.getString(KEY_PROGRAMME_NAME, null)
@@ -272,8 +272,8 @@ class SecurePreferences(context: Context) {
         private const val KEY_CACHED_ABSENT_DAYS = "cached_absent_days_json"
         private const val KEY_CACHED_COURSE_MARKS_FULL = "cached_course_marks_full_json"
         private const val KEY_CHESS_BOARD_THEME = "chess_board_theme"
-        private const val KEY_WEATHER_MODE = "weather_mode"
-        private const val KEY_WEATHER_TESTING = "weather_testing"
+        private const val KEY_WEATHER_SCENE = "weather_scene"
+        private const val KEY_MOON_PHASE = "moon_phase"
         private const val KEY_TARGET_CGPA = "target_cgpa"
         private const val KEY_DISMISSED_ANNOUNCEMENT = "dismissed_announcement_id"
 

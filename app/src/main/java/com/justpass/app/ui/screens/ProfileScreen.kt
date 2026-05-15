@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -72,10 +73,10 @@ fun ProfileScreen(
     onBugReportClick: () -> Unit = {},
     onBugReportInboxClick: () -> Unit = {},
     onManageAdminsClick: () -> Unit = {},
-    weatherMode: com.justpass.app.ui.components.WeatherMode = com.justpass.app.ui.components.WeatherMode.OFF,
-    onWeatherModeChange: (com.justpass.app.ui.components.WeatherMode) -> Unit = {},
-    weatherTesting: Boolean = false,
-    onWeatherTestingChange: (Boolean) -> Unit = {}
+    weatherScene: com.justpass.app.ui.components.WeatherScene = com.justpass.app.ui.components.WeatherScene.OFF,
+    onWeatherSceneChange: (com.justpass.app.ui.components.WeatherScene) -> Unit = {},
+    moonPhase: com.justpass.app.ui.components.MoonPhase = com.justpass.app.ui.components.MoonPhase.AUTO,
+    onMoonPhaseChange: (com.justpass.app.ui.components.MoonPhase) -> Unit = {}
 ) {
     val context = LocalContext.current
     val securePrefs = SecurePreferences.getInstance(context)
@@ -448,45 +449,110 @@ fun ProfileScreen(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
-                // Weather mode toggle — temporary manual switch (will be replaced
-                // by live weather API later). Tap to cycle through modes.
+                // Weather scene picker — 16 manual test scenes per HANDOFF.md.
+                // Tap row to open picker dialog with all options.
+                var showScenePicker by remember { mutableStateOf(false) }
                 ListItem(
-                    headlineContent = { Text("Weather Mode") },
+                    headlineContent = { Text("Weather Scene") },
                     leadingContent = { Icon(Icons.Default.Cloud, null) },
                     supportingContent = {
                         Text(
-                            weatherMode.displayName + "  •  tap to cycle",
+                            weatherScene.displayName + "  •  tap to change",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.primary,
                         )
                     },
-                    modifier = Modifier.clickable {
-                        onWeatherModeChange(weatherMode.next())
-                    },
+                    modifier = Modifier.clickable { showScenePicker = true },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
+                if (showScenePicker) {
+                    AlertDialog(
+                        onDismissRequest = { showScenePicker = false },
+                        title = { Text("Pick a weather scene") },
+                        text = {
+                            androidx.compose.foundation.lazy.LazyColumn {
+                                items(com.justpass.app.ui.components.WeatherScene.entries.toList()) { scene ->
+                                    val selected = scene == weatherScene
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                onWeatherSceneChange(scene)
+                                                showScenePicker = false
+                                            }
+                                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        RadioButton(selected = selected, onClick = null)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            scene.displayName,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (selected) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showScenePicker = false }) { Text("Close") }
+                        },
+                        containerColor = Color(0xFF1E2A3A),
+                    )
+                }
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
-                // Weather: Testing — swaps in ColorOS-style sprite-bolt + parallax
-                // tilted rain. Off = original Compose-drawn effects.
+                // Moon phase picker — only meaningful for Clear Night.
+                var showMoonPicker by remember { mutableStateOf(false) }
                 ListItem(
-                    headlineContent = { Text("Weather Testing") },
+                    headlineContent = { Text("Moon Phase") },
                     leadingContent = { Icon(Icons.Default.Cloud, null) },
                     supportingContent = {
                         Text(
-                            (if (weatherTesting) "On" else "Off") + "  •  ColorOS-style FX",
+                            moonPhase.displayName + "  •  Clear Night scene",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.primary,
                         )
                     },
-                    trailingContent = {
-                        Switch(
-                            checked = weatherTesting,
-                            onCheckedChange = onWeatherTestingChange,
-                        )
-                    },
-                    modifier = Modifier.clickable { onWeatherTestingChange(!weatherTesting) },
+                    modifier = Modifier.clickable { showMoonPicker = true },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
+                if (showMoonPicker) {
+                    AlertDialog(
+                        onDismissRequest = { showMoonPicker = false },
+                        title = { Text("Pick a moon phase") },
+                        text = {
+                            androidx.compose.foundation.lazy.LazyColumn {
+                                items(com.justpass.app.ui.components.MoonPhase.entries.toList()) { phase ->
+                                    val selected = phase == moonPhase
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                onMoonPhaseChange(phase)
+                                                showMoonPicker = false
+                                            }
+                                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        RadioButton(selected = selected, onClick = null)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            phase.displayName,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (selected) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showMoonPicker = false }) { Text("Close") }
+                        },
+                        containerColor = Color(0xFF1E2A3A),
+                    )
+                }
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 ListItem(headlineContent = { Text("Privacy Policy") }, leadingContent = { Icon(Icons.Default.Info, null) },
                     modifier = Modifier.clickable { onPrivacyPolicyClick() }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))

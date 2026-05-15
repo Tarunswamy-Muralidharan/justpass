@@ -141,13 +141,13 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Screen {
-    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, LiteRt, CreateTournament, TournamentApproval, BugReport, BugReportInbox, ManageAdmins
+    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, Games, GamesLeaderboard, LiteRt, CreateTournament, TournamentApproval, BugReport, BugReportInbox, ManageAdmins
 }
 
 private val bottomTabs = listOf(
     TabItemData("Home", Icons.Default.Home),
     TabItemData("CA Marks", Icons.Default.Star),
-    TabItemData("Chess", Icons.Default.SportsEsports),
+    TabItemData("Games", Icons.Default.SportsEsports),
     TabItemData("GPA", Icons.Default.Calculate),
     TabItemData("Timetable", Icons.Default.DateRange)
 )
@@ -463,9 +463,12 @@ fun AttendanceApp() {
             })
         }
         else -> {
+            var gamesPopupOpen by remember { mutableStateOf(false) }
             // Handle system back button: navigate back within app instead of exiting
-            BackHandler(enabled = currentScreen != Screen.Dashboard || selectedTabIndex != 0) {
+            BackHandler(enabled = gamesPopupOpen || currentScreen != Screen.Dashboard || selectedTabIndex != 0) {
                 when {
+                    // Games popup eats back press first
+                    gamesPopupOpen -> gamesPopupOpen = false
                     // Sub-screens go back to dashboard
                     currentScreen == Screen.SubjectDetail -> currentScreen = Screen.SubjectAttendance
                     currentScreen == Screen.PrivacyPolicy -> {
@@ -484,13 +487,15 @@ fun AttendanceApp() {
                 }
             }
             // Dual-state: cardState for card refraction, barState for bottom bar blur
-            var weatherMode by remember {
-                mutableStateOf(com.justpass.app.ui.components.WeatherMode.fromString(securePrefs.weatherMode))
+            var weatherScene by remember {
+                mutableStateOf(com.justpass.app.ui.components.WeatherScene.fromString(securePrefs.weatherScene))
             }
-            var weatherTesting by remember { mutableStateOf(securePrefs.weatherTestingMode) }
+            var moonPhase by remember {
+                mutableStateOf(com.justpass.app.ui.components.MoonPhase.fromString(securePrefs.moonPhase))
+            }
             LiquidGlassScaffold(
-                weatherMode = weatherMode,
-                weatherTesting = weatherTesting,
+                weatherScene = weatherScene,
+                moonPhase = moonPhase,
                 bottomBar = { barState ->
                     LiquidGlassBottomBar(
                         barState = barState,
@@ -501,19 +506,23 @@ fun AttendanceApp() {
                             currentScreen = when (index) {
                                 0 -> Screen.Dashboard
                                 1 -> Screen.CAMarks
-                                2 -> Screen.Chess
                                 3 -> Screen.CgpaCalculator
                                 4 -> Screen.Timetable
                                 else -> Screen.Dashboard
                             }
                             Analytics.logFeatureUsed(bottomTabs[index].label.lowercase())
                         },
+                        onCenterTap = {
+                            gamesPopupOpen = !gamesPopupOpen
+                            Analytics.logFeatureUsed("games_popup_toggle")
+                        },
+                        centerSelected = gamesPopupOpen,
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }
             ) { cardState ->
                 Crossfade(
-                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Profile, Screen.LiteRt, Screen.CreateTournament, Screen.TournamentApproval, Screen.BugReport, Screen.BugReportInbox, Screen.ManageAdmins)) currentScreen.name
+                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Games, Screen.GamesLeaderboard, Screen.Profile, Screen.LiteRt, Screen.CreateTournament, Screen.TournamentApproval, Screen.BugReport, Screen.BugReportInbox, Screen.ManageAdmins)) currentScreen.name
                                   else "tab_$selectedTabIndex",
                     animationSpec = tween(200),
                     label = "screenFade"
@@ -721,6 +730,13 @@ fun AttendanceApp() {
                         // tab_2 (Games) and tab_3 (GPA) are routed via screen name
                         "tab_2" -> {}
                         "tab_3" -> {}
+                        Screen.Games.name -> com.justpass.app.games.ui.screens.GamesNav(
+                            onBack = { currentScreen = Screen.Dashboard; selectedTabIndex = 0 },
+                            onLeaderboard = { currentScreen = Screen.GamesLeaderboard }
+                        )
+                        Screen.GamesLeaderboard.name -> com.justpass.app.games.ui.screens.LeaderboardScreen(
+                            onBack = { currentScreen = Screen.Games }
+                        )
                         "tab_4" -> TimetableScreen(cardState = cardState)
                         // Profile accessed via header profile pic
                         Screen.Profile.name -> ProfileScreen(
@@ -732,19 +748,35 @@ fun AttendanceApp() {
                             onBugReportClick = { currentScreen = Screen.BugReport },
                             onBugReportInboxClick = { currentScreen = Screen.BugReportInbox },
                             onManageAdminsClick = { currentScreen = Screen.ManageAdmins },
-                            weatherMode = weatherMode,
-                            onWeatherModeChange = { newMode ->
-                                weatherMode = newMode
-                                securePrefs.weatherMode = newMode.name
+                            weatherScene = weatherScene,
+                            onWeatherSceneChange = { newScene ->
+                                weatherScene = newScene
+                                securePrefs.weatherScene = newScene.name
                             },
-                            weatherTesting = weatherTesting,
-                            onWeatherTestingChange = { newVal ->
-                                weatherTesting = newVal
-                                securePrefs.weatherTestingMode = newVal
+                            moonPhase = moonPhase,
+                            onMoonPhaseChange = { newPhase ->
+                                moonPhase = newPhase
+                                securePrefs.moonPhase = newPhase.name
                             }
                         )
                     }
                 }
+                // Games popup — controller tap toggles. Floats above content,
+                // below the bottom bar (rendered in scaffold's bottomBar slot).
+                com.justpass.app.ui.components.GamesPopup(
+                    open = gamesPopupOpen,
+                    onDismiss = { gamesPopupOpen = false },
+                    onChess = {
+                        gamesPopupOpen = false
+                        currentScreen = Screen.Chess
+                        Analytics.logFeatureUsed("games_popup_chess")
+                    },
+                    onBrain = {
+                        gamesPopupOpen = false
+                        currentScreen = Screen.Games
+                        Analytics.logFeatureUsed("games_popup_brain")
+                    }
+                )
             }
         }
     }
