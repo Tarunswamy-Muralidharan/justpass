@@ -1,23 +1,31 @@
 // HTTP entry point for the chess lobby Worker.
 //
-// - GET /health           -> liveness probe
-// - GET /privacy          -> JustPass privacy policy (Play Store requirement)
-// - GET /ws (Upgrade: ws) -> validates Firebase ID token, forwards
-//                             to the single global Lobby Durable
-//                             Object with X-Player-Id header set.
-// - everything else       -> 404
+// - GET    /health                    -> liveness probe
+// - GET    /privacy                   -> JustPass privacy policy (Play Store requirement)
+// - GET    /class/:classKey           -> class marks stats (Firebase auth)
+// - POST   /class/marks               -> upload own marks (Firebase auth)
+// - DELETE /class/me                  -> wipe my row (Firebase auth)
+// - GET    /ws (Upgrade: ws)          -> validates Firebase ID token, forwards
+//                                         to the single global Lobby Durable
+//                                         Object with X-Player-Id header set.
+// - everything else                   -> 404
 //
 // Auth failures are returned as HTTP 401 (NOT a WS close) so the
 // Android client sees a clean error instead of a mysterious 1006.
 
 import { verifyFirebaseIdToken } from "./auth";
+import {
+  handleDeleteMe,
+  handleGetClassStats,
+  handleUploadMarks,
+} from "./class";
 import type { Env } from "./types";
 
 export { Lobby } from "./lobby";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Authorization, Content-Type, Upgrade",
   "Access-Control-Max-Age": "86400",
 };
@@ -83,6 +91,59 @@ export default {
           "X-Content-Type-Options": "nosniff",
         },
       });
+    }
+
+    // Class marks comparison routes — all require Firebase auth.
+    if (url.pathname.startsWith("/class")) {
+      if (!env.FIREBASE_PROJECT_ID) {
+        return jsonResponse(500, {
+          error: "server_misconfigured",
+          reason: "FIREBASE_PROJECT_ID secret not set",
+        });
+      }
+      const token = extractBearer(request);
+      if (!token) {
+        return jsonResponse(401, {
+          error: "unauthorized",
+          reason: "Missing Authorization: Bearer <id_token> header",
+        });
+      }
+      const verified = await verifyFirebaseIdToken(
+        token,
+        env.FIREBASE_PROJECT_ID,
+      );
+      if (!verified) {
+        return jsonResponse(401, {
+          error: "unauthorized",
+          reason: "Invalid or expired Firebase ID token",
+        });
+      }
+
+      // POST /class/marks
+      if (
+        url.pathname === "/class/marks" &&
+        request.method === "POST"
+      ) {
+        return handleUploadMarks(request, env, verified.uid);
+      }
+
+      // DELETE /class/me
+      if (
+        url.pathname === "/class/me" &&
+        request.method === "DELETE"
+      ) {
+        return handleDeleteMe(request, env, verified.uid);
+      }
+
+      // GET /class/:classKey
+      if (request.method === "GET") {
+        const match = url.pathname.match(/^\/class\/([^/]+)\/?$/);
+        if (match) {
+          return handleGetClassStats(request, env, verified.uid, match[1]);
+        }
+      }
+
+      return jsonResponse(404, { error: "not_found", path: url.pathname });
     }
 
     if (url.pathname !== "/ws") {
@@ -225,6 +286,19 @@ const PRIVACY_POLICY_HTML = `<!DOCTYPE html>
       your online/offline state are visible to other JustPass users in the
       lobby and stored transiently in Cloudflare Durable Objects and Firebase
       Firestore.
+    </li>
+    <li>
+      <strong>Class marks comparison (anonymous):</strong> when this feature is
+      enabled by us via remote configuration, your continuous assessment (CA)
+      marks are uploaded under a one-way anonymous identifier (a SHA-style
+      hash derived from your roll number, never the roll number itself). They
+      are stored alongside a class key composed of your batch year, department,
+      section, and current semester, in Cloudflare D1 (an edge SQLite database).
+      Other students in the same class only ever see aggregated statistics
+      (averages, distributions, your rank) — never anyone else&rsquo;s raw
+      marks or identifying information. Comparison statistics are hidden
+      entirely until at least 15 students from your class have signed in.
+      You can wipe your data anytime via Profile &rsquo; Delete my class data.
     </li>
     <li>
       <strong>Firebase Analytics:</strong> anonymous, aggregated usage events

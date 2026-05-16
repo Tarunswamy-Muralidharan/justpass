@@ -20,3 +20,11 @@ new_sqlite_classes = ["Lobby"]
 # It must match the Firebase project ID the Android app uses
 # (see google-services.json -> project_info.project_id).
 [vars]
+
+# D1 database for the class marks comparison feature.
+# Schema in migrations/0001_class_marks.sql. Run on first deploy via:
+#   npx wrangler d1 execute class_marks_db --remote --file migrations/0001_class_marks.sql
+[[d1_databases]]
+binding = "CLASS_MARKS_DB"
+database_name = "class_marks_db"
+database_id = "b3daf7d3-5e5e-475c-bf23-92be944afda2"
