@@ -86,6 +86,15 @@ class SecurePreferences(context: Context) {
         get() = regularPrefs.getString(KEY_WEATHER_SCENE, "OFF") ?: "OFF"
         set(value) = regularPrefs.edit().putString(KEY_WEATHER_SCENE, value).apply()
 
+    /**
+     * Hash of the last class-marks payload uploaded to the Worker. ClassMarksUploadWorker
+     * compares freshly-computed hash against this and skips the upload if equal, so we don't
+     * burn D1 writes on every 6h cycle when nothing has changed.
+     */
+    var lastUploadedMarksHash: String?
+        get() = regularPrefs.getString(KEY_LAST_UPLOADED_MARKS_HASH, null)
+        set(value) = regularPrefs.edit().putString(KEY_LAST_UPLOADED_MARKS_HASH, value).apply()
+
     var programmeName: String?
         get() = regularPrefs.getString(KEY_PROGRAMME_NAME, null)
         set(value) = regularPrefs.edit().putString(KEY_PROGRAMME_NAME, value).apply()
@@ -269,6 +278,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_CACHED_COURSE_MARKS_FULL = "cached_course_marks_full_json"
         private const val KEY_CHESS_BOARD_THEME = "chess_board_theme"
         private const val KEY_WEATHER_SCENE = "weather_scene"
+        private const val KEY_LAST_UPLOADED_MARKS_HASH = "last_uploaded_marks_hash"
         private const val KEY_TARGET_CGPA = "target_cgpa"
         private const val KEY_DISMISSED_ANNOUNCEMENT = "dismissed_announcement_id"
 

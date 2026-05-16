@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Leaderboard
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,8 +41,22 @@ import com.justpass.app.ui.viewmodel.CAMarksViewModel
 import io.github.fletchmckee.liquid.LiquidState
 
 @Composable
-fun CAMarksScreen(cardState: LiquidState, viewModel: CAMarksViewModel = viewModel(), onBack: () -> Unit) {
+fun CAMarksScreen(
+    cardState: LiquidState,
+    viewModel: CAMarksViewModel = viewModel(),
+    onBack: () -> Unit,
+    onClassCompareClick: () -> Unit = {},
+) {
     val uiState by viewModel.uiState.collectAsState()
+    // Gate the Compare icon on Remote Config (default false). Server-side
+    // k=15 floor still hides actual stats even if a user reaches the screen.
+    val showCompare = remember {
+        try {
+            com.google.firebase.remoteconfig.FirebaseRemoteConfig
+                .getInstance()
+                .getBoolean("class_compare_enabled")
+        } catch (_: Exception) { false }
+    }
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         // Header — lightweight glass for crisp text readability
@@ -55,6 +70,12 @@ fun CAMarksScreen(cardState: LiquidState, viewModel: CAMarksViewModel = viewMode
                     tint = MaterialTheme.colorScheme.onSurface) }
                 Text("CA Marks", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurface)
+                if (showCompare) {
+                    IconButton(onClick = onClassCompareClick) {
+                        Icon(Icons.Default.Leaderboard, "Compare with class",
+                            tint = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
                 IconButton(onClick = { viewModel.fetchCAMarks() }, enabled = !uiState.isLoading) { Icon(Icons.Default.Refresh, "Refresh",
                     tint = MaterialTheme.colorScheme.onSurface) }
             }

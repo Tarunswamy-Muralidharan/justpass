@@ -500,6 +500,67 @@ fun ProfileScreen(
                     )
                 }
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                // Class compare: delete my data — only shown when the feature
+                // flag is on. Wipes the user's row on the Worker D1 + clears
+                // local last-uploaded hash so the next sync uploads afresh.
+                run {
+                    val showRow = remember {
+                        try {
+                            com.google.firebase.remoteconfig.FirebaseRemoteConfig
+                                .getInstance()
+                                .getBoolean("class_compare_enabled")
+                        } catch (_: Exception) { false }
+                    }
+                    if (showRow) {
+                        var showConfirm by remember { mutableStateOf(false) }
+                        val scope = rememberCoroutineScope()
+                        ListItem(
+                            headlineContent = { Text("Delete my class data") },
+                            leadingContent = { Icon(Icons.Default.Info, null) },
+                            supportingContent = {
+                                Text(
+                                    "Removes your anonymous marks from the comparison server.",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            modifier = Modifier.clickable { showConfirm = true },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        )
+                        if (showConfirm) {
+                            AlertDialog(
+                                onDismissRequest = { showConfirm = false },
+                                title = { Text("Delete my class data?") },
+                                text = {
+                                    Text(
+                                        "Your anonymized CA marks will be removed from the class comparison server. " +
+                                        "Reopening CA Marks will re-upload them automatically next sync."
+                                    )
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showConfirm = false
+                                        scope.launch {
+                                            val ok = com.justpass.app.data.repository.ClassMarksRepository
+                                                .getInstance(context)
+                                                .deleteMyData()
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                if (ok) "Deleted" else "Delete failed",
+                                                android.widget.Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
+                                    }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showConfirm = false }) { Text("Cancel") }
+                                },
+                                containerColor = Color(0xFF1E2A3A),
+                            )
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                    }
+                }
                 ListItem(headlineContent = { Text("Privacy Policy") }, leadingContent = { Icon(Icons.Default.Info, null) },
                     modifier = Modifier.clickable { onPrivacyPolicyClick() }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
                 // Admin tools — visible only when the signed-in roll matches

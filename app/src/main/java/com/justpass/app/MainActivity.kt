@@ -132,6 +132,7 @@ class MainActivity : ComponentActivity() {
         AttendanceRefreshWorker.schedulePeriodicRefresh(this)
         CircularNotificationWorker.schedule(this)
         HolidayNotificationWorker.schedule(this)
+        com.justpass.app.worker.ClassMarksUploadWorker.schedule(this)
         setContent {
             AttendanceWidgetLaudeaTheme {
                 AttendanceApp()
@@ -141,7 +142,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Screen {
-    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, Games, GamesLeaderboard, LiteRt, CreateTournament, TournamentApproval, BugReport, BugReportInbox, ManageAdmins
+    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, ClassCompare, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, Games, GamesLeaderboard, LiteRt, CreateTournament, TournamentApproval, BugReport, BugReportInbox, ManageAdmins
 }
 
 private val bottomTabs = listOf(
@@ -721,7 +722,15 @@ fun AttendanceApp() {
                             onBack = {
                                 selectedTabIndex = 0
                                 currentScreen = Screen.Dashboard
-                            }
+                            },
+                            onClassCompareClick = { currentScreen = Screen.ClassCompare },
+                        )
+                        Screen.ClassCompare.name -> com.justpass.app.ui.screens.ClassCompareScreen(
+                            cardState = cardState,
+                            onBack = {
+                                currentScreen = Screen.CAMarks
+                                selectedTabIndex = 1
+                            },
                         )
                         // tab_2 (Games) and tab_3 (GPA) are routed via screen name
                         "tab_2" -> {}
