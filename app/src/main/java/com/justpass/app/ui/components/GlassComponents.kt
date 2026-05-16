@@ -118,7 +118,6 @@ fun LiquidGlassScaffold(
     modifier: Modifier = Modifier,
     variant: BackgroundVariant = BackgroundVariant.Default,
     weatherScene: WeatherScene = WeatherScene.OFF,
-    moonPhase: MoonPhase = MoonPhase.AUTO,
     bottomBar: @Composable BoxScope.(barState: LiquidState) -> Unit = {},
     content: @Composable BoxScope.(cardState: LiquidState) -> Unit
 ) {
@@ -159,14 +158,14 @@ fun LiquidGlassScaffold(
                     // liquefiable layers so glass tiles refract them. Rain drops
                     // fall *behind* cards from inside this Box; splash particles
                     // are drawn separately on top of content().
-                    WeatherBackgroundLayer(weatherScene, drawSplashes = false, moonPhase = moonPhase)
+                    WeatherBackgroundLayer(weatherScene, drawSplashes = false)
                 }
 
                 // Screen content — cards use liquid(cardState), list items use lightweight
                 content(cardState)
 
                 // Splash particles draw on top of glass tiles (drops bouncing off rim).
-                WeatherBackgroundLayer(weatherScene, drawSplashes = true, moonPhase = moonPhase)
+                WeatherBackgroundLayer(weatherScene, drawSplashes = true)
             }
 
             // Floating glass bottom bar — uses liquid(barState) to blur everything
@@ -1274,31 +1273,41 @@ private fun AnimatedControllerIcon(
         val pressV = press.value
 
         // ── PS5 DualSense geometry ──
-        // Wider, flatter top with subtle PS-button dip, more angular grip
-        // lobes drooping below, large central touchpad.
-        val bodyTop = h * 0.34f
-        val bodyLeft = w * 0.06f
-        val bodyRight = w * 0.94f
-        val gripBottom = h * 0.86f
-        val cxBody = w * 0.50f
+        // Sony DualSense is 160 × 106 mm (≈1.5 : 1). Inside a square the
+        // body occupies a wide central band; grip lobes droop below to fill
+        // the remaining vertical space. Layout (front view, left → right):
+        //
+        //   shoulder-L   touchpad   shoulder-R
+        //      D-pad        PS         △
+        //                              □ ○
+        //                              ✕
+        //          L-stick      R-stick
+        //         /  grip lobe (left)  \         (right grip lobe)
+        //
+        // Thumbsticks are at the SAME vertical height (symmetric DualShock
+        // layout, not Xbox/Switch staggered).
 
-        // Stroke widths — outline-first, minimal interior fill.
         val outlineStroke = w * 0.038f
         val detailStroke = w * 0.028f
 
-        // Touchpad — large rounded rect on the upper centre
-        val tpRect = Rect(w * 0.38f, h * 0.40f, w * 0.62f, h * 0.54f)
+        // Body extents — used for the status pip + grip-bottom reference.
+        val bodyTop = h * 0.30f
+        val gripBottom = h * 0.88f
+        val cxBody = w * 0.50f
 
-        // D-pad plus (left of touchpad)
-        val dpadCx = w * 0.22f
-        val dpadCy = h * 0.50f
-        val dpadArmL = w * 0.075f
-        val dpadArmT = w * 0.025f
+        // Touchpad — large, central, upper half.
+        val tpRect = Rect(w * 0.395f, h * 0.36f, w * 0.605f, h * 0.49f)
 
-        // Face buttons — 4 in a diamond (right of touchpad)
-        val faceCx = w * 0.78f
-        val faceCy = h * 0.50f
-        val faceR = w * 0.030f
+        // D-pad cluster (upper-left of body, level with touchpad).
+        val dpadCx = w * 0.20f
+        val dpadCy = h * 0.43f
+        val dpadArmL = w * 0.072f
+        val dpadArmT = w * 0.023f
+
+        // Face buttons (upper-right, diamond layout — △ ○ ✕ □).
+        val faceCx = w * 0.80f
+        val faceCy = h * 0.43f
+        val faceR = w * 0.028f
         val faceOff = w * 0.062f
         val faceCenters = listOf(
             Offset(faceCx, faceCy - faceOff),
@@ -1307,63 +1316,85 @@ private fun AnimatedControllerIcon(
             Offset(faceCx - faceOff, faceCy),
         )
 
-        // Twin sticks — both at the same height in the lower-centre body
-        val stickR = w * 0.065f
-        val stickInnerR = w * 0.025f
-        val stickY = h * 0.66f
-        val leftStick = Offset(w * 0.36f, stickY)
-        val rightStick = Offset(w * 0.64f, stickY)
+        // Thumbsticks — both at the same height in the lower-centre body.
+        val stickR = w * 0.078f
+        val stickInnerR = w * 0.030f
+        val stickY = h * 0.65f
+        val leftStick = Offset(w * 0.34f, stickY)
+        val rightStick = Offset(w * 0.66f, stickY)
 
-        // ── PS5 body outline path ──
+        // ── DualSense body silhouette ──
+        // Top edge: L1/R1 shoulder bumps poke up at the outside, then a long
+        // arc sweeps down into chunky grip lobes that angle outward more than
+        // the DualShock 4. Centre bottom has a small dip where the palms rest.
         val bodyOutline = Path().apply {
-            // Start at top-left shoulder
-            moveTo(bodyLeft, bodyTop + h * 0.06f)
-            // Top edge: slight upward shoulder bump → centre dip → matching
-            // bump on right side. This gives the DualSense its profile.
+            // Outer edge of left shoulder bump
+            moveTo(w * 0.08f, h * 0.38f)
+            // Up & over left shoulder
             cubicTo(
-                bodyLeft + w * 0.02f, bodyTop - h * 0.015f,
-                w * 0.22f, bodyTop - h * 0.025f,
-                w * 0.34f, bodyTop + h * 0.005f,
+                w * 0.07f, h * 0.31f,
+                w * 0.16f, h * 0.28f,
+                w * 0.22f, h * 0.305f,
             )
+            // Inner top edge between shoulder and centre
             cubicTo(
-                w * 0.42f, bodyTop + h * 0.025f,
-                w * 0.58f, bodyTop + h * 0.025f,
-                w * 0.66f, bodyTop + h * 0.005f,
+                w * 0.28f, h * 0.325f,
+                w * 0.34f, h * 0.345f,
+                w * 0.42f, h * 0.35f,
             )
+            // Flat centre top (under touchpad)
             cubicTo(
-                w * 0.78f, bodyTop - h * 0.025f,
-                bodyRight - w * 0.02f, bodyTop - h * 0.015f,
-                bodyRight, bodyTop + h * 0.06f,
+                w * 0.46f, h * 0.355f,
+                w * 0.54f, h * 0.355f,
+                w * 0.58f, h * 0.35f,
             )
-            // Right side curving down to right grip
+            // Inner top edge on the right
             cubicTo(
-                w * 1.00f, h * 0.56f,
-                w * 0.96f, h * 0.72f,
-                w * 0.84f, h * 0.76f,
+                w * 0.66f, h * 0.345f,
+                w * 0.72f, h * 0.325f,
+                w * 0.78f, h * 0.305f,
             )
-            // Right grip lobe (more angular for DualSense)
+            // Up & over right shoulder (mirror of left)
             cubicTo(
-                w * 0.86f, gripBottom,
-                w * 0.74f, gripBottom + h * 0.025f,
-                w * 0.64f, h * 0.80f,
+                w * 0.84f, h * 0.28f,
+                w * 0.93f, h * 0.31f,
+                w * 0.92f, h * 0.38f,
             )
-            // Bottom centre dip between grips
+            // Right side curving outward toward right grip
             cubicTo(
-                w * 0.58f, h * 0.74f,
-                w * 0.42f, h * 0.74f,
-                w * 0.36f, h * 0.80f,
+                w * 0.99f, h * 0.52f,
+                w * 0.96f, h * 0.66f,
+                w * 0.88f, h * 0.73f,
+            )
+            // Right grip lobe — chunky, angled outward.
+            cubicTo(
+                w * 0.92f, h * 0.83f,
+                w * 0.82f, gripBottom,
+                w * 0.70f, h * 0.86f,
+            )
+            // Underside of right grip toward centre dip
+            cubicTo(
+                w * 0.62f, h * 0.82f,
+                w * 0.56f, h * 0.78f,
+                w * 0.50f, h * 0.78f,
+            )
+            // Underside of left grip
+            cubicTo(
+                w * 0.44f, h * 0.78f,
+                w * 0.38f, h * 0.82f,
+                w * 0.30f, h * 0.86f,
             )
             // Left grip lobe
             cubicTo(
-                w * 0.26f, gripBottom + h * 0.025f,
-                w * 0.14f, gripBottom,
-                w * 0.16f, h * 0.76f,
+                w * 0.18f, gripBottom,
+                w * 0.08f, h * 0.83f,
+                w * 0.12f, h * 0.73f,
             )
-            // Left side back up to top-left
+            // Left side back up
             cubicTo(
-                w * 0.04f, h * 0.72f,
-                w * 0.00f, h * 0.56f,
-                bodyLeft, bodyTop + h * 0.06f,
+                w * 0.04f, h * 0.66f,
+                w * 0.01f, h * 0.52f,
+                w * 0.08f, h * 0.38f,
             )
             close()
         }

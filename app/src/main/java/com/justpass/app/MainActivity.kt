@@ -490,12 +490,8 @@ fun AttendanceApp() {
             var weatherScene by remember {
                 mutableStateOf(com.justpass.app.ui.components.WeatherScene.fromString(securePrefs.weatherScene))
             }
-            var moonPhase by remember {
-                mutableStateOf(com.justpass.app.ui.components.MoonPhase.fromString(securePrefs.moonPhase))
-            }
             LiquidGlassScaffold(
                 weatherScene = weatherScene,
-                moonPhase = moonPhase,
                 bottomBar = { barState ->
                     LiquidGlassBottomBar(
                         barState = barState,
@@ -752,11 +748,6 @@ fun AttendanceApp() {
                             onWeatherSceneChange = { newScene ->
                                 weatherScene = newScene
                                 securePrefs.weatherScene = newScene.name
-                            },
-                            moonPhase = moonPhase,
-                            onMoonPhaseChange = { newPhase ->
-                                moonPhase = newPhase
-                                securePrefs.moonPhase = newPhase.name
                             }
                         )
                     }

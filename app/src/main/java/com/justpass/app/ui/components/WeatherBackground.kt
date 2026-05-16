@@ -34,7 +34,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
@@ -51,45 +50,6 @@ import kotlin.random.Random
  * overcast, sunset, sunrise, rain, heavy-rain, thunderstorm, snow,
  * fog, haze, windy, aurora.
  * =================================================================== */
-
-enum class MoonPhase(val displayName: String) {
-    AUTO("Auto (current date)"),
-    NEW("New"),
-    WAXING_CRESCENT("Waxing Crescent"),
-    FIRST_QUARTER("First Quarter"),
-    WAXING_GIBBOUS("Waxing Gibbous"),
-    FULL("Full"),
-    WANING_GIBBOUS("Waning Gibbous"),
-    LAST_QUARTER("Last Quarter"),
-    WANING_CRESCENT("Waning Crescent");
-
-    companion object {
-        fun fromString(s: String): MoonPhase = entries.firstOrNull { it.name == s } ?: AUTO
-
-        /**
-         * Resolve AUTO → an actual phase based on system date. Uses a simple
-         * synodic-month calculation (29.53059 days) seeded from the known new
-         * moon on 2000-01-06 18:14 UTC.
-         */
-        fun resolveAuto(): MoonPhase {
-            val knownNewMoonEpochMs = 947_182_440_000L // 2000-01-06 18:14 UTC
-            val synodicMs = 29.53058868 * 86_400_000.0
-            val nowMs = System.currentTimeMillis().toDouble()
-            val age = ((nowMs - knownNewMoonEpochMs) % synodicMs + synodicMs) % synodicMs
-            val frac = age / synodicMs // 0..1, 0 = new, 0.5 = full
-            return when {
-                frac < 0.0303 || frac >= 0.9697 -> NEW
-                frac < 0.2197 -> WAXING_CRESCENT
-                frac < 0.2803 -> FIRST_QUARTER
-                frac < 0.4697 -> WAXING_GIBBOUS
-                frac < 0.5303 -> FULL
-                frac < 0.7197 -> WANING_GIBBOUS
-                frac < 0.7803 -> LAST_QUARTER
-                else -> WANING_CRESCENT
-            }
-        }
-    }
-}
 
 enum class WeatherScene(val displayName: String) {
     OFF("Off"),
@@ -151,7 +111,6 @@ fun Modifier.registerAsSplashTarget(): Modifier = composed {
 fun WeatherBackgroundLayer(
     scene: WeatherScene,
     drawSplashes: Boolean,
-    moonPhase: MoonPhase = MoonPhase.AUTO,
 ) {
     if (scene == WeatherScene.OFF) return
     if (drawSplashes) {
@@ -170,7 +129,7 @@ fun WeatherBackgroundLayer(
         return
     }
     Box(modifier = Modifier.fillMaxSize()) {
-        SceneRenderer(scene, moonPhase)
+        SceneRenderer(scene)
         // Readability scrim — darkens lower 75% so tile text contrasts against
         // bright daytime gradients (clear/partly/sunrise/sunset/haze/etc).
         // Strength scales by scene: bright daytime = heavier, dark scenes
@@ -216,7 +175,7 @@ fun WeatherBackgroundLayer(
 }
 
 @Composable
-private fun SceneRenderer(scene: WeatherScene, moonPhase: MoonPhase) {
+private fun SceneRenderer(scene: WeatherScene) {
     when (scene) {
         WeatherScene.OFF -> Unit
         WeatherScene.CLEAR_DAY -> {
@@ -227,9 +186,9 @@ private fun SceneRenderer(scene: WeatherScene, moonPhase: MoonPhase) {
         }
         WeatherScene.CLEAR_NIGHT -> {
             SkyGradient(listOf(Color(0xFF02030A), Color(0xFF131A3A)))
-            CornerGlow(0.75f, 0.22f, Color(0xFFD6E6FF).copy(alpha = 0.45f), radiusFrac = 0.40f)
+            // Subtle, ambient moonlight from upper-right — no moon disc.
+            CornerGlow(0.82f, 0.16f, Color(0xFFD9E4FF).copy(alpha = 0.22f), radiusFrac = 0.55f)
             Stars(density = 1.4f, brightness = 1f)
-            MoonDisc(moonPhase)
         }
         WeatherScene.PARTLY_DAY -> {
             SkyGradient(listOf(Color(0xFF3A78C9), Color(0xFFA8CBED)))
@@ -354,110 +313,6 @@ private fun HorizonGlow(color: Color) {
     }
 }
 
-@Composable
-private fun MoonDisc(phase: MoonPhase) {
-    val resolved = if (phase == MoonPhase.AUTO) MoonPhase.resolveAuto() else phase
-    Canvas(Modifier.fillMaxSize()) {
-        val center = Offset(size.width * 0.78f, size.height * 0.18f)
-        val r = size.minDimension * 0.055f
-
-        // Soft halo — small + dim so the moon doesn't wash out the surrounding sky
-        val haloAlpha = if (resolved == MoonPhase.NEW) 0.04f else 0.10f
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    Color(0xFFEAEEF8).copy(alpha = haloAlpha),
-                    Color.Transparent,
-                ),
-                center = center,
-                radius = r * 3.0f,
-            ),
-            radius = r * 3.0f,
-            center = center,
-        )
-
-        // Moon body — radial gradient with off-center highlight → spherical look.
-        // Darker mid/rim makes craters + terminator readable. Was too washed out.
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    Color(0xFFE2D9C0),       // highlight (warm off-white)
-                    Color(0xFFA89E80),       // mid
-                    Color(0xFF5E5640),       // dark rim — real shadow at limb
-                ),
-                center = Offset(center.x - r * 0.35f, center.y - r * 0.35f),
-                radius = r * 1.25f,
-            ),
-            radius = r,
-            center = center,
-        )
-
-        // Crater spots — darker, larger, layered (rim + bowl) so they read
-        // even at small sizes. Deterministic positions.
-        val craters = listOf(
-            Triple(-0.28f, -0.08f, 0.18f),
-            Triple(0.22f, 0.26f, 0.22f),
-            Triple(0.06f, -0.42f, 0.11f),
-            Triple(-0.42f, 0.30f, 0.14f),
-            Triple(0.38f, -0.28f, 0.13f),
-            Triple(-0.12f, 0.50f, 0.10f),
-            Triple(0.28f, 0.06f, 0.09f),
-        )
-        craters.forEach { (dx, dy, cr) ->
-            val cx = center.x + dx * r
-            val cy = center.y + dy * r
-            // Outer dark bowl
-            drawCircle(
-                color = Color(0xFF3D3829).copy(alpha = 0.55f),
-                radius = cr * r,
-                center = Offset(cx, cy),
-            )
-            // Inner mid tone for depth
-            drawCircle(
-                color = Color(0xFF7A7058).copy(alpha = 0.45f),
-                radius = cr * r * 0.55f,
-                center = Offset(cx + cr * r * 0.18f, cy + cr * r * 0.18f),
-            )
-        }
-
-        // Phase shadow — overlay a dark disc whose intersection with the moon
-        // disc covers the unlit portion. Positive offsetX → shadow on LEFT
-        // (lit right = waxing). Solid black so the contrast is unambiguous.
-        val shadow = Color(0xFF010204).copy(alpha = 0.97f)
-        val shadowOffsetX: Float? = when (resolved) {
-            MoonPhase.FULL -> null
-            MoonPhase.NEW -> 0f
-            MoonPhase.WAXING_CRESCENT -> 0.55f
-            MoonPhase.FIRST_QUARTER -> 1.0f
-            MoonPhase.WAXING_GIBBOUS -> 1.45f
-            MoonPhase.WANING_GIBBOUS -> -1.45f
-            MoonPhase.LAST_QUARTER -> -1.0f
-            MoonPhase.WANING_CRESCENT -> -0.55f
-            MoonPhase.AUTO -> null
-        }
-        if (shadowOffsetX != null) {
-            val moonPath = Path().apply {
-                addOval(Rect(center.x - r, center.y - r, center.x + r, center.y + r))
-            }
-            clipPath(moonPath) {
-                if (shadowOffsetX == 0f) {
-                    drawCircle(shadow, r * 1.02f, center)
-                } else {
-                    drawCircle(shadow, r * 1.04f, Offset(center.x - shadowOffsetX * r, center.y))
-                }
-            }
-        }
-
-        // Limb darkening — thin dark ring at moon edge for shape definition.
-        // Applied AFTER shadow so it works in both lit and unlit halves.
-        drawCircle(
-            color = Color(0xFF1A1610).copy(alpha = 0.50f),
-            radius = r,
-            center = center,
-            style = Stroke(width = r * 0.06f),
-        )
-    }
-}
 
 /* ---------- SunRays ---------- */
 
@@ -949,15 +804,18 @@ private fun SnowCanvas(density: Float) {
 @Composable
 private fun Stars(density: Float, brightness: Float) {
     val seeds = remember(density) {
-        val count = (240 * density).toInt().coerceAtMost(380)
+        val count = (260 * density).toInt().coerceAtMost(420)
         List(count) { i ->
             val s = i * 19
             StarSeed(
                 x = Random(s).nextFloat(),
-                y = Random(s + 1).nextFloat() * 0.85f,
-                r = 0.4f + Random(s + 2).nextFloat() * 1.2f,
-                baseAlpha = 0.35f + Random(s + 3).nextFloat() * 0.60f,
-                freq = 0.6f + Random(s + 4).nextFloat() * 1.6f,
+                y = Random(s + 1).nextFloat() * 0.88f,
+                // Larger radius range — 0.9..3.0 instead of 0.4..1.6
+                r = 0.9f + Random(s + 2).nextFloat() * 2.1f,
+                // Higher base alpha so stars never fully dim out
+                baseAlpha = 0.55f + Random(s + 3).nextFloat() * 0.45f,
+                // Wider freq spread — some twinkle fast, some slow
+                freq = 0.8f + Random(s + 4).nextFloat() * 2.6f,
                 phase = Random(s + 5).nextFloat() * 6.28f,
             )
         }
@@ -971,13 +829,41 @@ private fun Stars(density: Float, brightness: Float) {
         val w = size.width
         val h = size.height
         seeds.forEach { s ->
-            val twinkle = ((sin(t * s.freq + s.phase) * 0.5f + 0.5f).pow(2) * 0.6f + 0.4f)
+            // Sharper twinkle envelope: pow(.., 3) instead of pow(.., 2) +
+            // wider dynamic range (0.3..1.0 instead of 0.4..1.0) so the
+            // visible "blink" is more pronounced.
+            val raw = (sin(t * s.freq + s.phase) * 0.5f + 0.5f).pow(3)
+            val twinkle = raw * 0.7f + 0.30f
             val a = (s.baseAlpha * twinkle * brightness).coerceIn(0f, 1f)
             val center = Offset(s.x * w, s.y * h)
-            if (s.r > 1.1f) {
-                drawCircle(Color.White.copy(alpha = a * 0.25f), s.r * 2.5f, center)
+            // Big stars get a soft outer glow + a brighter inner ring
+            if (s.r > 1.6f) {
+                drawCircle(Color.White.copy(alpha = a * 0.18f), s.r * 4f, center)
+                drawCircle(Color.White.copy(alpha = a * 0.40f), s.r * 2.2f, center)
+            } else if (s.r > 1.1f) {
+                drawCircle(Color.White.copy(alpha = a * 0.30f), s.r * 2.5f, center)
             }
+            // Main star core
             drawCircle(Color.White.copy(alpha = a), s.r, center)
+            // Diffraction-spike highlight for the biggest stars when bright
+            if (s.r > 2.0f && raw > 0.55f) {
+                val spikeLen = s.r * 4.5f
+                val spikeAlpha = (a - 0.4f).coerceAtLeast(0f) * 0.85f
+                drawLine(
+                    Color.White.copy(alpha = spikeAlpha),
+                    start = Offset(center.x - spikeLen, center.y),
+                    end = Offset(center.x + spikeLen, center.y),
+                    strokeWidth = 0.7f,
+                    cap = StrokeCap.Round,
+                )
+                drawLine(
+                    Color.White.copy(alpha = spikeAlpha),
+                    start = Offset(center.x, center.y - spikeLen),
+                    end = Offset(center.x, center.y + spikeLen),
+                    strokeWidth = 0.7f,
+                    cap = StrokeCap.Round,
+                )
+            }
         }
     }
 }
