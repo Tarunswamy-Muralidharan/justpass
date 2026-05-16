@@ -7606,3 +7606,221 @@ Mean removal preserves WAVE motion (relative differences between nodes) while ze
 - **Conway synodic-month formula gives accurate moon phase from `System.currentTimeMillis()`** seeded from a known new-moon epoch (2000-01-06 18:14 UTC, 947182440000 ms). Synodic period 29.53058868 days. Good enough for visual phase, no API call needed.
 
 ---
+
+## Session: 2026-05-16 — Class Marks Comparison feature plan + MOON.md spec port + scope revisions
+
+Two distinct threads in this session: porting MOON.md's photo-realistic moon spec then tearing it back out at the user's request and replacing it with subtle ambient moonlight, and a long planning conversation about a new "class marks comparison" feature that resulted in a zero-cost Cloudflare D1 + Workers architecture. No production code shipped for the new feature yet — this entry documents the planning arc and the technical reasoning behind each decision so we don't relitigate any of it later.
+
+### MOON.md port and removal
+
+User dropped `~/Downloads/MOON.md` — a drop-in spec for a photo-realistic moon using a real NASA-style photograph masked by phase-correct geometry (half-circle limb + elliptical terminator, sweep-flag matrix per crescent/gibbous direction). The dark side stays transparent so the stars behind the moon show through, exactly like real life. Spec includes a Gaussian-blurred terminator mask, a separate sharp outer-limb clipPath, and a halo whose size and intensity scale with the lit fraction.
+
+#### Asset acquisition
+
+The spec assumes `assets/moon-square.png` exists. None bundled. Fetched a public-domain NASA-style full-moon photo from Wikimedia Commons (`FullMoon2010.jpg`, 2.1 MB, 2580×2452). First fetch attempt with `User-Agent: Mozilla/5.0` got blocked by Wikimedia's User-Agent policy and returned a 2 KB HTML 403 page instead of the JPEG. Wikimedia requires a contactable UA; replaced with `JustPassWeather/1.0 (tmswamy10@gmail.com)` and the fetch succeeded.
+
+`ffmpeg -i moon.jpg -vf "crop=2452:2452:(in_w-2452)/2:0,scale=560:560" moon_square.png` produced a 560×560 PNG (345 KB). Placed at `app/src/main/res/drawable-nodpi/moon_square.png`.
+
+#### Compose port
+
+Rewrote `MoonDisc(phase)` to follow the SVG geometry from MOON.md:
+
+```kotlin
+val phaseFloat = when (resolved) {
+    MoonPhase.NEW -> 0f
+    MoonPhase.WAXING_CRESCENT -> 0.125f
+    /* ...8 cardinal phases mapped to 0..1... */
+}
+val lit = if (phaseFloat < 0.5f) 2f * phaseFloat else 2f * (1f - phaseFloat)
+if (lit < 0.005f) return  // new moon — render nothing per spec
+
+val litPath = buildLitPath(litFraction = lit, waxing = waxing, crescent = crescent, ...)
+```
+
+`buildLitPath` constructs the two-arc path from spec — first arc is a half-circle limb (waxing CW from top → bottom on the right, waning CCW on the left), second arc is the elliptical terminator with horizontal radius `rx = R × |1 − 2f|` and vertical radius `R`, sweeping from bottom back to top with sign determined by the crescent/gibbous + waxing/waning matrix.
+
+The mask is applied via `drawIntoCanvas { canvas -> canvas.saveLayer(...) }` plus `drawPath(litPath, color = White, blendMode = DstIn)` — Compose has no direct AlphaMaskFilter so DstIn against a filled path achieves the same thing. The photograph is drawn inside the offscreen layer, the path masks it, and the dark side ends up fully transparent (no painted shadow — the night sky / stars behind the moon show through, per spec). Outer-disc clipPath keeps the limb crisp even though the mask blur softens the terminator.
+
+Halo is a separate `Brush.radialGradient` painted on a slightly larger box behind the moon, intensity scaling with `lit`: `haloSize = r × (1.35 + lit × 0.45) × 2f` and `haloIntensity = 0.25 + lit × 0.75`, skipped entirely when `lit < 0.05`.
+
+#### Obstacles porting MOON.md to Compose
+
+- First attempt used `imageResource(R.drawable.moon_square)` — got `e: Unresolved reference 'imageResource'`. The function exists in `androidx.compose.ui.res.imageResource` from `compose.ui:ui` but the project's version didn't expose it. Switched to `BitmapFactory.decodeResource(context.resources, R.drawable.moon_square).asImageBitmap()` wrapped in `remember`.
+- Second attempt used `drawImageRect(image, srcOffset, srcSize, dstOffset, dstSize)` — also `Unresolved reference 'drawImageRect'`. The DrawScope variant wasn't visible inside the `clipPath` lambda scope for reasons I didn't fully chase. Replaced with `drawIntoCanvas { canvas -> canvas.save(); canvas.translate(left, top); canvas.scale(scaleX, scaleY); drawImage(image = imageBitmap, topLeft = Offset.Zero); canvas.restore() }` which works.
+- `saveLayer(bounds, paint)` — first call `canvas.saveLayer(bounds = Rect(...), paint = androidx.compose.ui.graphics.Paint())` failed with `No value passed for parameter 'paint'`. The compiler resolved the wrong overload. Worked once both args were positional with explicit Paint construction beforehand.
+
+#### Removal request
+
+After install user said "remove the moon and phases completely, just have very little moon light coming from somwhere, thats it". Stripped everything:
+
+- `MoonPhase` enum deleted
+- `MoonDisc` composable + `buildLitPath` function deleted (~170 lines)
+- `moonPhase` parameter removed from `LiquidGlassScaffold`, `WeatherBackgroundLayer`, `SceneRenderer`
+- `moonPhase` state removed from `MainActivity`
+- `onMoonPhaseChange` callback removed from `ProfileScreen` signature
+- Moon Phase picker `AlertDialog` block deleted from `ProfileScreen` (sed -i 503,554d)
+- `KEY_MOON_PHASE` const + `moonPhase: String` property removed from `SecurePreferences`
+- `moon_square.png` drawable deleted
+- Imports cleaned: `drawIntoCanvas`, `asImageBitmap`, `LocalContext`, `clipPath` no longer needed
+
+`CLEAR_NIGHT` scene now renders just the sky gradient + a single quiet `CornerGlow(0.82, 0.16, Color(0xFFD9E4FF).copy(alpha = 0.22f), radiusFrac = 0.55f)` — a soft cool luminous patch in the upper-right, no disc, no terminator, no phase. Reads as ambient moonlight without any specific source.
+
+#### Stars upgrade (in same turn)
+
+User followed up with "make the stars more bigger and brighter and more visible twinke". Reworked `Stars`:
+
+| Aspect | Before | After |
+|--------|--------|-------|
+| Count | 240 × density (cap 380) | 260 × density (cap 420) |
+| Radius range | 0.4..1.6 px | 0.9..3.0 px |
+| Base alpha | 0.35..0.95 | 0.55..1.0 |
+| Twinkle freq | 0.6..2.2 Hz | 0.8..3.4 Hz |
+| Twinkle envelope | `pow(sin..., 2) × 0.6 + 0.4` | `pow(sin..., 3) × 0.7 + 0.3` |
+| Big-star glow | one ring at 2.5× radius | two rings (4×r outer + 2.2×r inner) |
+| Diffraction spikes | none | horizontal + vertical 0.7px crosshair on stars `r > 2` when bright |
+
+Sharper twinkle envelope (`pow(..., 3)` instead of `pow(..., 2)`) produces more pronounced visible blinks because the curve spends more time near 0 — when the sin output is in the lower half of its range, the star reads as dim, and the brief peaks read as bright twinkles. Two-ring glow on big stars makes them feel like genuine bright stars rather than uniform dots. Diffraction spikes only fire on the largest stars during their bright phase — gives the impression that some stars are bright enough to bloom in the lens, just like a real night sky photograph.
+
+### Class Marks Comparison — feature planning (no code yet)
+
+User asked to plan a feature where everyone's CA marks get gathered, then a visual chart shows where they stand for each subject and overall, scoped to their class. Below is the full set of decisions and the reasoning that produced them. This is a planning record — code starts after the next turn.
+
+#### Decision 1: auto-sync, no opt-in
+
+User asked to skip opt-in. Initial counter-proposal was "first-launch one-time notice banner", but user pushed back: "look, i fetch attendance, same way im fetching marks, no need of this message right". The distinction between attendance and marks-for-comparison is that **attendance lives only on the user's device, whereas marks-for-comparison gets uploaded to a shared backend where other users can read class aggregates**. That line — local cache vs cloud share — is what triggers Play Store and India IT Rules disclosure requirements.
+
+We negotiated down to three compliance items that don't add any in-app friction:
+
+1. Privacy policy text update (lives at `chess-lobby/src/worker.ts` `PRIVACY_POLICY_HTML`) adding a section about anonymous CA marks sharing, classKey composition, Firestore/D1 storage, and the delete path. User can't see it unless they read the policy, same place we already disclose chess presence and Firebase Analytics.
+2. Play Console Data Safety form updated to declare "Academic info → shared anonymously" on next submission. Form-only, no UI impact.
+3. Delete-my-data button somewhere in Profile, required by Play Store user-rights policy for any cloud-stored personal data.
+
+No in-app banners, no dialogs, no consent gates. Pure backend disclosure.
+
+#### Decision 2: minimum 15 classmates before comparison view shown
+
+Below the floor, no comparison renders — instead "Need N more classmates" placeholder. This is k-anonymity. With 2 students uploaded, both can trivially identify each other's marks. With 5, fuzzier but still identifiable in small sections. With 15, the smallest possible identifiable group is "1 of 15" which gives enough ambiguity for marks distribution to be safe to show.
+
+User picked 15 over my suggested 5 — a stricter privacy floor. Means sections under 15 students won't see any comparison view, which is fine for PSG iTech where most sections are 30-60.
+
+#### Decision 3: Remote Config flag `class_compare_enabled`, default false
+
+Standard pattern from the existing AdMob + tournament gates. Firebase Remote Config already integrated. Add `class_compare_enabled: Boolean` (default false), flip to true via the Firebase console when stable. Lets us kill the feature instantly if anything goes wrong without shipping an APK update.
+
+#### Decision 4: CA marks only (not semester results)
+
+Two distinct mark sources in the app:
+
+- CA marks = internal continuous assessment per subject (CA1, CA2, CA3, etc.), updated mid-semester, what `CAMarksScreen` shows. Volatile — changes mid-semester as new tests are added.
+- Semester results = final grades (S/A+/A/B+/.../F) from `/sis/remote/all/results`, what `ResultScreen` shows. Static after each semester.
+
+V1 scope = CA marks only. Semester results comparison can come in v2 — different data shape, different upload trigger, different table. Keeps the v1 surface area small.
+
+#### Decision 5: section field reliable for the semester
+
+User confirmed sections don't change within a semester at PSG iTech. So `classKey = "{batchYear}_{dept}_{section}_{sem}"` is stable for the duration of any one upload-compare session. No fallback logic needed for null sections. Just normalise on upload with `.uppercase().trim()` to prevent "A" vs "a" splitting the same class into two keys.
+
+#### Decision 6: device-side WorkManager (Option B) for Android, server-side polling (Option A) for PWA later
+
+The user initially asked for server-side polling — they want their backend to fetch marks via stored SIS credentials on a cron, so the leaderboard updates even when users never open the app.
+
+I pushed back on the security implications. Storing every user's college password on the backend creates a massive single-point-of-failure attack surface: one leak = mass account theft, college admin escalation, Play Store ban, possible legal action. For a college-friend-distribution app run by one student, that's a lot of liability.
+
+Negotiated landing point:
+
+- **Android: Option B (device-side WorkManager)**. Already-proven pattern — the app already runs `AttendanceRefreshWorker`, `CircularNotificationWorker`, `HolidayNotificationWorker` on the same 6h cadence. Adding `ClassMarksUploadWorker` is one more in the family. No credentials transmitted off-device. No new attack surface. Covers ~95% of users who open the app at least every few weeks.
+- **PWA: Option A (server-side cron) later as a supplement**. PWA users are less likely to keep the tab alive long enough for service-worker background sync to fire reliably (browser background-sync APIs are restricted). For those users only, the backend will poll. Smaller credential surface than fetching for every user, easier to justify.
+
+Phase 1-3 ships Option B only. Phase 5 adds Option A specifically for PWA users. Android users never have their credentials transmitted off-device.
+
+#### Decision 7: zero-cost stack — Cloudflare D1 + Workers
+
+Initially proposed Firestore for the marks storage (reusing the chess project). Did the math at 5k users:
+
+| Resource | Per user | 5k load | Firestore Spark free tier |
+|---|---|---|---|
+| Writes | 4/day (every 6h) | 20k/day | 20k/day exactly |
+| Reads (open Compare screen) | ~3/day × 47 classmates worst case | 700k/day | 50k/day |
+| Storage | ~3 KB | 15 MB | 1 GB |
+
+Reads would blow through Firestore free tier 14×. User asked for zero cost. Pivoted to Cloudflare D1 (SQLite at the edge) which has dramatically friendlier limits:
+
+| Resource | Free tier | 5k user load | Headroom |
+|---|---|---|---|
+| Workers requests | 100k/day | ~30k/day (upload + read) | 3.3× |
+| D1 reads | 5M/day | ~15k/day with 30-min device cache | 333× |
+| D1 writes | 100k/day | 20k/day | 5× |
+| D1 storage | 5 GB | ~25 MB (5k × 5KB rows) | 200× |
+| Cron triggers | 1/minute, unlimited count | 6h cadence | Fine |
+
+Total cost at 5k users: **$0/month** with headroom to ~30k users before any tier flip.
+
+Firestore stays only for the existing chess lobby state (which lives on a Durable Object). Class marks goes on D1, in the same Cloudflare Worker that runs `/health`, `/privacy`, `/ws` (chess WebSocket). Three new routes:
+
+```
+GET    /class/:classKey   → returns precomputed class stats JSON
+POST   /class/marks       → upload own marks (Firebase auth required)
+DELETE /class/me          → wipe my row
+```
+
+Auth is reused from the chess path's `verifyFirebaseIdToken`. Firebase UID → anonId via `p_${hash(rollNumber).toString(16)}` (same hash scheme already used for Crashlytics user grouping).
+
+D1 schema:
+
+```sql
+CREATE TABLE class_marks (
+  anon_id      TEXT PRIMARY KEY,
+  class_key    TEXT NOT NULL,
+  subjects     TEXT NOT NULL,    -- JSON serialized: { "OS": {ca1, ca2, total}, ... }
+  overall_avg  REAL NOT NULL,
+  uploaded_at  INTEGER NOT NULL
+);
+
+CREATE INDEX idx_class_key ON class_marks(class_key);
+CREATE INDEX idx_uploaded_at ON class_marks(uploaded_at);
+```
+
+Server-side aggregation done in SQL (`AVG`, `MIN`, `MAX`, `GROUP BY` via JSON extraction) so the device fetches one ~3 KB stats JSON per 30-minute window instead of paying multiple D1 reads.
+
+#### Durable Objects vs D1 — distinction reference
+
+User asked "what is the difference between d0 and d1". No D0 product exists; the question was almost certainly Durable Objects vs D1, two Cloudflare data products that solve different problems.
+
+| | Durable Objects (DO) | D1 |
+|---|---|---|
+| What | Stateful singleton actors, each instance has its own private SQLite (since 2024) or transactional storage API | Shared SQLite database, anyone can query |
+| Concurrency model | Single-writer per object instance, strong consistency within one DO | Multi-reader, eventually consistent globally (writes on primary region) |
+| Use case | Coordination, hubs, counters, locks, real-time state | Tabular data, leaderboards, user records, analytics |
+| Query path | Custom code inside the DO + storage API | Standard SQL via Worker binding |
+| Free tier | 1M requests/day, 1 GB storage | 5M reads/day, 100k writes/day, 5 GB storage |
+| Existing usage in this project | Chess lobby (`Lobby` class in `chess-lobby/src/lobby.ts`) | None yet |
+| Best fit for marks comparison | Bad — single global DO bottleneck for all classes | Good — natural SQL queries for class aggregates |
+
+Why D1 wins for this feature: 5k users uploading to one DO singleton means a single-writer queue and proportional contention. 5k users hitting a D1 table with `WHERE class_key = ?` is an indexed lookup that scales horizontally. Aggregation (`AVG`, percentile bucketing) is a one-line SQL query in D1; in a DO it requires hand-rolled iteration over all stored rows.
+
+When DO wins (and why chess stays on it): live state with strong-consistency requirements (chess game state must never serve two clients different snapshots of the same game), WebSocket hubs, hot counters / rate limiters / locks. Chess's `Lobby` DO is the right tool for matchmaking + active games. Marks comparison is not.
+
+Both DO and D1 live in the same Cloudflare account and can be bound into the same Worker. The chess-lobby Worker will end up with bindings for both. No project split needed.
+
+#### Final phase order
+
+- **Phase 1**: Cloudflare Worker side — `wrangler d1 create class_marks_db`, migration SQL, new routes (`GET /class/:classKey`, `POST /class/marks`, `DELETE /class/me`), Firebase auth reuse, server-side stats computation, deploy.
+- **Phase 2**: Android client — `ClassRanksData` data classes, `ClassMarksRepository` (OkHttp + Firebase ID token), `ClassMarksUploadWorker` (WorkManager 6h), hook into existing CA marks fetch success, `SecurePreferences.lastUploadedMarksHash` for dedup, Remote Config flag.
+- **Phase 3**: UI — `ClassCompareScreen` + `ClassRanksViewModel`, `PercentileGauge` / `SubjectBar` / `DistributionHistogram` composables, min-15 gate placeholder, Profile delete-my-data button.
+- **Phase 4**: Privacy policy update + Play Console Data Safety form.
+- **Phase 5 (later, PWA only)**: server-side cron — `pwa_creds` D1 table with encrypted credentials (Worker secret as master key), `[triggers] crons = ["0 */6 * * *"]` in `wrangler.toml`, chunked iteration (250 users / 10-min window) to stay under SIS rate limits + Worker CPU caps.
+
+Estimated effort: Phase 1-3 ≈ 4 days for a working Android leaderboard. Phase 5 is its own multi-day chunk and not blocking.
+
+### Patterns established this session
+
+- **For "share aggregate stats only, never raw rows" features, k-anonymity floor is non-negotiable** — pick the floor up front (we picked 15), enforce server-side, return placeholder text below the floor. Otherwise small classes leak individual identities.
+- **Auto-sync of personal data is fine without in-app consent only if the privacy policy + Play Data Safety form disclose it**. The line is local cache (no disclosure) vs cloud share (disclosure required). Both Play Store and India IT Rules treat them identically.
+- **Cloudflare D1 is the correct free-tier choice for read-heavy aggregations at moderate scale (≤30k users)** — Firestore Spark blows out on reads at 5k users even with caching; D1's 5M reads/day handles it with 300× headroom.
+- **Durable Objects and D1 serve different shapes** — DOs for coordination + strong consistency on a per-instance basis, D1 for tabular data + horizontal queries. Don't reach for DOs when SQL is the natural fit; don't reach for D1 when you need single-writer atomicity.
+- **Reusing an existing Worker for new routes is cheap** — `chess-lobby` Worker is going to host `/health`, `/privacy`, `/ws` (chess), and now `/class/*` (marks). Single deploy target, single deploy command, single dashboard, all free.
+- **When porting a closed-form SVG / canvas spec (like MOON.md) to Compose, the geometry maps directly** — arcs become `Path.arcTo(rect, startAngleDegrees, sweepAngleDegrees)`, masks become `BlendMode.DstIn` against a filled path inside a `saveLayer`. The hard part is Compose's tendency to hide `drawImageRect` behind import paths that vary across Compose versions; fall back to `drawIntoCanvas { canvas.save(); canvas.translate(...); canvas.scale(...); drawImage(...); canvas.restore() }` if `drawImageRect` won't resolve.
+- **`UA: Mozilla/5.0` alone gets you 403'd on Wikimedia Commons** — their policy requires a contactable User-Agent (`AppName/version (email)` form). Trivia, but cost a fetch cycle to discover.
+- **"Make it more visible" feedback on already-bright UI elements often means dynamic range, not maximum brightness** — bumping star count + radius alone wasn't the fix; raising the twinkle envelope's pow exponent from 2 to 3 made the bright/dim contrast feel "more visible" because the curve spends more time near the floor before peaking.
+
+---
