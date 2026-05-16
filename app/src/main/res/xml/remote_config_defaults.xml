@@ -39,4 +39,23 @@
         <key>ads_use_test_ids</key>
         <value>false</value>
     </entry>
+    <entry>
+        <!-- Tournament feature gate. While false the Chess "Tourney" tile
+             and Profile "Tournament Approvals" tile show a "Feature under
+             development" toast on tap instead of opening the screens.
+             Flip true in Firebase Console once the tournament flow is
+             ready to ship. -->
+        <key>tournament_enabled</key>
+        <value>false</value>
+    </entry>
+    <entry>
+        <!-- Class marks comparison feature. While false:
+             - ClassMarksUploadWorker bails on every run (no D1 writes)
+             - Compare entry on CAMarksScreen header stays hidden
+             Flip true in Firebase Console after enough students per class
+             have signed in (server-side k=15 anonymity floor still applies
+             regardless). -->
+        <key>class_compare_enabled</key>
+        <value>false</value>
+    </entry>
 </defaultsMap>

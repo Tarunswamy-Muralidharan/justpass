@@ -71,6 +71,19 @@ class AttendanceRepository(private val context: Context) {
         try { securePrefs.cachedAbsentDaysJson = gson.toJson(data) } catch (_: Exception) {}
     }
 
+    /**
+     * Kick a one-shot ClassMarksUploadWorker after a fresh CA marks fetch.
+     * Worker itself is gated on the `class_compare_enabled` Remote Config
+     * flag — if the flag is off this is essentially a no-op (the worker
+     * runs, reads the flag, exits success). Cheap enough to fire blindly
+     * without checking the flag here.
+     */
+    private fun triggerClassMarksUpload() {
+        try {
+            com.justpass.app.worker.ClassMarksUploadWorker.uploadNow(context)
+        } catch (_: Exception) {}
+    }
+
     suspend fun login(rollNumber: String, password: String): Result<AttendanceData> = loginMutex.withLock {
         // If another caller just captured a token, skip the full login — token is fresh enough
         val now = System.currentTimeMillis()
@@ -254,6 +267,7 @@ class AttendanceRepository(private val context: Context) {
                 cachedCourseMarks = data
                 try { securePrefs.cachedCourseMarksFullJson = gson.toJson(data) } catch (_: Exception) {}
                 android.util.Log.d("AttendanceRepo", "CA marks fast fetch successful")
+                triggerClassMarksUpload()
                 return Result.Success(data)
             }
         } catch (e: Exception) {
@@ -268,7 +282,11 @@ class AttendanceRepository(private val context: Context) {
             if (refreshed) {
                 val retryResult = webViewAuthenticator.fetchCAMarksDirect(rollNumber)
                 if (retryResult != null && retryResult.isSuccess) {
-                    return Result.Success(retryResult.getOrThrow())
+                    val data = retryResult.getOrThrow()
+                    cachedCourseMarks = data
+                    try { securePrefs.cachedCourseMarksFullJson = gson.toJson(data) } catch (_: Exception) {}
+                    triggerClassMarksUpload()
+                    return Result.Success(data)
                 }
             }
         } catch (e: Exception) {
@@ -288,6 +306,7 @@ class AttendanceRepository(private val context: Context) {
                         cachedCourseMarks = data
                         try { securePrefs.cachedCourseMarksFullJson = gson.toJson(data) } catch (_: Exception) {}
                         android.util.Log.d("AttendanceRepo", "CA marks after login successful: ${data.size} courses")
+                        triggerClassMarksUpload()
                         return Result.Success(data)
                     }
                 } catch (_: Exception) {}
