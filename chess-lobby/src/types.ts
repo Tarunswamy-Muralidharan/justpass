@@ -3,6 +3,47 @@
 export interface Env {
   LOBBY: DurableObjectNamespace;
   FIREBASE_PROJECT_ID: string;
+  CLASS_MARKS_DB: D1Database;
+}
+
+// Class marks comparison — payload uploaded by Android client.
+export interface ClassMarksUploadBody {
+  classKey: string;
+  subjects: Record<string, ClassSubjectMark>;
+  overallAvg: number;
+}
+
+export interface ClassSubjectMark {
+  ca1?: number;
+  ca2?: number;
+  ca3?: number;
+  total?: number;
+  status?: string;
+}
+
+export interface ClassStatsResponse {
+  classKey: string;
+  studentCount: number;
+  overall: ClassOverallStats;
+  subjects: Record<string, ClassSubjectStats>;
+  yourRank?: number;
+  yourPercentile?: number;
+  // 10-bucket distribution histogram for overall avg, indexed 0-9 (each = 10% band).
+  overallHistogram: number[];
+}
+
+export interface ClassOverallStats {
+  avg: number;
+  min: number;
+  max: number;
+}
+
+export interface ClassSubjectStats {
+  avg: number;
+  min: number;
+  max: number;
+  yourMark?: number;
+  histogram: number[]; // 10 buckets, 0-9
 }
 
 export interface PlayerPublic {
