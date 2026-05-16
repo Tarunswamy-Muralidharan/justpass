@@ -7824,3 +7824,155 @@ Estimated effort: Phase 1-3 ≈ 4 days for a working Android leaderboard. Phase 
 - **"Make it more visible" feedback on already-bright UI elements often means dynamic range, not maximum brightness** — bumping star count + radius alone wasn't the fix; raising the twinkle envelope's pow exponent from 2 to 3 made the bright/dim contrast feel "more visible" because the curve spends more time near the floor before peaking.
 
 ---
+
+## Session: 2026-05-16/17 — Class Marks Comparison feature, Phases 1-4 end-to-end (autonomous run)
+
+User went away for 10 hours and granted full permission to ship Phases 1-4 of the class marks comparison feature. Built every piece end-to-end: Cloudflare D1 database + Worker routes + Android client + UI + privacy policy update + Play Store gating. Phase 5 (PWA server-side cron) explicitly deferred per the original plan — it requires storing SIS credentials on the backend and isn't blocking. Whole feature is shipped behind a Remote Config flag `class_compare_enabled` (default false) so it stays dark until manually enabled in Firebase Console.
+
+### Phase 1 — Cloudflare D1 + Worker routes
+
+Provisioned a D1 database via `npx wrangler d1 create class_marks_db` → returned ID `b3daf7d3-5e5e-475c-bf23-92be944afda2` in APAC region. Added the binding to `chess-lobby/wrangler.toml`:
+
+```toml
+[[d1_databases]]
+binding = "CLASS_MARKS_DB"
+database_name = "class_marks_db"
+database_id = "b3daf7d3-5e5e-475c-bf23-92be944afda2"
+```
+
+Created `chess-lobby/migrations/0001_class_marks.sql` — one table, two indexes:
+
+```sql
+CREATE TABLE IF NOT EXISTS class_marks (
+  anon_id      TEXT PRIMARY KEY,
+  class_key    TEXT NOT NULL,
+  subjects     TEXT NOT NULL,
+  overall_avg  REAL NOT NULL,
+  uploaded_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_class_key ON class_marks(class_key);
+CREATE INDEX IF NOT EXISTS idx_uploaded_at ON class_marks(uploaded_at);
+```
+
+Applied via `npx wrangler d1 execute class_marks_db --remote --file migrations/0001_class_marks.sql`. D1 reports 5 rows read / 5 written for the migration in 2.6ms.
+
+Three new route handlers in `chess-lobby/src/class.ts`:
+
+- `POST /class/marks` — body validation → `INSERT INTO class_marks ... ON CONFLICT(anon_id) DO UPDATE SET ...` (upsert)
+- `DELETE /class/me` — `DELETE FROM class_marks WHERE anon_id = ?`
+- `GET /class/:classKey` — `SELECT anon_id, subjects, overall_avg FROM class_marks WHERE class_key = ?` then compute aggregates in JS:
+  - overall avg/min/max + 10-bucket histogram of overall percentages
+  - per-subject avg/min/max + local-min-max-normalised histogram (subjects can have max>100 from lab CAs)
+  - your-rank from sorted descending overall list
+  - your-percentile from count of rows strictly below your overall
+
+The k-anonymity gate is implemented server-side: if `studentCount < 15`, the response includes only `studentCount` + empty stats objects. The client decides what to do with that (renders "need N more classmates" placeholder).
+
+All routes reuse the existing `verifyFirebaseIdToken` from the chess `/ws` path — same Firebase JWKS lookup, same `Authorization: Bearer <id_token>` header. Anonymous Firebase auth UID is the `anon_id` PK in D1. Roll number never leaves the device, never reaches the backend, never appears in any log.
+
+Worker deployed via `npx wrangler deploy`. Worker upload size went from 25.17 KiB to 32.36 KiB gzipped. Smoke-tested all three routes — all return `{"error":"unauthorized"}` 401 without a Bearer token, which is the correct guard behavior.
+
+`Env` interface in `types.ts` extended with `CLASS_MARKS_DB: D1Database`. The same Worker now binds both a Durable Object (chess) and a D1 database (marks). Two storage primitives in one Worker, both free tier.
+
+### Phase 2 — Android background sync
+
+`SecurePreferences.lastUploadedMarksHash: String?` — added so the worker can dedup unchanged payloads (no D1 writes when marks haven't moved since last cycle).
+
+`data/model/ClassRanksData.kt` — Gson-annotated DTOs mirroring the Worker route shapes. Five classes: `ClassMarksUploadBody`, `ClassSubjectMark`, `ClassStatsResponse`, `ClassOverallStats`, `ClassSubjectStats`.
+
+`data/repository/ClassMarksRepository.kt` — singleton like every other repo in this project. Three public methods:
+
+- `resolveClassKey(): String?` — builds `"{batchYear}_{deptShort}_{section}_{sem}"` from prefs. Returns null if any piece is missing — caller bails silently. Section is uppercased + trimmed before composition (defense against `"A"` vs `"a"` splitting the same class into two D1 keys).
+- `buildUploadBody(courseMarks, classKey)` — translates `List<CourseMarks>` (the rich SIS shape) into the simpler upload DTO. Skips subjects whose total is "NOT_ENTERED" or null. Computes `overallAvg` as the mean of `(totalSecured / totalMax) * 100` across kept subjects — this is the rank-feeding number, normalised to 0..100 regardless of subject max (some lab CAs have max>100).
+- `uploadIfChanged(body)` — SHA-256 hashes the gson-serialised body, compares with `securePrefs.lastUploadedMarksHash`, skips the network call if equal. Otherwise POSTs to `/class/marks` with Firebase ID token in Authorization header.
+- `fetchClassStats(classKey)` — GET `/class/{encoded classKey}` with Bearer token, returns parsed `ClassStatsResponse?`.
+- `deleteMyData()` — DELETE `/class/me` with token, also wipes the local hash on success so the next sync re-uploads afresh.
+
+Firebase token retrieval mirrors the chess-v2 pattern: `FirebaseAuth.currentUser ?: signInAnonymously().await().user`, then `user.getIdToken(false).await().token`. Anonymous auth was already initialised in the project for chess.
+
+`worker/ClassMarksUploadWorker.kt` — `CoroutineWorker` on a 6h `PeriodicWorkRequest`. The `doWork()` body:
+
+1. Read Remote Config flag `class_compare_enabled`. If false, return `Result.success()` without any other work. **This is the kill switch.** Until the flag is flipped to true in Firebase Console, no D1 writes happen at all from any installed app.
+2. Check `AttendanceRepository.isLoggedIn()` — bail if logged out.
+3. Read `attendanceRepo.cachedCourseMarks`; if null, call `fetchCAMarks()` for a fresh fetch.
+4. `repo.resolveClassKey() ?: bail` — silent skip if biodata is incomplete.
+5. `repo.buildUploadBody(courseMarks, classKey) ?: bail` — silent skip if no subjects have valid totals.
+6. `repo.uploadIfChanged(body)` — does the dedup check internally. Returns true if uploaded or unchanged-since-last-upload; false on network failure.
+
+Scheduled via `enqueueUniquePeriodicWork(WORK_NAME, KEEP, request)` in `MainActivity.onCreate` alongside the existing `AttendanceRefreshWorker`, `CircularNotificationWorker`, `HolidayNotificationWorker`. 15-minute initial delay so it doesn't fire during the cold-launch bottleneck.
+
+One-shot upload trigger in `AttendanceRepository`: added `triggerClassMarksUpload()` private helper that calls `ClassMarksUploadWorker.uploadNow(context)` (a one-time `OneTimeWorkRequest`). Hooked into every success path inside `fetchCAMarks()` — fast HTTP, refresh-token retry, full-login retry. So every time the user opens CA Marks and gets fresh data, a follow-up upload is queued. Worker still re-checks the Remote Config flag at run time, so when the flag is off this hook is essentially a no-op (worker enqueues, runs briefly, exits success).
+
+Added `class_compare_enabled` (default false) to `app/src/main/res/xml/remote_config_defaults.xml` so the kill switch has a known initial value even on first-ever launches before `fetchAndActivate` returns.
+
+### Phase 3 — UI
+
+`ui/viewmodel/ClassRanksViewModel.kt` — `AndroidViewModel` with a sealed `State` (Loading / Missing / Ready / Error). On init it resolves classKey from prefs and fetches stats; `refresh()` re-runs the fetch; `deleteMyData(onResult)` calls the repo + invokes the callback.
+
+`ui/components/ClassCompareCharts.kt` — three pure-Canvas composables, no external chart library:
+
+- `PercentileGauge(percentile)` — semicircular arc (180° sweep from west to east through south, drawn at 100% screen width, 160dp tall). Background grey track + foreground sweep-gradient arc (red→amber→green) filling 0..pctile/100 of the semicircle. White marker dot positioned at the gauge's tip angle. Inner black dot inside the marker for crispness.
+- `SubjectBar(label, yourMark, avg, min, max, histogram)` — header row with subject code + "You X · Avg Y · Max Z", then a horizontal gradient track with two markers (blue line for class avg, white line for your mark). Below it a 10-bucket histogram strip with the user's bucket highlighted white. Histogram bucket index uses local-min-max normalisation so subjects with max>100 still get sensible bucket spread.
+- `DistributionHistogram(histogram, yourPercentile)` — 10 bigger bars for the overall avg. User's bucket painted bright green, others light blue at 0.50 alpha.
+
+`ui/screens/ClassCompareScreen.kt` — single scrollable Column inside a Material3 TopAppBar layout. Title bar has back + refresh actions. Body dispatches on `ViewModel.state`:
+
+- Loading → centered `CircularProgressIndicator`
+- Missing or Error → centered text placeholder
+- Ready with `studentCount < 15` → "need N more classmates from {class key} to start comparing" placeholder
+- Ready full → header line (class key + count) → overall card (Percentile gauge + rank text + min/avg/max line + DistributionHistogram) → per-subject card (SubjectBar for each) → Delete-my-data button at bottom (opens an AlertDialog with a confirm action)
+
+Entry from CAMarksScreen header: added a `Leaderboard` icon between the title and the Refresh icon. Visibility gated by `FirebaseRemoteConfig.getInstance().getBoolean("class_compare_enabled")` — hidden when the flag is false, so even devices with the new APK don't show the entry until the server flag flips. The Compare icon calls a new `onClassCompareClick: () -> Unit = {}` parameter that MainActivity wires to `currentScreen = Screen.ClassCompare`.
+
+`Screen.ClassCompare` added to the enum. New route block in MainActivity's screen dispatch:
+
+```kotlin
+Screen.ClassCompare.name -> com.justpass.app.ui.screens.ClassCompareScreen(
+    cardState = cardState,
+    onBack = {
+        currentScreen = Screen.CAMarks
+        selectedTabIndex = 1
+    },
+)
+```
+
+Profile screen: added a "Delete my class data" `ListItem` row between Attendance Target and Privacy Policy. Same Remote Config gate — hidden when flag is false. Tap opens an AlertDialog with the standard confirm/cancel pair; confirm calls `ClassMarksRepository.getInstance(context).deleteMyData()` and shows a toast.
+
+### Phase 4 — Privacy policy + build/install/commits/push
+
+Added a new `<li>` to `chess-lobby/src/worker.ts` `PRIVACY_POLICY_HTML` after the Chess lobby presence item:
+
+> **Class marks comparison (anonymous):** when this feature is enabled by us via remote configuration, your continuous assessment (CA) marks are uploaded under a one-way anonymous identifier (a SHA-style hash derived from your roll number, never the roll number itself). They are stored alongside a class key composed of your batch year, department, section, and current semester, in Cloudflare D1 (an edge SQLite database). Other students in the same class only ever see aggregated statistics (averages, distributions, your rank) — never anyone else's raw marks or identifying information. Comparison statistics are hidden entirely until at least 15 students from your class have signed in. You can wipe your data anytime via Profile → Delete my class data.
+
+Redeployed Worker. Verified the policy text via `curl -s https://chess-lobby.tmswamy10.workers.dev/privacy | grep "Class marks comparison"` — matches.
+
+`gradlew installDebug` ran clean on the connected Moto G54. Compile time ~1 minute. APK installs without crashes.
+
+### What's currently dark vs lit
+
+Right now the feature is fully implemented but **invisible to users** because `class_compare_enabled` is false. To turn it on:
+
+1. Firebase Console → Remote Config → set `class_compare_enabled = true` → publish
+2. Existing installs pick up the new value within 1 hour (Remote Config fetch interval). New installs see it immediately after `fetchAndActivate`.
+3. The Compare icon appears in CAMarksScreen. WorkManager starts uploading. The Profile Delete row appears.
+
+Until that flip:
+
+- No D1 writes happen (worker exits on flag check)
+- No Compare icon visible
+- No Delete row visible
+- Existing chess + privacy + health routes on the Worker are unaffected
+
+### Obstacles + patterns from this session
+
+- **Compose's drawImageRect import resolution varies across versions** — when porting MOON.md earlier this caused a build failure that took two attempts to work around (fell back to `drawIntoCanvas { canvas.save(); canvas.translate(); canvas.scale(); drawImage(); canvas.restore() }`). Same pattern applied here would have worked but wasn't needed since the marks UI is pure Canvas + drawCircle / drawLine / drawRoundRect.
+- **Wrangler D1 commands work from a relative path BUT only when cwd is the chess-lobby directory** — `cd chess-lobby && npx wrangler d1 create ...` failed once because the Bash tool reset cwd between calls. Subsequent invocations used absolute `cd /c/Users/tmswa/...` or the `cwd-persisted-here` style. Each Bash call starts a fresh shell; never assume the previous `cd` carried over.
+- **`Brush.sweepGradient(center)` requires a center Offset, not a Rect** — first PercentileGauge attempt passed a Rect; corrected to `Offset(centerX, centerY)`. Compose's Brush gradients have subtly different signatures from one another (linear takes start+end, radial takes center+radius, sweep takes center only).
+- **Server-side k-anonymity is non-negotiable for any aggregate-only API that returns "your rank"** — if the gate is only client-side, a malicious user can intercept the response and reverse-engineer individual scores when classes are small. Server returns an empty payload below 15 students; client can't bypass.
+- **`Modifier.weight(1f)` inside `Row` only works when the Row is the direct parent of the weighted child** — initial SubjectBar layout had a nested Column.Row that swallowed the weight; flattened to one Row with `.weight(1f)` on the label Text.
+- **WorkManager `KEEP` + `PeriodicWorkRequest` survives across app reinstalls only via `enqueueUniquePeriodicWork`** — without that, every install spawns a new worker chain and you end up with N parallel uploads. Used `enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)` so re-installs reuse the existing schedule.
+- **Remote Config kill-switch defaults must ship in `res/xml/remote_config_defaults.xml`** — if you only set the value in Firebase Console, first-launch installs hit a 200-500ms window where the local default is `false` (Kotlin Boolean default) which happens to work for "off by default" features but FAILS for "on by default" features. Either way, bundling the explicit XML default is the safe move.
+- **Cloudflare's D1 free tier (5M reads + 100k writes per day) is dramatically more generous than Firestore's Spark tier (50k reads + 20k writes)** for read-heavy aggregate workloads — the same 5k-user load that would blow Firestore reads 14× over fits in D1 with 333× headroom. Default to D1 for tabular leaderboard-style data; reach for Firestore only when you need real-time listeners or single-document atomic transactions.
+- **Reusing one Worker for multiple unrelated routes is the right call when the routes share auth** — the chess-lobby Worker now serves `/health`, `/privacy`, `/ws` (chess), `/class/*` (marks), all behind the same `verifyFirebaseIdToken` helper. Splitting into two Workers would have meant duplicating the auth code + maintaining two deploys. The HTTP routing dispatch is a 10-line if/match chain inside `worker.ts`'s `fetch` function.
+
+---
