@@ -74,9 +74,7 @@ fun ProfileScreen(
     onBugReportInboxClick: () -> Unit = {},
     onManageAdminsClick: () -> Unit = {},
     weatherScene: com.justpass.app.ui.components.WeatherScene = com.justpass.app.ui.components.WeatherScene.OFF,
-    onWeatherSceneChange: (com.justpass.app.ui.components.WeatherScene) -> Unit = {},
-    moonPhase: com.justpass.app.ui.components.MoonPhase = com.justpass.app.ui.components.MoonPhase.AUTO,
-    onMoonPhaseChange: (com.justpass.app.ui.components.MoonPhase) -> Unit = {}
+    onWeatherSceneChange: (com.justpass.app.ui.components.WeatherScene) -> Unit = {}
 ) {
     val context = LocalContext.current
     val securePrefs = SecurePreferences.getInstance(context)
@@ -497,58 +495,6 @@ fun ProfileScreen(
                         },
                         confirmButton = {
                             TextButton(onClick = { showScenePicker = false }) { Text("Close") }
-                        },
-                        containerColor = Color(0xFF1E2A3A),
-                    )
-                }
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
-                // Moon phase picker — only meaningful for Clear Night.
-                var showMoonPicker by remember { mutableStateOf(false) }
-                ListItem(
-                    headlineContent = { Text("Moon Phase") },
-                    leadingContent = { Icon(Icons.Default.Cloud, null) },
-                    supportingContent = {
-                        Text(
-                            moonPhase.displayName + "  •  Clear Night scene",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                    modifier = Modifier.clickable { showMoonPicker = true },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                )
-                if (showMoonPicker) {
-                    AlertDialog(
-                        onDismissRequest = { showMoonPicker = false },
-                        title = { Text("Pick a moon phase") },
-                        text = {
-                            androidx.compose.foundation.lazy.LazyColumn {
-                                items(com.justpass.app.ui.components.MoonPhase.entries.toList()) { phase ->
-                                    val selected = phase == moonPhase
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                onMoonPhaseChange(phase)
-                                                showMoonPicker = false
-                                            }
-                                            .padding(vertical = 10.dp, horizontal = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        RadioButton(selected = selected, onClick = null)
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(
-                                            phase.displayName,
-                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (selected) MaterialTheme.colorScheme.primary
-                                                else MaterialTheme.colorScheme.onSurface,
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                        confirmButton = {
-                            TextButton(onClick = { showMoonPicker = false }) { Text("Close") }
                         },
                         containerColor = Color(0xFF1E2A3A),
                     )
