@@ -149,6 +149,24 @@ class ClassMarksRepository private constructor(private val context: Context) {
     }
 
     /**
+     * Lightweight visibility probe used by CAMarksScreen. Hits the same
+     * endpoint as [fetchClassStats] but only looks at studentCount, and
+     * flips [SecurePreferences.classCompareUnlocked] on once the class
+     * has crossed the anonymity floor. The Compare entry icon reads that
+     * pref to decide whether to render — keeps under-populated classes
+     * from ever seeing a "need N more classmates" placeholder.
+     */
+    suspend fun probeClassUnlocked(): Boolean {
+        if (securePrefs.classCompareUnlocked) return true
+        val classKey = resolveClassKey() ?: return false
+        val stats = fetchClassStats(classKey) ?: return false
+        return if (stats.studentCount >= 15) {
+            securePrefs.classCompareUnlocked = true
+            true
+        } else false
+    }
+
+    /**
      * Fetch class stats for the given key. Null on any error.
      */
     suspend fun fetchClassStats(classKey: String): ClassStatsResponse? {

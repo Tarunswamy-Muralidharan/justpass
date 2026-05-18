@@ -95,6 +95,17 @@ class SecurePreferences(context: Context) {
         get() = regularPrefs.getString(KEY_LAST_UPLOADED_MARKS_HASH, null)
         set(value) = regularPrefs.edit().putString(KEY_LAST_UPLOADED_MARKS_HASH, value).apply()
 
+    /**
+     * Whether this user's class has reached the k=15 anonymity floor. Set true
+     * the first time a GET /class/:classKey returns studentCount >= 15.
+     * The Compare entry on CA Marks header stays hidden until this flips true,
+     * so users in under-populated classes never see a "need N more classmates"
+     * placeholder — the feature simply doesn't exist for them yet.
+     */
+    var classCompareUnlocked: Boolean
+        get() = regularPrefs.getBoolean(KEY_CLASS_COMPARE_UNLOCKED, false)
+        set(value) = regularPrefs.edit().putBoolean(KEY_CLASS_COMPARE_UNLOCKED, value).apply()
+
     var programmeName: String?
         get() = regularPrefs.getString(KEY_PROGRAMME_NAME, null)
         set(value) = regularPrefs.edit().putString(KEY_PROGRAMME_NAME, value).apply()
@@ -279,6 +290,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_CHESS_BOARD_THEME = "chess_board_theme"
         private const val KEY_WEATHER_SCENE = "weather_scene"
         private const val KEY_LAST_UPLOADED_MARKS_HASH = "last_uploaded_marks_hash"
+        private const val KEY_CLASS_COMPARE_UNLOCKED = "class_compare_unlocked"
         private const val KEY_TARGET_CGPA = "target_cgpa"
         private const val KEY_DISMISSED_ANNOUNCEMENT = "dismissed_announcement_id"
 

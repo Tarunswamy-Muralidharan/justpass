@@ -48,14 +48,38 @@ fun CAMarksScreen(
     onClassCompareClick: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    // Gate the Compare icon on Remote Config (default false). Server-side
-    // k=15 floor still hides actual stats even if a user reaches the screen.
-    val showCompare = remember {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Compare icon visibility: Remote Config flag AND this user's class has
+    // already crossed the k=15 anonymity floor. We never render "need N more
+    // classmates" — the feature is invisible to the user until their class
+    // hits 15 contributors.
+    val flagEnabled = remember {
         try {
             com.google.firebase.remoteconfig.FirebaseRemoteConfig
                 .getInstance()
                 .getBoolean("class_compare_enabled")
         } catch (_: Exception) { false }
+    }
+    var unlocked by remember {
+        mutableStateOf(
+            com.justpass.app.data.local.SecurePreferences
+                .getInstance(context).classCompareUnlocked
+        )
+    }
+    val showCompare = flagEnabled && unlocked
+
+    // Background probe — when the flag is on but this user hasn't unlocked
+    // yet, ping the Worker to see if the class size has crossed 15. Cheap
+    // single GET; result is cached in SecurePreferences so future visits
+    // skip the call once unlocked.
+    LaunchedEffect(flagEnabled, unlocked) {
+        if (flagEnabled && !unlocked) {
+            try {
+                val crossed = com.justpass.app.data.repository.ClassMarksRepository
+                    .getInstance(context).probeClassUnlocked()
+                if (crossed) unlocked = true
+            } catch (_: Exception) {}
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
