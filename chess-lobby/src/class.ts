@@ -92,17 +92,23 @@ export async function handleUploadMarks(
 }
 
 // DELETE /class/me
+// Wipes BOTH class_marks row + pwa_creds row (so server-side cron stops
+// polling for this user immediately when they delete their data).
 export async function handleDeleteMe(
   _request: Request,
   env: Env,
   uid: string,
 ): Promise<Response> {
   try {
-    const result = await env.CLASS_MARKS_DB
+    const marksResult = await env.CLASS_MARKS_DB
       .prepare("DELETE FROM class_marks WHERE anon_id = ?1")
       .bind(uid)
       .run();
-    return jsonResponse(200, { ok: true, deleted: result.meta.changes });
+    await env.CLASS_MARKS_DB
+      .prepare("DELETE FROM pwa_creds WHERE anon_id = ?1")
+      .bind(uid)
+      .run();
+    return jsonResponse(200, { ok: true, deleted: marksResult.meta.changes });
   } catch (err) {
     console.error("D1 delete failed:", err);
     return jsonResponse(500, { error: "db_delete_failed" });

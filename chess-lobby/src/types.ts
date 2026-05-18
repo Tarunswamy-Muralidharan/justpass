@@ -4,6 +4,10 @@ export interface Env {
   LOBBY: DurableObjectNamespace;
   FIREBASE_PROJECT_ID: string;
   CLASS_MARKS_DB: D1Database;
+  // AES-GCM master key (base64-encoded 32 bytes) for encrypting PWA users'
+  // SIS passwords stored in pwa_creds. Set via `wrangler secret put PWA_CRED_KEY`.
+  // The cron handler decrypts to log into Keycloak on the user's behalf.
+  PWA_CRED_KEY: string;
 }
 
 // Class marks comparison — payload uploaded by Android client.
