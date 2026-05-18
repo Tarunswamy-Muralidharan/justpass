@@ -22,9 +22,20 @@ new_sqlite_classes = ["Lobby"]
 [vars]
 
 # D1 database for the class marks comparison feature.
-# Schema in migrations/0001_class_marks.sql. Run on first deploy via:
-#   npx wrangler d1 execute class_marks_db --remote --file migrations/0001_class_marks.sql
+# Schema in migrations/. Run new migrations via:
+#   npx wrangler d1 execute class_marks_db --remote --file migrations/000N_*.sql
 [[d1_databases]]
 binding = "CLASS_MARKS_DB"
 database_name = "class_marks_db"
 database_id = "b3daf7d3-5e5e-475c-bf23-92be944afda2"
+
+# PWA server-side cron polling. Cron handler in src/pwa_cron.ts iterates
+# the pwa_creds table in chunks of 16 (subrequest budget) and refreshes
+# class_marks for dormant PWA users. Every 10 min = 144 ticks/day × 16
+# users = 2304 syncs/day. Tweak interval if user count outgrows this.
+#
+# PWA_CRED_KEY is set via:
+#   npx wrangler secret put PWA_CRED_KEY
+# (base64 of 32 random bytes; used to AES-GCM encrypt stored SIS passwords)
+[triggers]
+crons = ["*/10 * * * *"]

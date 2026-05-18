@@ -19,6 +19,8 @@ import {
   handleGetClassStats,
   handleUploadMarks,
 } from "./class";
+import { handlePwaRegister, handlePwaUnregister } from "./pwa";
+import { runPwaSyncTick } from "./pwa_cron";
 import type { Env } from "./types";
 
 export { Lobby } from "./lobby";
@@ -146,6 +148,31 @@ export default {
       return jsonResponse(404, { error: "not_found", path: url.pathname });
     }
 
+    // PWA server-side cron polling routes — register encrypted SIS creds.
+    if (url.pathname.startsWith("/pwa")) {
+      if (!env.FIREBASE_PROJECT_ID) {
+        return jsonResponse(500, {
+          error: "server_misconfigured",
+          reason: "FIREBASE_PROJECT_ID secret not set",
+        });
+      }
+      const token = extractBearer(request);
+      if (!token) {
+        return jsonResponse(401, { error: "unauthorized" });
+      }
+      const verified = await verifyFirebaseIdToken(token, env.FIREBASE_PROJECT_ID);
+      if (!verified) {
+        return jsonResponse(401, { error: "unauthorized" });
+      }
+      if (url.pathname === "/pwa/register" && request.method === "POST") {
+        return handlePwaRegister(request, env, verified.uid);
+      }
+      if (url.pathname === "/pwa/register" && request.method === "DELETE") {
+        return handlePwaUnregister(request, env, verified.uid);
+      }
+      return jsonResponse(404, { error: "not_found", path: url.pathname });
+    }
+
     if (url.pathname !== "/ws") {
       return jsonResponse(404, { error: "not_found" });
     }
@@ -202,6 +229,17 @@ export default {
       console.error(`[worker] DO fetch threw:`, err instanceof Error ? err.stack : err);
       return jsonResponse(500, { error: "do_fetch_failed", reason: err instanceof Error ? err.message : String(err) });
     }
+  },
+
+  // Scheduled handler — Cloudflare Workers cron trigger. Runs every 10 min
+  // via wrangler.toml [triggers] crons configuration. Picks 16 PWA-registered
+  // users (oldest-synced first) and refreshes their class_marks row.
+  async scheduled(
+    _event: ScheduledEvent,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    ctx.waitUntil(runPwaSyncTick(env));
   },
 };
 
@@ -299,6 +337,19 @@ const PRIVACY_POLICY_HTML = `<!DOCTYPE html>
       marks or identifying information. Comparison statistics are hidden
       entirely until at least 15 students from your class have signed in.
       You can wipe your data anytime via Profile &rsquo; Delete my class data.
+    </li>
+    <li>
+      <strong>Web (PWA) credential storage for background sync:</strong> if you
+      use the iOS / browser-based version of JustPass (justpass-eta.vercel.app),
+      your LAUDEA SIS credentials are stored encrypted (AES-GCM with a key held
+      only by our server) in Cloudflare D1. A scheduled job on our backend uses
+      those credentials to refresh your marks every ~10 minutes so that you can
+      contribute to the class comparison feature without having to open the
+      website. Credentials are decrypted in memory only during the refresh,
+      never logged, and are deleted immediately when you tap &ldquo;Stop
+      background sync &amp; delete class data&rdquo; in your profile or when
+      you delete your class data through any client. This only affects the PWA
+      &mdash; the Android app never sends your credentials off your device.
     </li>
     <li>
       <strong>Firebase Analytics:</strong> anonymous, aggregated usage events
