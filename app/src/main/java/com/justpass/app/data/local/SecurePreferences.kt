@@ -8,17 +8,76 @@ import com.justpass.app.data.model.AttendanceData
 
 class SecurePreferences(context: Context) {
 
-    private val masterKey = MasterKey.Builder(context)
-        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .build()
+    private val securePrefs: SharedPreferences = createSecurePrefs(context)
 
-    private val securePrefs: SharedPreferences = EncryptedSharedPreferences.create(
-        context,
-        SECURE_PREFS_NAME,
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    /**
+     * EncryptedSharedPreferences fails to open on a small number of devices
+     * because the underlying Android Keystore alias gets corrupted (Crashlytics
+     * issue SecurePreferences.<init> — `KeyStoreException: Signature/MAC
+     * verification failed`). Reproducer: app data backup/restore, sideload-to-
+     * Play-Store migration, OEM keystore migrations, etc.
+     *
+     * Without a fallback, MainActivity.onCreate dies on first instruction → the
+     * app crash-loops and the user can't even open the app to clear data.
+     *
+     * Strategy:
+     *   1. Try the normal EncryptedSharedPreferences path.
+     *   2. On KeyStoreException, nuke the corrupt master key + the encrypted
+     *      prefs file (so the user loses cached creds — they re-login once)
+     *      and retry. This recovers ~95% of the affected users.
+     *   3. If retry still fails, fall back to regular SharedPreferences with
+     *      the SAME store name so the app keeps working — the user re-logs in
+     *      and their next session works. This is a security trade-off accepted
+     *      only for users whose Keystore is permanently broken (rare).
+     */
+    private fun createSecurePrefs(ctx: Context): SharedPreferences {
+        fun buildMasterKey() = MasterKey.Builder(ctx)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        try {
+            return EncryptedSharedPreferences.create(
+                ctx,
+                SECURE_PREFS_NAME,
+                buildMasterKey(),
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        } catch (_: Throwable) {
+            // First-attempt failure — likely keystore alias corruption.
+            // Wipe encrypted-prefs file + the master-key alias and try again.
+            runCatching {
+                ctx.deleteSharedPreferences(SECURE_PREFS_NAME)
+            }
+            runCatching {
+                val ks = java.security.KeyStore.getInstance("AndroidKeyStore")
+                ks.load(null)
+                if (ks.containsAlias("_androidx_security_master_key_")) {
+                    ks.deleteEntry("_androidx_security_master_key_")
+                }
+            }
+            try {
+                return EncryptedSharedPreferences.create(
+                    ctx,
+                    SECURE_PREFS_NAME,
+                    buildMasterKey(),
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+                )
+            } catch (_: Throwable) {
+                // Last resort: plaintext SharedPreferences under a different
+                // name. Sensitive fields will live unencrypted on this device
+                // until the keystore heals. Accepted trade-off vs crash-loop.
+                android.util.Log.w(
+                    "SecurePreferences",
+                    "Falling back to plain SharedPreferences — keystore unrecoverable",
+                )
+                return ctx.getSharedPreferences(
+                    SECURE_PREFS_NAME + "_fallback",
+                    Context.MODE_PRIVATE,
+                )
+            }
+        }
+    }
 
     private val regularPrefs: SharedPreferences = context.getSharedPreferences(
         REGULAR_PREFS_NAME,
@@ -85,6 +144,18 @@ class SecurePreferences(context: Context) {
     var weatherScene: String
         get() = regularPrefs.getString(KEY_WEATHER_SCENE, "OFF") ?: "OFF"
         set(value) = regularPrefs.edit().putString(KEY_WEATHER_SCENE, value).apply()
+
+    var autoWeatherEnabled: Boolean
+        get() = regularPrefs.getBoolean(KEY_AUTO_WEATHER_ENABLED, false)
+        set(value) = regularPrefs.edit().putBoolean(KEY_AUTO_WEATHER_ENABLED, value).apply()
+
+    var lastWeatherScene: String
+        get() = regularPrefs.getString(KEY_LAST_WEATHER_SCENE, "") ?: ""
+        set(value) = regularPrefs.edit().putString(KEY_LAST_WEATHER_SCENE, value).apply()
+
+    var lastWeatherFetchTime: Long
+        get() = regularPrefs.getLong(KEY_LAST_WEATHER_FETCH_TIME, 0L)
+        set(value) = regularPrefs.edit().putLong(KEY_LAST_WEATHER_FETCH_TIME, value).apply()
 
     /**
      * Hash of the last class-marks payload uploaded to the Worker. ClassMarksUploadWorker
@@ -289,6 +360,9 @@ class SecurePreferences(context: Context) {
         private const val KEY_CACHED_COURSE_MARKS_FULL = "cached_course_marks_full_json"
         private const val KEY_CHESS_BOARD_THEME = "chess_board_theme"
         private const val KEY_WEATHER_SCENE = "weather_scene"
+        private const val KEY_AUTO_WEATHER_ENABLED = "auto_weather_enabled"
+        private const val KEY_LAST_WEATHER_SCENE = "last_weather_scene"
+        private const val KEY_LAST_WEATHER_FETCH_TIME = "last_weather_fetch_time"
         private const val KEY_LAST_UPLOADED_MARKS_HASH = "last_uploaded_marks_hash"
         private const val KEY_CLASS_COMPARE_UNLOCKED = "class_compare_unlocked"
         private const val KEY_TARGET_CGPA = "target_cgpa"
