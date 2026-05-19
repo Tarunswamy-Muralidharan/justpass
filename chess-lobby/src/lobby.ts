@@ -64,11 +64,26 @@ export class Lobby implements DurableObject {
     // displayName we lost on hibernation is recovered from `hintedName` (the
     // JWT name claim, set in `acceptWebSocket`); a real JOIN later will
     // refine it to the user's chosen visibleName.
+    // Rehydration must skip dead sockets. `state.getWebSockets()` returns
+    // every socket the DO accepted, including ones whose underlying
+    // connection has dropped but whose close event hasn't been processed yet
+    // (post-hibernation wake replays them in order). Adding a dead socket as
+    // a "player" produced ghost presence entries that never expired — the
+    // next live JOIN saw them as online peers, but any CHALLENGE routed to
+    // them landed on a closed socket, triggering immediate
+    // CHALLENGE_CANCELED. This was the root cause of "challenge didn't
+    // deliver" across the V2 backend.
+    let pruned = 0;
     for (const ws of this.state.getWebSockets()) {
       const att = ws.deserializeAttachment() as
         | { playerId: string; hintedName?: string }
         | null;
       if (!att?.playerId) continue;
+      if (ws.readyState !== WebSocket.READY_STATE_OPEN) {
+        pruned++;
+        try { ws.close(1011, "stale on rehydrate"); } catch {}
+        continue;
+      }
       this.players.set(att.playerId, {
         ws,
         id: att.playerId,
@@ -76,8 +91,10 @@ export class Lobby implements DurableObject {
         joinedAt: Date.now(),
       });
     }
-    if (this.players.size > 0) {
-      console.log(`[lobby.ctor] rehydrated ${this.players.size} players from hibernated sockets`);
+    if (this.players.size > 0 || pruned > 0) {
+      console.log(
+        `[lobby.ctor] rehydrated ${this.players.size} players from hibernated sockets (pruned ${pruned} stale)`,
+      );
     }
   }
 
