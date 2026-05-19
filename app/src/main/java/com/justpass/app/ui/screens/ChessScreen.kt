@@ -67,6 +67,7 @@ import io.github.fletchmckee.liquid.LiquidState
 fun ChessScreen(
     cardState: LiquidState,
     onBack: () -> Unit,
+    onCreateTournament: () -> Unit = {},
     viewModel: ChessViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -414,6 +415,37 @@ fun ChessScreen(
                     Icon(Icons.Default.History, null, Modifier.size(18.dp), tint = Color(0xFF64B5F6))
                     Spacer(Modifier.width(6.dp))
                     Text("History", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color.White, maxLines = 1)
+                }
+            }
+            // Tourney — visible in all builds. Tap behavior is gated by the
+            // `tournament_enabled` Firebase Remote Config flag: while false
+            // we surface a "Feature under development" toast instead of
+            // opening the create flow.
+            GlassListCard(
+                modifier = Modifier.weight(1f).clickable {
+                    val rc = com.google.firebase.remoteconfig.FirebaseRemoteConfig.getInstance()
+                    if (rc.getBoolean("tournament_enabled")) {
+                        onCreateTournament()
+                    } else {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Feature under development",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                },
+                shape = RoundedCornerShape(12.dp),
+                tintColor = Color(0xFFFFD700).copy(alpha = 0.10f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.EmojiEvents, null, Modifier.size(18.dp), tint = Color(0xFFFFD700))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Tourney", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                         color = Color.White, maxLines = 1)
                 }
             }
@@ -1079,6 +1111,28 @@ private fun LichessGameScreen(
 
     var isLoading by remember { mutableStateOf(true) }
 
+    // Hold a WebView reference so we can null it out on dispose and stop the
+    // JS-fired onGameEnd callback from touching a destroyed Compose state.
+    // Without this, a delayed `JustPass.onGameEnd` Handler.post after the
+    // user has navigated away can trigger NPE / IllegalStateException.
+    val webViewRef = remember { object { var view: WebView? = null; var alive = true } }
+    DisposableEffect(Unit) {
+        onDispose {
+            webViewRef.alive = false
+            try {
+                webViewRef.view?.let { wv ->
+                    wv.stopLoading()
+                    wv.loadUrl("about:blank")
+                    wv.onPause()
+                    wv.removeAllViews()
+                    (wv.parent as? ViewGroup)?.removeView(wv)
+                    wv.destroy()
+                }
+            } catch (_: Throwable) {}
+            webViewRef.view = null
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A2E)).imePadding()) {
         // Top bar — close + open in browser
         Row(
@@ -1356,13 +1410,20 @@ private fun LichessGameScreen(
                         },1500);
                     })()""".trimIndent().replace("\n", "")
 
-                    // JS interface to receive game-end callback
+                    // JS interface to receive game-end callback. Wrap in try/catch
+                    // because pollGameEnd runs on a setInterval inside Lichess — if
+                    // the WebView is destroyed but the interval hasn't been cleared
+                    // yet (race during navigation), the callback can fire after
+                    // composition is gone and crash on stale state references.
                     addJavascriptInterface(object {
                         @android.webkit.JavascriptInterface
                         fun onGameEnd(result: String) {
-                            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                if (gameEnded == null) gameEnded = result
-                            }
+                            try {
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    if (!webViewRef.alive) return@post
+                                    if (gameEnded == null) gameEnded = result
+                                }
+                            } catch (_: Throwable) { /* webview gone — drop */ }
                         }
                     }, "JustPass")
 
@@ -1403,6 +1464,7 @@ private fun LichessGameScreen(
                             return true
                         }
                     }
+                    webViewRef.view = this
                     loadUrl(url)
                 }
             }
