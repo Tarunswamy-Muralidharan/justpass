@@ -123,6 +123,45 @@ class ChessRepository {
         }
     }
 
+    /**
+     * V2 fix — write the parent chess_challenges doc so the existing
+     * [getRecentGames] / [processGameResult] / Lichess-poll pipeline can
+     * find this game and update win/loss counters.
+     *
+     * Background: on V1 (Firestore) the doc already exists because the
+     * sender wrote it in [sendChallenge] and the acceptor updated it in
+     * [acceptChallenge]. On V2 (Cloudflare Durable Objects) the challenge
+     * lifecycle is entirely in-memory on the Worker — no Firestore writes.
+     * That meant `getRecentGames(playerId).where(status==accepted)` always
+     * returned empty for V2 games, so wins/losses never got credited.
+     *
+     * Idempotent set-merge so it's safe for both clients to call. The first
+     * write creates the doc; subsequent writes just refresh the same fields.
+     * Per-device dedup is via `resultChecked` claim in processGameResult().
+     */
+    suspend fun recordGameStartV2(challenge: ChessChallenge) {
+        if (challenge.id.isBlank() || challenge.lichessGameId.isBlank()) return
+        try {
+            challengeCollection.document(challenge.id).set(
+                mapOf(
+                    "fromId" to challenge.fromId,
+                    "fromName" to challenge.fromName,
+                    "toId" to challenge.toId,
+                    "toName" to challenge.toName,
+                    "status" to "accepted",
+                    "lichessGameId" to challenge.lichessGameId,
+                    "fromColor" to challenge.fromColor.ifBlank { "white" },
+                    "timestamp" to (if (challenge.timestamp > 0L) challenge.timestamp
+                                    else System.currentTimeMillis()),
+                    "resultChecked" to false,
+                ),
+                SetOptions.merge(),
+            ).await()
+        } catch (e: Exception) {
+            Log.w(TAG, "recordGameStartV2 failed: ${e.message}")
+        }
+    }
+
     suspend fun recordGameResult(playerId: String, result: String) {
         if (result !in listOf("win", "loss", "draw")) return
         try {

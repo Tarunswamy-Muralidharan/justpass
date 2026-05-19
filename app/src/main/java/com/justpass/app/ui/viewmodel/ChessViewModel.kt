@@ -204,11 +204,15 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                         lobby.declineChallenge(ourChallengeId)
                         val urls = lobby.acceptChallenge(challenge.id, challenge.timeControl.toString())
                         if (urls != null) {
+                            val accepted = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first)
                             _uiState.value = _uiState.value.copy(
-                                acceptedChallenge = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first),
+                                acceptedChallenge = accepted,
                                 pendingChallenge = null,
                                 challengeCountdown = null
                             )
+                            // V2 fix: write parent Firestore doc so post-game polling
+                            // can find this challenge and credit win/loss.
+                            launch { repo.recordGameStartV2(accepted) }
                             watchForOpponentLeave(challenge.id)
                         }
                     }
@@ -507,6 +511,9 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                                 acceptedChallenge = challenge, sentChallengeId = null,
                                 sentChallengeName = null, sentChallengeToId = null, senderCountdown = null
                             )
+                            // V2 fix: write parent Firestore doc so the sender's
+                            // result polling can find this game and credit win/loss.
+                            viewModelScope.launch { repo.recordGameStartV2(challenge) }
                             watchForOpponentLeave(challenge.id)
                         }
                         "declined" -> {
@@ -578,11 +585,15 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val urls = lobby.acceptChallenge(challenge.id, challenge.timeControl.toString())
             if (urls != null) {
+                val accepted = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first)
                 _uiState.value = _uiState.value.copy(
-                    acceptedChallenge = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first),
+                    acceptedChallenge = accepted,
                     pendingChallenge = null,
                     challengeCountdown = null
                 )
+                // V2 fix: write parent Firestore doc so post-game polling can
+                // find this challenge and credit win/loss.
+                launch { repo.recordGameStartV2(accepted) }
                 watchForOpponentLeave(challenge.id)
             }
         }
