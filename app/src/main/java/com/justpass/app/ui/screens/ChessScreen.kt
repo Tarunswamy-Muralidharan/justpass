@@ -1316,7 +1316,15 @@ private fun LichessGameScreen(
                           "});" +
                         "}" +
                         "setPh();armChat();tagSelf();" +
-                        "setInterval(function(){setPh();armChat();tagSelf();},600);" +
+                        // Slowed from 600ms → 2500ms. The chat polling caused
+                        // ~500 querySelectorAll passes per 5min on long games,
+                        // contributing to a slow OOM (bug report: "crash in
+                        // 5 min"). 2.5s is still responsive enough for chat.
+                        // Auto-stop after game ends.
+                        "var _jpChatT=setInterval(function(){" +
+                          "if(window._jpDone){clearInterval(_jpChatT);return;}" +
+                          "setPh();armChat();tagSelf();" +
+                        "},2500);" +
                         "})()"
 
                     // Rewrite any "White"/"Black" text on the Lichess page with the
@@ -1353,7 +1361,15 @@ private fun LichessGameScreen(
                                 });
                             });
                         }
-                        rewrite();setInterval(rewrite,400);
+                        // Slowed from 400ms → 2000ms. The treeWalker rewrite
+                        // pass was running 750+ times per 5min, allocating
+                        // arrays for every text node on every tick. Major
+                        // contributor to the 5-min OOM. Auto-stop on game end.
+                        rewrite();
+                        var _jpNameT=setInterval(function(){
+                            if(window._jpDone){clearInterval(_jpNameT);return;}
+                            rewrite();
+                        },2000);
                     })()""".trimIndent().replace("\n", "")
 
                     // Poll for game-over with the broadest possible detection.
@@ -1368,13 +1384,15 @@ private fun LichessGameScreen(
                     val pollGameEnd = """javascript:(function(){
                         if(window._jpPoll)return;window._jpPoll=1;
                         console.log('[JP] poll installed');
-                        setInterval(function(){
-                            if(window._jpDone)return;
+                        var _jpPollT=setInterval(function(){
+                            if(window._jpDone){clearInterval(_jpPollT);return;}
                             var b=document.body?(document.body.innerText||''):'';
                             var m=b.match(/(?:^|\s)(1-0|0-1|½-½|1\/2-1\/2)(?:\s|$)/);
                             var wr=document.querySelector('.result-wrap');
-                            if(!m&&!wr){console.log('[JP] poll tick no-result body='+b.length);return;}
-                            console.log('[JP] poll match wr='+!!wr+' tok='+(m?m[1]:'(none)'));
+                            // No console logging on every tick — body.innerText
+                            // can be 50KB+ on a long game, and ~200 ticks per
+                            // 5 min flooded logcat + contributed to memory.
+                            if(!m&&!wr)return;
                             var winner='unknown';
                             if(wr){
                                 var cl=wr.className||'';
@@ -1469,8 +1487,11 @@ private fun LichessGameScreen(
                 }
             }
         )
-
-        AdBanner(modifier = Modifier.padding(vertical = 4.dp), screenName = "ChessGame")
+        // AdBanner removed from inside the live game — its auto-refresh cycle
+        // (every 60s) plus the WebView's running Lichess page caused enough
+        // memory pressure to crash long games (bug report: "crash in 5 min").
+        // Ads still show in the chess lobby (outside this Dialog) so total
+        // ad impressions per session stay roughly the same.
     }
 }
 
