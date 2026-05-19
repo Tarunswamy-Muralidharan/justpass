@@ -133,16 +133,16 @@ fun CAMarksScreen(
 @Composable
 private fun CourseCard(course: CourseMarks) {
     var expanded by remember { mutableStateOf(false) }
-    val secured = course.testDetails.total.scaled.getSecuredAsDouble()
-    val max = course.testDetails.total.scaled.getMaxAsDouble()
+    val secured = course.testDetails.total.safeScaled.getSecuredAsDouble()
+    val max = course.testDetails.total.safeScaled.getMaxAsDouble()
     val accentColor = getMarksAccentColor(secured, max)
-    val tintColor = accentColor.copy(alpha = 0.06f)
+    val tintColor = accentColor.copy(alpha = 0.12f)
 
     GlassListCard(modifier = Modifier.fillMaxWidth(), tintColor = tintColor) {
         Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
             // Colored left accent bar
             Box(modifier = Modifier
-                .width(4.dp)
+                .width(5.dp)
                 .fillMaxHeight()
                 .background(accentColor))
             Column(modifier = Modifier.weight(1f)) {
@@ -193,7 +193,7 @@ private fun CourseCard(course: CourseMarks) {
                             modifier = Modifier
                                 .width(160.dp)
                                 .background(
-                                    accentColor.copy(alpha = 0.15f),
+                                    accentColor.copy(alpha = 0.25f),
                                     shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
                                 )
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -201,7 +201,7 @@ private fun CourseCard(course: CourseMarks) {
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    course.testDetails.total.scaled.getSecuredDisplay(),
+                                    course.testDetails.total.safeScaled.getSecuredDisplay(),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 20.sp,
                                     color = accentColor,
@@ -268,9 +268,9 @@ private fun ComponentCard(component: Component) {
                 }
                 component.marks?.let { m ->
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("${m.scaled.getSecuredDisplay()} / ${m.scaled.getMaxAsDouble().toInt()}", fontWeight = FontWeight.Medium, fontSize = 14.sp,
-                            color = getMarksColor(m.scaled.getSecuredAsDouble(), m.scaled.getMaxAsDouble()))
-                        if (m.actual.getMaxAsDouble() != m.scaled.getMaxAsDouble())
+                        Text("${m.safeScaled.getSecuredDisplay()} / ${m.safeScaled.getMaxAsDouble().toInt()}", fontWeight = FontWeight.Medium, fontSize = 14.sp,
+                            color = getMarksColor(m.safeScaled.getSecuredAsDouble(), m.safeScaled.getMaxAsDouble()))
+                        if (m.actual.getMaxAsDouble() != m.safeScaled.getMaxAsDouble())
                             Text("(${m.actual.getSecuredDisplay()} / ${m.actual.getMaxAsDouble().toInt()})", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -292,9 +292,9 @@ private fun ComponentCard(component: Component) {
                             Text(s.name, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                             s.marks?.let { m ->
                                 Column(horizontalAlignment = Alignment.End) {
-                                    Text("${m.scaled.getSecuredDisplay()} / ${m.scaled.getMaxAsDouble().toInt()}", fontSize = 13.sp,
-                                        color = getMarksColor(m.scaled.getSecuredAsDouble(), m.scaled.getMaxAsDouble()))
-                                    if (m.actual.getMaxAsDouble() != m.scaled.getMaxAsDouble())
+                                    Text("${m.safeScaled.getSecuredDisplay()} / ${m.safeScaled.getMaxAsDouble().toInt()}", fontSize = 13.sp,
+                                        color = getMarksColor(m.safeScaled.getSecuredAsDouble(), m.safeScaled.getMaxAsDouble()))
+                                    if (m.actual.getMaxAsDouble() != m.safeScaled.getMaxAsDouble())
                                         Text("(${m.actual.getSecuredDisplay()} / ${m.actual.getMaxAsDouble().toInt()})", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                                 }
                             }
@@ -306,10 +306,10 @@ private fun ComponentCard(component: Component) {
     }
 }
 
-private val MarksGreen = Color(0xFF4CAF50)
-private val MarksYellow = Color(0xFFFFC107)
-private val MarksRed = Color(0xFFF44336)
-private val MarksGray = Color(0xFF9E9E9E)
+private val MarksGreen = Color(0xFF00E676)
+private val MarksYellow = Color(0xFFFFD600)
+private val MarksRed = Color(0xFFFF5252)
+private val MarksGray = Color(0xFFB0BEC5)
 
 private fun getMarksAccentColor(secured: Double?, max: Double): Color {
     if (secured == null || max <= 0.0) return MarksGray

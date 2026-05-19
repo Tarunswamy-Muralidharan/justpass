@@ -68,12 +68,20 @@ data class Marks(
     @SerializedName("actual")
     val actual: MarksValue,
 
+    // Server-side can omit or null out `scaled` for some subjects (lab CAs,
+    // courses still being set up). Gson happily writes null into a non-null
+    // Kotlin field — so this MUST be nullable to prevent Crashlytics issue
+    // CAMarksScreenKt.CourseCard (SecuredAsDouble NPE on null reference).
+    // Callers should fall back to `actual` when `scaled` is null.
     @SerializedName("scaled")
-    val scaled: MarksValue,
+    val scaled: MarksValue? = null,
 
     @SerializedName("mode")
     val mode: String? = null
-)
+) {
+    /** Always-non-null accessor — falls back to `actual` when server omits `scaled`. */
+    val safeScaled: MarksValue get() = scaled ?: actual
+}
 
 data class MarksValue(
     @SerializedName("max")

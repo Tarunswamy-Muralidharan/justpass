@@ -606,8 +606,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         ca2TestMax = ca2TestMax, ca2TestScaled = ca2TestScaled
                     )
 
-                    val totalScored = course.testDetails.total.scaled.getSecuredAsDouble()
-                    val totalMax = course.testDetails.total.scaled.getMaxAsDouble()
+                    val totalScored = course.testDetails.total.safeScaled.getSecuredAsDouble()
+                    val totalMax = course.testDetails.total.safeScaled.getMaxAsDouble()
                     if (totalScored != null && totalMax > 0) {
                         caMap[course.courseCode] = Pair(totalScored, totalMax)
                     } else {
