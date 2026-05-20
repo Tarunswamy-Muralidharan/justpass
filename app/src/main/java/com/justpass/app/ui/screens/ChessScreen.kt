@@ -1185,7 +1185,13 @@ private fun LichessGameScreen(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+                    // LAYER_TYPE_HARDWARE inside a Compose Dialog window can swallow
+                    // touch events on Android 16 WebView (Edge 60 Fusion reproed).
+                    // Default layer is fine — Lichess board renders smoothly without
+                    // forcing an offscreen hardware layer.
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    requestFocus()
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.mediaPlaybackRequiresUserGesture = false
