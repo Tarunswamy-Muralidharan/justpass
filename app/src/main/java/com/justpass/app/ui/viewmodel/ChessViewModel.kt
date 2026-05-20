@@ -776,6 +776,36 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                     if (game.lichessGameId !in existingIds) {
                         saveMatchToHistory(opponentName, myResult, game.lichessGameId)
                     }
+
+                    // If this is the player's currently open game, the JS pollGameEnd
+                    // inside the Lichess WebView may not fire (Lichess doesn't paint
+                    // `.result-wrap` for outoftime until the opponent claims). The
+                    // server-side Lichess API poll already knows the result, so route
+                    // it through pendingAbandonResult to close the WebView Dialog and
+                    // surface the Game Over screen. consumeAbandonResult() clears
+                    // activeGameLichessId, so the next 30s tick won't re-fire.
+                    if (game.lichessGameId == _uiState.value.activeGameLichessId
+                        && _uiState.value.pendingAbandonResult == null) {
+                        val hint = when (myResult) {
+                            "win" -> "mywin"
+                            "loss" -> "oppwin"
+                            "draw" -> "draw"
+                            else -> "draw"
+                        }
+                        val winnerColor = when (result) {
+                            "white", "black", "draw" -> result
+                            else -> "draw"
+                        }
+                        val text = when (myResult) {
+                            "win" -> "You win!"
+                            "loss" -> "You lost"
+                            "draw" -> "Draw"
+                            else -> "Game over"
+                        }
+                        _uiState.value = _uiState.value.copy(
+                            pendingAbandonResult = "$winnerColor|$text|$myColor|$hint"
+                        )
+                    }
                 }
             }
             // Also check for games that were already processed by the other player
@@ -797,6 +827,31 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     saveMatchToHistory(opponentName, myResult, game.lichessGameId)
                     anyProcessed = true
+
+                    // Route through pendingAbandonResult so the WebView Dialog closes
+                    // even if our JS poll never fired — mirror unchecked branch.
+                    if (game.lichessGameId == _uiState.value.activeGameLichessId
+                        && _uiState.value.pendingAbandonResult == null) {
+                        val hint = when (myResult) {
+                            "win" -> "mywin"
+                            "loss" -> "oppwin"
+                            "draw" -> "draw"
+                            else -> "draw"
+                        }
+                        val winnerColor = when (result) {
+                            "white", "black", "draw" -> result
+                            else -> "draw"
+                        }
+                        val text = when (myResult) {
+                            "win" -> "You win!"
+                            "loss" -> "You lost"
+                            "draw" -> "Draw"
+                            else -> "Game over"
+                        }
+                        _uiState.value = _uiState.value.copy(
+                            pendingAbandonResult = "$winnerColor|$text|$myColor|$hint"
+                        )
+                    }
                 }
             }
             // Refresh profile + leaderboard after processing
