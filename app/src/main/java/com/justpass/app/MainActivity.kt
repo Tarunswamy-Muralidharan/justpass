@@ -476,20 +476,29 @@ fun AttendanceApp() {
                 wipeState = 1
                 Analytics.logFeatureUsed("human_benchmark")
                 scope.launch {
-                    kotlinx.coroutines.delay(120)
+                    // Wait until the curtain has mostly filled (spec: last
+                    // cell starts at ~0.55 s, screen flash crests at ~0.68 s)
+                    // before swapping the underlying screen, so the user
+                    // never sees a popping content change.
+                    kotlinx.coroutines.delay(650)
                     currentScreen = Screen.Games
-                    kotlinx.coroutines.delay(780)
+                    // Hold the curtain a touch longer for the bloom + the
+                    // first HB content fade-in (`hb-content` 0.25 s + delay).
+                    kotlinx.coroutines.delay(300)
                     wipeState = 0
                 }
             }
 
             fun closeHB() {
+                // Set the destination screen first so the contracting curtain
+                // peels back over the dashboard instead of the HB screen the
+                // user is leaving. The PixelWipeOverlay renders fully opaque
+                // at progress 0 in contract mode, so the swap is invisible.
+                currentScreen = Screen.Dashboard
+                selectedTabIndex = 0
                 wipeState = 2
                 scope.launch {
-                    kotlinx.coroutines.delay(200)
-                    currentScreen = Screen.Dashboard
-                    selectedTabIndex = 0
-                    kotlinx.coroutines.delay(500)
+                    kotlinx.coroutines.delay(700)
                     wipeState = 0
                 }
             }

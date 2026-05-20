@@ -65,9 +65,17 @@ fun PixelWipeOverlay(
                 } else {
                     (progress.value - delay) / cellDur
                 }
-                val p = rawP.coerceIn(0f, 1f)
-                if (p <= 0f) continue
 
+                // Skip cells that have already completed (so the area can show
+                // through to whatever's underneath the curtain).
+                if (contracting && rawP >= 1f) continue
+                if (!contracting && rawP <= 0f) continue
+
+                // For contracting cells that haven't started yet (rawP < 0),
+                // render in the "fully filled" state so the entire screen is
+                // covered the instant the wipe begins. The spec calls this the
+                // "px-out 0%" keyframe: black opaque, scale 1.05.
+                val p = rawP.coerceIn(0f, 1f)
                 val state = cellState(p, contracting)
                 if (state.scale <= 0f) continue
 
@@ -77,6 +85,7 @@ fun PixelWipeOverlay(
                 val drawH = cellH * state.scale
                 val corner = max(drawW, drawH) * state.cornerPct
 
+                // Outer white glow (the soft "whisper" leading edge).
                 if (state.glowAlpha > 0f) {
                     drawRoundRect(
                         color = Color.White.copy(alpha = state.glowAlpha),
@@ -85,13 +94,26 @@ fun PixelWipeOverlay(
                         cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner)
                     )
                 }
-
-                drawRoundRect(
-                    color = state.color,
-                    topLeft = Offset(cx - drawW / 2f, cy - drawH / 2f),
-                    size = androidx.compose.ui.geometry.Size(drawW, drawH),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner)
-                )
+                // Solid black base — drawn first so the white overlay sits
+                // on top during the whisper phase but the cell still reads
+                // as opaque black once the wipe completes.
+                if (state.blackAlpha > 0f) {
+                    drawRoundRect(
+                        color = Color.Black.copy(alpha = state.blackAlpha),
+                        topLeft = Offset(cx - drawW / 2f, cy - drawH / 2f),
+                        size = androidx.compose.ui.geometry.Size(drawW, drawH),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner)
+                    )
+                }
+                // White whisper overlay.
+                if (state.whiteAlpha > 0f) {
+                    drawRoundRect(
+                        color = Color.White.copy(alpha = state.whiteAlpha),
+                        topLeft = Offset(cx - drawW / 2f, cy - drawH / 2f),
+                        size = androidx.compose.ui.geometry.Size(drawW, drawH),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner)
+                    )
+                }
             }
         }
 
@@ -150,59 +172,74 @@ fun PixelWipeOverlay(
     }
 }
 
+/**
+ * Per-cell visual state. Cells are rendered as two layers stacked: a black
+ * base (the "solid" curtain that hides what's underneath once filled) and a
+ * white overlay (the soft "whisper" leading edge that flashes as the cell
+ * grows/shrinks). [glowAlpha] is the larger halo behind both layers.
+ */
 private data class CellState(
     val scale: Float,
-    val color: Color,
+    val blackAlpha: Float,
+    val whiteAlpha: Float,
     val cornerPct: Float,
     val glowAlpha: Float
 )
 
+/**
+ * Translates one cell's normalised local progress [p] (0..1) into the spec
+ * px-in / px-out keyframes from TRANSITION_SPEC.md § 3.
+ *
+ * Expand (px-in):
+ *   0%   scale 0    radius 50%  white α 0.55  black α 0     glow 0.35
+ *   35%  scale 1.0  radius 18%  white α 0.22  black α 0.30  glow 0.15
+ *   100% scale 1.05 radius 0    white α 0     black α 1.0   glow 0
+ *
+ * Contract (px-out) — mirror, ending as a small white dot:
+ *   0%   scale 1.05 radius 0    white α 0     black α 1.0   glow 0
+ *   50%  scale 1.0  radius 18%  white α 0.20  black α 0.30  glow 0.20
+ *   100% scale 0    radius 50%  white α 0.55  black α 0     glow 0.30
+ */
 private fun DrawScope.cellState(p: Float, contracting: Boolean): CellState {
     return if (contracting) {
-        val scale = when {
-            p < 0.5f -> 1.05f - p / 0.5f * 0.05f
-            else -> 1f - (p - 0.5f) / 0.5f
+        if (p < 0.5f) {
+            val t = p / 0.5f
+            CellState(
+                scale = 1.05f - t * 0.05f,                  // 1.05 → 1.0
+                blackAlpha = 1f - t * 0.70f,                // 1.0  → 0.30
+                whiteAlpha = t * 0.20f,                     // 0    → 0.20
+                cornerPct = t * 0.18f,                      // 0    → 0.18
+                glowAlpha = t * 0.20f,                      // 0    → 0.20
+            )
+        } else {
+            val t = (p - 0.5f) / 0.5f
+            CellState(
+                scale = 1f - t,                             // 1.0  → 0
+                blackAlpha = 0.30f * (1f - t),              // 0.30 → 0
+                whiteAlpha = 0.20f + t * 0.35f,             // 0.20 → 0.55
+                cornerPct = 0.18f + t * 0.32f,              // 0.18 → 0.50
+                glowAlpha = 0.20f + t * 0.10f,              // 0.20 → 0.30
+            )
         }
-        var alpha = 0f
-        var corner = 0f
-        var glow = 0f
-        when {
-            p < 0.5f -> {
-                val t = p / 0.5f
-                alpha = 0.20f * t
-                corner = 0.18f * t
-                glow = 0.20f * t
-            }
-            else -> {
-                val t = (p - 0.5f) / 0.5f
-                alpha = 0.20f + t * 0.35f
-                corner = 0.18f + t * 0.32f
-                glow = 0.20f + t * 0.10f
-            }
-        }
-        CellState(scale, Color.White.copy(alpha = alpha), corner, glow)
     } else {
-        val scale = when {
-            p < 0.35f -> p / 0.35f
-            else -> 1f + (p - 0.35f) / 0.65f * 0.05f
+        if (p < 0.35f) {
+            val t = p / 0.35f
+            CellState(
+                scale = t,                                  // 0    → 1.0
+                blackAlpha = 0f,                            // 0    → 0
+                whiteAlpha = 0.55f - t * 0.33f,             // 0.55 → 0.22
+                cornerPct = 0.50f - t * 0.32f,              // 0.50 → 0.18
+                glowAlpha = 0.35f - t * 0.20f,              // 0.35 → 0.15
+            )
+        } else {
+            val t = (p - 0.35f) / 0.65f
+            CellState(
+                scale = 1f + t * 0.05f,                     // 1.0  → 1.05
+                blackAlpha = t,                             // 0    → 1.0
+                whiteAlpha = 0.22f * (1f - t),              // 0.22 → 0
+                cornerPct = 0.18f * (1f - t),               // 0.18 → 0
+                glowAlpha = 0.15f * (1f - t),               // 0.15 → 0
+            )
         }
-        var alpha = 0f
-        var corner = 0f
-        var glow = 0f
-        when {
-            p < 0.35f -> {
-                val t = p / 0.35f
-                alpha = 0.55f - t * 0.33f
-                corner = 0.50f - t * 0.32f
-                glow = 0.35f - t * 0.20f
-            }
-            else -> {
-                val t = (p - 0.35f) / 0.65f
-                alpha = 0.22f * (1f - t)
-                corner = 0f
-                glow = 0.15f * (1f - t)
-            }
-        }
-        CellState(scale, Color.White.copy(alpha = alpha), corner, glow)
     }
 }
