@@ -96,12 +96,10 @@ fun VerbalMemoryScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
             lives--
             if (lives <= 0) {
                 gameOver = true
-                if (prefs.saveIfBetter(game, score.toDouble())) {
-                    bestScore = score
-                    scope.launch {
-                        api.submit(prefs.playerId, game,
-                            score.toDouble(), prefs.displayName, prefs.classId)
-                    }
+                if (prefs.saveIfBetter(game, score.toDouble())) bestScore = score
+                scope.launch {
+                    api.submit(prefs.playerId, game,
+                        score.toDouble(), prefs.displayName, prefs.classId)
                 }
             } else {
                 if (!actuallySeen) seen.value.add(current)
