@@ -1728,7 +1728,7 @@ class WebViewAuthenticator(private val context: Context) {
                 val encodedId = java.net.URLEncoder.encode(id, "UTF-8")
                 val encodedOriginal = java.net.URLEncoder.encode("${rollNumber}.jpg", "UTF-8")
                 val url = java.net.URL(
-                    "${SIS_BASE_URL}students/downloadUrl?contentType=image%2Fjpeg&filename=$encodedFilename&id=$encodedId&originalname=$encodedOriginal&size=79087"
+                    "${SIS_BASE_URL}/students/downloadUrl?contentType=image%2Fjpeg&filename=$encodedFilename&id=$encodedId&originalname=$encodedOriginal&size=79087"
                 )
                 android.util.Log.d("WebViewAuth", "Fetching profile pic URL: $url")
                 val connection = url.openConnection() as java.net.HttpURLConnection

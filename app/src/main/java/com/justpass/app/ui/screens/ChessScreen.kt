@@ -1409,11 +1409,26 @@ private fun LichessGameScreen(
                             var stEl=(wr&&wr.querySelector('.status'))||document.querySelector('.rresult,.status');
                             var txt=stEl?(stEl.textContent||'').trim():'Game Over';
                             var myC='unknown';
-                            var bd=document.querySelector('cg-board,.cg-board');
-                            if(bd){
-                                var bcl=(bd.className||'')+' '+(bd.parentElement?bd.parentElement.className:'');
-                                if(bcl.indexOf('orientation-black')>=0)myC='black';
-                                else if(bcl.indexOf('orientation-white')>=0)myC='white';
+                            // Lichess actually puts orientation-white/orientation-black on
+                            // the .cg-wrap div, NOT on cg-board itself (cg-board's className
+                            // is empty). Check .cg-wrap first — that's where the orientation
+                            // class lives. Without this, the JS poll reported "myC=unknown",
+                            // so result=unknown, and ChessScreen never auto-exited after a
+                            // game ended (you'd end up stuck on the post-game screen with
+                            // only "Leave Game" working).
+                            var wrap=document.querySelector('.cg-wrap,[class*=orientation]');
+                            if(wrap){
+                                var wcl=wrap.className||'';
+                                if(wcl.indexOf('orientation-black')>=0)myC='black';
+                                else if(wcl.indexOf('orientation-white')>=0)myC='white';
+                            }
+                            if(myC==='unknown'){
+                                var bd=document.querySelector('cg-board,.cg-board');
+                                if(bd){
+                                    var bcl=(bd.className||'')+' '+(bd.parentElement?bd.parentElement.className:'');
+                                    if(bcl.indexOf('orientation-black')>=0)myC='black';
+                                    else if(bcl.indexOf('orientation-white')>=0)myC='white';
+                                }
                             }
                             if(myC==='unknown'){
                                 var bw=document.querySelector('.round__app,.board-wrap,main');

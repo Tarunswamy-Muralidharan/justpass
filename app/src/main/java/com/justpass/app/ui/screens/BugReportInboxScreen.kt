@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -83,7 +84,8 @@ fun BugReportInboxScreen(
                         }
                     },
                     onMarkFixed = { viewModel.setReportStatus(r.id, "fixed", "") },
-                    onMarkWontFix = { viewModel.setReportStatus(r.id, "wontfix", "") }
+                    onMarkWontFix = { viewModel.setReportStatus(r.id, "wontfix", "") },
+                    onSendReply = { msg -> viewModel.replyToReport(r.id, msg) }
                 )
             }
         }
@@ -95,7 +97,8 @@ private fun ReportCard(
     r: BugReport,
     onOpenImage: () -> Unit,
     onMarkFixed: () -> Unit,
-    onMarkWontFix: () -> Unit
+    onMarkWontFix: () -> Unit,
+    onSendReply: (String) -> Unit
 ) {
     val tint = when (r.status) {
         "fixed" -> Color(0xFF00E676).copy(alpha = 0.10f)
@@ -105,6 +108,7 @@ private fun ReportCard(
     val date = remember(r.createdAt) {
         SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(Date(r.createdAt))
     }
+    var showReplyDialog by remember(r.id) { mutableStateOf(false) }
 
     GlassListCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), tintColor = tint) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -127,6 +131,36 @@ private fun ReportCard(
                 }
             }
 
+            // Existing admin reply (if any) shown inline so the admin can
+            // see what they previously sent and edit on tap.
+            if (r.adminReply.isNotBlank()) {
+                val replyDate = remember(r.repliedAt) {
+                    if (r.repliedAt > 0L)
+                        SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(Date(r.repliedAt))
+                    else ""
+                }
+                Box(
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF1E2A3A))
+                        .padding(10.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(12.dp),
+                                tint = Color(0xFF64B5F6))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Your reply", fontSize = 10.sp, color = Color(0xFF64B5F6),
+                                fontWeight = FontWeight.Bold)
+                            if (replyDate.isNotBlank()) {
+                                Spacer(Modifier.weight(1f))
+                                Text(replyDate, fontSize = 10.sp, color = Color(0xFF607D8B))
+                            }
+                        }
+                        Text(r.adminReply, fontSize = 12.sp, color = Color(0xFFCFD8DC))
+                    }
+                }
+            }
+
             HorizontalDivider(color = Color(0xFF263238))
             Text("Reporter", fontSize = 11.sp, color = Color(0xFF607D8B))
             Text(r.reporterName.ifBlank { "(unknown)" }, fontSize = 13.sp, fontWeight = FontWeight.Medium)
@@ -139,9 +173,9 @@ private fun ReportCard(
                 fontSize = 10.sp, color = Color(0xFF607D8B)
             )
 
-            if (r.status == "open") {
-                Spacer(Modifier.height(2.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(2.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (r.status == "open") {
                     Button(
                         onClick = onMarkFixed,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
@@ -157,9 +191,67 @@ private fun ReportCard(
                         Text("Won't fix", fontSize = 12.sp, color = Color(0xFF90A4AE))
                     }
                 }
+                OutlinedButton(
+                    onClick = { showReplyDialog = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(14.dp),
+                        tint = Color(0xFF64B5F6))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        if (r.adminReply.isBlank()) "Reply" else "Edit reply",
+                        fontSize = 12.sp, color = Color(0xFF64B5F6)
+                    )
+                }
             }
         }
     }
+
+    if (showReplyDialog) {
+        ReplyDialog(
+            initial = r.adminReply,
+            onDismiss = { showReplyDialog = false },
+            onSend = { msg ->
+                onSendReply(msg)
+                showReplyDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun ReplyDialog(
+    initial: String,
+    onDismiss: () -> Unit,
+    onSend: (String) -> Unit
+) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1E2A3A),
+        title = { Text("Reply to reporter", color = Color.White) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { if (it.length <= 500) text = it },
+                    placeholder = { Text("Thanks for the report — fixed in v3.0.4...") },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+                    maxLines = 6
+                )
+                Text("${text.length} / 500", fontSize = 10.sp, color = Color(0xFF607D8B))
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSend(text) },
+                enabled = text.isNotBlank()
+            ) { Text("Send") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = Color(0xFF90A4AE)) }
+        }
+    )
 }
 
 @Composable

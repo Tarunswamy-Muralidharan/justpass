@@ -477,7 +477,7 @@ fun LiquidGlassBottomBar(
                         )
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.offset(y = (-12).dp + (-3 * levitateY).dp).graphicsLayer {
+                            modifier = Modifier.offset(y = (-6).dp + (-3 * levitateY).dp).graphicsLayer {
                                 scaleX = bounceScale.value
                                 scaleY = bounceScale.value
                             }
@@ -2238,14 +2238,30 @@ fun GamesPopup(
         ) {
             GamePopupButton(
                 progress = brainProgress,
-                label = "Brain",
-                accent = Color(0xFFD8FF3C),
+                label = "HB",
+                accent = Color(0xFFFF3838),
+                framed = false,
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onBrain()
                 },
-                icon = { iconTint, iconSize ->
-                    PopupBrainIcon(tint = iconTint, size = iconSize)
+                icon = { _, iconSize ->
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF0A0A0A).copy(alpha = 0.78f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        DotMatrixBolt(
+                            canvasSize = iconSize,
+                            animated = true,
+                            // 4.2 s cycle per SPEC_FOR_KIMI § 3 — same cadence
+                            // as the dashboard tile so the popup + tile feel
+                            // like the same heartbeat.
+                            cycleMs = 4200
+                        )
+                    }
                 }
             )
             GamePopupButton(

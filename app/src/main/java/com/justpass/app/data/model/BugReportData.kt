@@ -21,5 +21,9 @@ data class BugReport(
     val status: String = "open",        // open / fixed / wontfix / duplicate
     val resolution: String = "",
     val createdAt: Long = 0L,
-    val resolvedAt: Long = 0L
+    val resolvedAt: Long = 0L,
+    // Admin → reporter reply. Empty until an admin writes one. Visible
+    // back to the reporter once they have a "my reports" view (future).
+    val adminReply: String = "",
+    val repliedAt: Long = 0L
 )
