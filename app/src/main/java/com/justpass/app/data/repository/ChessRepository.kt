@@ -169,11 +169,17 @@ class ChessRepository {
             // results landing on the same profile (e.g. both players in two
             // games at once) can't drop an update the way the old read-modify-
             // write transaction could.
+            //
+            // set(merge=true) — not update() — because the opponent's
+            // chess_profiles doc may not exist yet on THIS device. update()
+            // fails with NOT_FOUND on a missing doc, dropping the stat.
+            // FieldValue.increment treats a missing field as 0, so the first
+            // write seeds the counters; later writes merge.
             val statField = when (result) { "win" -> "wins"; "loss" -> "losses"; else -> "draws" }
-            profileCollection.document(playerId).update(mapOf(
+            profileCollection.document(playerId).set(mapOf(
                 statField to FieldValue.increment(1),
                 "gamesPlayed" to FieldValue.increment(1),
-            )).await()
+            ), SetOptions.merge()).await()
         } catch (e: Exception) {
             Log.e(TAG, "Record result error: ${e.message}")
         }
