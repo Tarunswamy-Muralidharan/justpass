@@ -76,6 +76,7 @@ import com.justpass.app.ui.components.GlassCardShape
 import com.justpass.app.ui.components.GlassCardShapeSmall
 import com.justpass.app.ui.components.GlassListCard
 import com.justpass.app.ui.components.GlassListSurface
+import com.justpass.app.ui.components.HumanBenchmarkTile
 import com.justpass.app.ui.components.LiquidGlassCard
 import com.justpass.app.ui.components.registerAsSplashTarget
 import com.justpass.app.ui.viewmodel.DashboardViewModel
@@ -116,6 +117,7 @@ fun DashboardScreen(
     onExamSeatClick: () -> Unit = {},
     onSyllabusClick: () -> Unit = {},
     onChessClick: () -> Unit = {},
+    onHumanBenchmarkClick: () -> Unit = {},
     onLiteRtClick: () -> Unit = {},
     onProfileClick: () -> Unit = {}
 ) {
@@ -585,6 +587,12 @@ fun DashboardScreen(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        HumanBenchmarkTile(
+            onClick = onHumanBenchmarkClick,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
 
         Spacer(modifier = Modifier.height(10.dp))
 

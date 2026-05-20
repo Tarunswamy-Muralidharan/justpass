@@ -1,0 +1,39 @@
+{
+  "parameters": {
+    "ads_enabled": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "Master switch for AdMob banners and interstitials. Keep false until the app is live on Google Play and the AdMob app is linked to the Play listing (required for certified traffic + higher eCPM).",
+      "valueType": "BOOLEAN"
+    },
+    "sideload_block_enabled": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "When true, non-Play-Store installs of v2.2+ are hard-blocked on launch with a dialog linking to the Play listing. Flip to true after the app is live on Play + AdMob is linked, to migrate sideloaded users to certified traffic. Debug builds always bypass.",
+      "valueType": "BOOLEAN"
+    },
+    "maintenance_enabled": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "Flip to true to broadcast a blocking announcement dialog to every user on launch (outages, SIS down, API issues, emergency notice, etc). Pair with `maintenance_message` for the body text.",
+      "valueType": "BOOLEAN"
+    },
+    "maintenance_message": {
+      "defaultValue": {
+        "value": ""
+      },
+      "description": "Body text shown in the maintenance dialog when `maintenance_enabled` is true. Empty defaults to a generic maintenance message. Edit freely to re-use as a generic announcement channel.",
+      "valueType": "STRING"
+    },
+    "chess_backend_v2": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "Cloudflare Durable Objects chess lobby. ROLLED BACK 2026-05-05: Worker is closing every WebSocket immediately after upgrade (close 1006). Flag flipped to false until the worker is fixed/redeployed; clients fall back to Firestore presence/challenges.",
+      "valueType": "BOOLEAN"
+    }
+  }
+}

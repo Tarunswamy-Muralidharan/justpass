@@ -22,6 +22,22 @@ android {
         versionName = "3.0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Supabase creds for HumanBenchmark games leaderboard. Reads from
+        // local.properties (NOT committed). Falls back to empty string so
+        // ScoresApi short-circuits + local play still works offline.
+        val localProps = Properties().apply {
+            val f = rootProject.file("local.properties")
+            if (f.exists()) FileInputStream(f).use { load(it) }
+        }
+        buildConfigField(
+            "String", "SUPABASE_URL",
+            "\"${localProps.getProperty("SUPABASE_URL", "")}\""
+        )
+        buildConfigField(
+            "String", "SUPABASE_ANON_KEY",
+            "\"${localProps.getProperty("SUPABASE_ANON_KEY", "")}\""
+        )
     }
 
     buildFeatures {

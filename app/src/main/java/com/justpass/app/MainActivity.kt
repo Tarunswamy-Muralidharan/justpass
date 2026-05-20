@@ -41,6 +41,7 @@ import com.justpass.app.data.update.UpdateInfo
 import com.justpass.app.ui.components.GlassCardFallback
 import com.justpass.app.ui.components.LiquidGlassBottomBar
 import com.justpass.app.ui.components.LiquidGlassScaffold
+import com.justpass.app.ui.components.PixelWipeOverlay
 import com.justpass.app.ui.components.TabItemData
 import com.justpass.app.ui.screens.AbsentDaysScreen
 import com.justpass.app.ui.screens.CAMarksScreen
@@ -465,8 +466,36 @@ fun AttendanceApp() {
         }
         else -> {
             var gamesPopupOpen by remember { mutableStateOf(false) }
+            var wipeState by remember { mutableIntStateOf(0) } // 0=hidden, 1=expanding, 2=contracting
+            var wipeOriginX by remember { mutableFloatStateOf(0.5f) }
+            var wipeOriginY by remember { mutableFloatStateOf(0.5f) }
+
+            fun launchHB(ox: Float = 0.5f, oy: Float = 0.5f) {
+                wipeOriginX = ox
+                wipeOriginY = oy
+                wipeState = 1
+                Analytics.logFeatureUsed("human_benchmark")
+                scope.launch {
+                    kotlinx.coroutines.delay(120)
+                    currentScreen = Screen.Games
+                    kotlinx.coroutines.delay(780)
+                    wipeState = 0
+                }
+            }
+
+            fun closeHB() {
+                wipeState = 2
+                scope.launch {
+                    kotlinx.coroutines.delay(200)
+                    currentScreen = Screen.Dashboard
+                    selectedTabIndex = 0
+                    kotlinx.coroutines.delay(500)
+                    wipeState = 0
+                }
+            }
+
             // Handle system back button: navigate back within app instead of exiting
-            BackHandler(enabled = gamesPopupOpen || currentScreen != Screen.Dashboard || selectedTabIndex != 0) {
+            BackHandler(enabled = gamesPopupOpen || wipeState != 0 || currentScreen != Screen.Dashboard || selectedTabIndex != 0) {
                 when {
                     // Games popup eats back press first
                     gamesPopupOpen -> gamesPopupOpen = false
@@ -490,6 +519,34 @@ fun AttendanceApp() {
             // Dual-state: cardState for card refraction, barState for bottom bar blur
             var weatherScene by remember {
                 mutableStateOf(com.justpass.app.ui.components.WeatherScene.fromString(securePrefs.weatherScene))
+            }
+            var autoWeatherEnabled by remember {
+                mutableStateOf(securePrefs.autoWeatherEnabled)
+            }
+
+            // Refresh scene from cached prefs (in case background fetch updated it).
+            val refreshSceneFromPrefs: () -> Unit = {
+                val cached = com.justpass.app.data.repository.WeatherRepository
+                    .getCachedWeatherScene(context)
+                if (cached != null && cached != weatherScene) {
+                    weatherScene = cached
+                    securePrefs.weatherScene = cached.name
+                }
+            }
+
+            // Run an auto-weather fetch loop while enabled — first run on switch
+            // flip, repeats every cache window (1 h) plus on app foreground.
+            LaunchedEffect(autoWeatherEnabled) {
+                if (!autoWeatherEnabled) return@LaunchedEffect
+                while (true) {
+                    val fetched = com.justpass.app.data.repository.WeatherRepository
+                        .fetchAndStoreWeather(context)
+                    if (fetched != null) {
+                        weatherScene = fetched
+                        securePrefs.weatherScene = fetched.name
+                    }
+                    kotlinx.coroutines.delay(60L * 60L * 1000L)
+                }
             }
             LiquidGlassScaffold(
                 weatherScene = weatherScene,
@@ -709,6 +766,11 @@ fun AttendanceApp() {
                                 Analytics.logFeatureUsed("chess")
                                 currentScreen = Screen.Chess
                             },
+                            onHumanBenchmarkClick = {
+                                wipeOriginX = 0.5f
+                                wipeOriginY = 0.32f
+                                launchHB()
+                            },
                             onLiteRtClick = {
                                 currentScreen = Screen.LiteRt
                             },
@@ -757,6 +819,14 @@ fun AttendanceApp() {
                             onWeatherSceneChange = { newScene ->
                                 weatherScene = newScene
                                 securePrefs.weatherScene = newScene.name
+                            },
+                            autoWeatherEnabled = autoWeatherEnabled,
+                            onAutoWeatherToggle = { enabled ->
+                                autoWeatherEnabled = enabled
+                                securePrefs.autoWeatherEnabled = enabled
+                                // Off → leave the currently-set scene alone so the
+                                // user can still tweak via the picker. On → the
+                                // LaunchedEffect above fires fetchAndStoreWeather.
                             }
                         )
                     }
@@ -773,9 +843,16 @@ fun AttendanceApp() {
                     },
                     onBrain = {
                         gamesPopupOpen = false
-                        currentScreen = Screen.Games
-                        Analytics.logFeatureUsed("games_popup_brain")
+                        launchHB(ox = 0.25f, oy = 0.78f)
                     }
+                )
+            }
+            // Pixel wipe transition overlay
+            if (wipeState != 0) {
+                PixelWipeOverlay(
+                    contracting = wipeState == 2,
+                    originX = wipeOriginX,
+                    originY = wipeOriginY
                 )
             }
         }

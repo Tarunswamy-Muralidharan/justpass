@@ -39,7 +39,13 @@
       "Bash(node *)",
       "Bash(firebase --project attendacewidget firestore:rules:get)",
       "Bash(python3 -c ' *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "mcp__scrcpy__device_list",
+      "mcp__scrcpy__screenshot",
+      "mcp__scrcpy__tap",
+      "mcp__scrcpy__ui_dump",
+      "mcp__scrcpy__ui_find_element",
+      "mcp__scrcpy__long_press"
     ],
     "deny": [],
     "ask": []

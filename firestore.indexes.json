@@ -23,6 +23,14 @@
         { "fieldPath": "toId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "bug_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "reporterPlayerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

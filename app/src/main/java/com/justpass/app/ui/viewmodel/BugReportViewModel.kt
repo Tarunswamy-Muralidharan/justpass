@@ -36,7 +36,9 @@ data class BugReportUiState(
     val errorMessage: String? = null,
 
     // Inbox
-    val reports: List<BugReport> = emptyList()
+    val reports: List<BugReport> = emptyList(),
+    // Reporter's own reports (for "My Reports" tab on BugReportScreen)
+    val myReports: List<BugReport> = emptyList()
 )
 
 class BugReportViewModel(application: Application) : AndroidViewModel(application) {
@@ -46,6 +48,7 @@ class BugReportViewModel(application: Application) : AndroidViewModel(applicatio
     private val securePrefs = SecurePreferences.getInstance(application)
 
     private var inboxListener: ListenerRegistration? = null
+    private var mineListener: ListenerRegistration? = null
 
     private val _uiState = MutableStateFlow(BugReportUiState())
     val uiState: StateFlow<BugReportUiState> = _uiState.asStateFlow()
@@ -126,14 +129,36 @@ class BugReportViewModel(application: Application) : AndroidViewModel(applicatio
         inboxListener?.remove(); inboxListener = null
     }
 
+    /** Reporter-side: listen to my own reports so admin replies appear live. */
+    fun startListeningMine() {
+        val pid = _uiState.value.reporterPlayerId
+        if (pid.isBlank()) return
+        mineListener?.remove()
+        mineListener = repo.listenMyReports(pid) { list ->
+            _uiState.value = _uiState.value.copy(myReports = list)
+        }
+    }
+
+    fun stopListeningMine() {
+        mineListener?.remove(); mineListener = null
+    }
+
     fun setReportStatus(reportId: String, status: String, resolution: String) {
         viewModelScope.launch {
             repo.setStatus(reportId, status, resolution)
         }
     }
 
+    fun replyToReport(reportId: String, message: String) {
+        if (message.isBlank()) return
+        viewModelScope.launch {
+            repo.setReply(reportId, message.trim().take(500))
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         stopListeningInbox()
+        stopListeningMine()
     }
 }

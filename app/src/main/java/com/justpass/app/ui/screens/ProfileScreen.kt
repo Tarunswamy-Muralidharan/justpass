@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -74,7 +75,9 @@ fun ProfileScreen(
     onBugReportInboxClick: () -> Unit = {},
     onManageAdminsClick: () -> Unit = {},
     weatherScene: com.justpass.app.ui.components.WeatherScene = com.justpass.app.ui.components.WeatherScene.OFF,
-    onWeatherSceneChange: (com.justpass.app.ui.components.WeatherScene) -> Unit = {}
+    onWeatherSceneChange: (com.justpass.app.ui.components.WeatherScene) -> Unit = {},
+    autoWeatherEnabled: Boolean = false,
+    onAutoWeatherToggle: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val securePrefs = SecurePreferences.getInstance(context)
@@ -447,6 +450,26 @@ fun ProfileScreen(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                // Auto weather toggle — fetches real Neelambur weather from Open-Meteo
+                ListItem(
+                    headlineContent = { Text("Auto Weather") },
+                    leadingContent = { Icon(Icons.Default.Refresh, null) },
+                    supportingContent = {
+                        Text(
+                            if (autoWeatherEnabled) "On  •  Open-Meteo (Neelambur)" else "Off  •  tap to enable",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = autoWeatherEnabled,
+                            onCheckedChange = onAutoWeatherToggle,
+                        )
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 // Weather scene picker — 16 manual test scenes per HANDOFF.md.
                 // Tap row to open picker dialog with all options.
                 var showScenePicker by remember { mutableStateOf(false) }
@@ -455,12 +478,12 @@ fun ProfileScreen(
                     leadingContent = { Icon(Icons.Default.Cloud, null) },
                     supportingContent = {
                         Text(
-                            weatherScene.displayName + "  •  tap to change",
+                            if (autoWeatherEnabled) "Auto: ${weatherScene.displayName}" else weatherScene.displayName + "  •  tap to change",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.primary,
                         )
                     },
-                    modifier = Modifier.clickable { showScenePicker = true },
+                    modifier = Modifier.clickable { if (!autoWeatherEnabled) showScenePicker = true },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
                 if (showScenePicker) {

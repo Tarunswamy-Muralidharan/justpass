@@ -106,6 +106,47 @@ class BugReportRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Listen to a single reporter's own reports. Used by the user-facing
+     * "My Reports" tab so they can see admin replies + status updates.
+     * Requires composite index: reporterPlayerId ASC + createdAt DESC.
+     */
+    fun listenMyReports(playerId: String, onUpdate: (List<BugReport>) -> Unit): ListenerRegistration {
+        return reports
+            .whereEqualTo("reporterPlayerId", playerId)
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(20)
+            .addSnapshotListener { snap, err ->
+                if (err != null) {
+                    Log.e(TAG, "listenMyReports err: ${err.message}")
+                    onUpdate(emptyList())
+                    return@addSnapshotListener
+                }
+                val list = snap?.documents?.map { doc ->
+                    BugReport(
+                        id = doc.id,
+                        reporterPlayerId = doc.getString("reporterPlayerId") ?: "",
+                        reporterName = doc.getString("reporterName") ?: "",
+                        reporterRollNumber = doc.getString("reporterRollNumber") ?: "",
+                        reporterDepartment = doc.getString("reporterDepartment") ?: "",
+                        title = doc.getString("title") ?: "",
+                        description = doc.getString("description") ?: "",
+                        imageUrl = doc.getString("imageUrl") ?: "",
+                        deviceModel = doc.getString("deviceModel") ?: "",
+                        osVersion = doc.getString("osVersion") ?: "",
+                        appVersion = doc.getString("appVersion") ?: "",
+                        status = doc.getString("status") ?: "open",
+                        resolution = doc.getString("resolution") ?: "",
+                        createdAt = doc.getLong("createdAt") ?: 0L,
+                        resolvedAt = doc.getLong("resolvedAt") ?: 0L,
+                        adminReply = doc.getString("adminReply") ?: "",
+                        repliedAt = doc.getLong("repliedAt") ?: 0L
+                    )
+                } ?: emptyList()
+                onUpdate(list)
+            }
+    }
+
     /** Listen to all reports — admin only consumer. */
     fun listenAllReports(onUpdate: (List<BugReport>) -> Unit): ListenerRegistration {
         return reports
@@ -133,7 +174,9 @@ class BugReportRepository(private val context: Context) {
                         status = doc.getString("status") ?: "open",
                         resolution = doc.getString("resolution") ?: "",
                         createdAt = doc.getLong("createdAt") ?: 0L,
-                        resolvedAt = doc.getLong("resolvedAt") ?: 0L
+                        resolvedAt = doc.getLong("resolvedAt") ?: 0L,
+                        adminReply = doc.getString("adminReply") ?: "",
+                        repliedAt = doc.getLong("repliedAt") ?: 0L
                     )
                 } ?: emptyList()
                 onUpdate(list)
@@ -150,6 +193,19 @@ class BugReportRepository(private val context: Context) {
             true
         } catch (e: Exception) {
             Log.e(TAG, "setStatus failed: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun setReply(reportId: String, message: String): Boolean {
+        return try {
+            reports.document(reportId).update(mapOf(
+                "adminReply" to message,
+                "repliedAt" to System.currentTimeMillis()
+            )).await()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "setReply failed: ${e.message}")
             false
         }
     }

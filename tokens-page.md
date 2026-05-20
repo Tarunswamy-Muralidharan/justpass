@@ -1,0 +1,167 @@
+- generic [active] [ref=e8]:
+  - generic [ref=e13]:
+    - complementary [ref=e14]:
+      - generic [ref=e15]:
+        - link [ref=e17] [cursor=pointer]:
+          - /url: /
+          - img [ref=e19]
+        - navigation [ref=e23]:
+          - generic [ref=e25]:
+            - link "Go back" [ref=e27] [cursor=pointer]:
+              - /url: /
+              - img "Go back" [ref=e28]
+            - button "My Profile" [ref=e31] [cursor=pointer]:
+              - heading "My Profile" [level=1] [ref=e33]
+          - generic [ref=e37]:
+            - button "Quick search..." [ref=e39] [cursor=pointer]:
+              - generic [ref=e40]:
+                - img [ref=e41]
+                - generic [ref=e43]: Quick search...
+                - generic [ref=e44]: Ctrl K
+            - list [ref=e45]:
+              - listitem [ref=e46]:
+                - link "Settings" [ref=e47] [cursor=pointer]:
+                  - /url: /profile/
+                  - generic [ref=e48]:
+                    - img [ref=e49]
+                    - generic [ref=e51]: Settings
+              - listitem [ref=e52]:
+                - button "Access Management" [ref=e53] [cursor=pointer]:
+                  - generic [ref=e54]:
+                    - img [ref=e55]
+                    - generic [ref=e58]: Access Management
+                    - img [ref=e59]
+                - list [ref=e61]:
+                  - listitem [ref=e63]:
+                    - link "Authentication" [ref=e64] [cursor=pointer]:
+                      - /url: /profile/access-management/authentication
+                      - generic [ref=e65]: Authentication
+                  - listitem [ref=e66]:
+                    - link "Connected Applications" [ref=e67] [cursor=pointer]:
+                      - /url: /profile/access-management/authorization
+                      - generic [ref=e68]: Connected Applications
+                  - listitem [ref=e69]:
+                    - link "Active sessions" [ref=e70] [cursor=pointer]:
+                      - /url: /profile/access-management/sessions
+                      - generic [ref=e71]: Active sessions
+              - listitem [ref=e72]:
+                - link "API Tokens" [ref=e73] [cursor=pointer]:
+                  - /url: /profile/api-tokens
+                  - generic [ref=e74]:
+                    - img [ref=e75]
+                    - generic [ref=e77]: API Tokens
+      - button "Collapse sidebar" [expanded] [ref=e80] [cursor=pointer]:
+        - img
+    - generic [ref=e81]:
+      - banner [ref=e82]:
+        - generic [ref=e91]:
+          - button "Support" [ref=e92] [cursor=pointer]:
+            - img [ref=e93]
+            - generic [ref=e95]: Support
+          - button "User menu" [ref=e96] [cursor=pointer]:
+            - img [ref=e97]
+      - main [ref=e204]:
+        - generic [ref=e207]:
+          - button "Back to view all tokens" [ref=e209] [cursor=pointer]:
+            - img [ref=e210]
+            - text: Back to view all tokens
+          - generic [ref=e212]:
+            - generic [ref=e214]:
+              - heading "Create API Token" [level=4] [ref=e215]
+              - text: Select a template to get started or create a custom token from scratch
+            - heading "Custom token" [level=4] [ref=e216]
+            - generic [ref=e217]: Create a custom API token by configuring your permissions and token settings by hand.
+            - table [ref=e220] [cursor=pointer]:
+              - rowgroup [ref=e221]:
+                - row "Create Custom Token Get started" [ref=e222]:
+                  - cell "Create Custom Token" [ref=e223]
+                  - cell "Get started" [ref=e224]:
+                    - button "Get started" [ref=e225]:
+                      - generic [ref=e226]: Get started
+            - heading "API token templates" [level=4] [ref=e227]
+            - generic [ref=e228]: Get started with a few pre-configured permissions.
+            - table [ref=e231] [cursor=pointer]:
+              - rowgroup [ref=e232]:
+                - row "Edit zone DNS Use template" [ref=e233]:
+                  - cell "Edit zone DNS" [ref=e234]
+                  - cell "Use template" [ref=e235]:
+                    - button "Use template" [ref=e236]:
+                      - generic [ref=e237]: Use template
+                - row "Read billing info Use template" [ref=e238]:
+                  - cell "Read billing info" [ref=e239]
+                  - cell "Use template" [ref=e240]:
+                    - button "Use template" [ref=e241]:
+                      - generic [ref=e242]: Use template
+                - row "Read analytics and logs Use template" [ref=e243]:
+                  - cell "Read analytics and logs" [ref=e244]
+                  - cell "Use template" [ref=e245]:
+                    - button "Use template" [ref=e246]:
+                      - generic [ref=e247]: Use template
+                - row "Edit Cloudflare Workers Use template" [ref=e248]:
+                  - cell "Edit Cloudflare Workers" [ref=e249]
+                  - cell "Use template" [ref=e250]:
+                    - button "Use template" [ref=e251]:
+                      - generic [ref=e252]: Use template
+                - row "Workers AI Use template" [ref=e253]:
+                  - cell "Workers AI" [ref=e254]
+                  - cell "Use template" [ref=e255]:
+                    - button "Use template" [ref=e256]:
+                      - generic [ref=e257]: Use template
+                - row "Edit load balancing configuration Use template" [ref=e258]:
+                  - cell "Edit load balancing configuration" [ref=e259]
+                  - cell "Use template" [ref=e260]:
+                    - button "Use template" [ref=e261]:
+                      - generic [ref=e262]: Use template
+                - row "WordPress Use template" [ref=e263]:
+                  - cell "WordPress" [ref=e264]
+                  - cell "Use template" [ref=e265]:
+                    - button "Use template" [ref=e266]:
+                      - generic [ref=e267]: Use template
+                - row "Read and write to Cloudflare Stream and Images Use template" [ref=e268]:
+                  - cell "Read and write to Cloudflare Stream and Images" [ref=e269]
+                  - cell "Use template" [ref=e270]:
+                    - button "Use template" [ref=e271]:
+                      - generic [ref=e272]: Use template
+                - row "Read Cloudflare Radar data Use template" [ref=e273]:
+                  - cell "Read Cloudflare Radar data" [ref=e274]
+                  - cell "Use template" [ref=e275]:
+                    - button "Use template" [ref=e276]:
+                      - generic [ref=e277]: Use template
+                - row "Create Additional Tokens Use template" [ref=e278]:
+                  - cell "Create Additional Tokens" [ref=e279]
+                  - cell "Use template" [ref=e280]:
+                    - button "Use template" [ref=e281]:
+                      - generic [ref=e282]: Use template
+                - row "Read all resources Use template" [ref=e283]:
+                  - cell "Read all resources" [ref=e284]
+                  - cell "Use template" [ref=e285]:
+                    - button "Use template" [ref=e286]:
+                      - generic [ref=e287]: Use template
+      - contentinfo [ref=e184]:
+        - list [ref=e186]:
+          - listitem [ref=e187]:
+            - link "Support" [ref=e188] [cursor=pointer]:
+              - /url: https://support.cloudflare.com
+          - listitem [ref=e189]:
+            - link "System status" [ref=e190] [cursor=pointer]:
+              - /url: https://www.cloudflarestatus.com
+          - listitem [ref=e191]:
+            - link "Careers" [ref=e192] [cursor=pointer]:
+              - /url: https://www.cloudflare.com/careers/
+          - listitem [ref=e193]:
+            - link "Terms of Use" [ref=e194] [cursor=pointer]:
+              - /url: https://www.cloudflare.com/website-terms/
+          - listitem [ref=e195]:
+            - link "Report Security Issues" [ref=e196] [cursor=pointer]:
+              - /url: https://www.cloudflare.com/disclosure/
+          - listitem [ref=e197]:
+            - link "Privacy Policy" [ref=e198] [cursor=pointer]:
+              - /url: https://www.cloudflare.com/privacypolicy/
+          - listitem [ref=e199]:
+            - button "A blue and white pill with a checkmark and an x, representing privacy choices Cookie Preferences" [ref=e200] [cursor=pointer]:
+              - img "A blue and white pill with a checkmark and an x, representing privacy choices" [ref=e201]
+              - text: Cookie Preferences
+          - listitem [ref=e202]:
+            - generic [ref=e203]: © 2026 Cloudflare, Inc.
+  - generic:
+    - region "Notifications"

@@ -59,6 +59,7 @@ enum class WeatherScene(val displayName: String) {
     PARTLY_NIGHT("Partly Night"),
     CLOUDY("Cloudy"),
     OVERCAST("Overcast"),
+    OVERCAST_NIGHT("Overcast Night"),
     SUNSET("Sunset"),
     SUNRISE("Sunrise"),
     RAIN("Rain"),
@@ -150,6 +151,7 @@ fun WeatherBackgroundLayer(
             WeatherScene.THUNDERSTORM,
             WeatherScene.CLEAR_NIGHT,
             WeatherScene.PARTLY_NIGHT,
+            WeatherScene.OVERCAST_NIGHT,
             WeatherScene.AURORA -> 0.08f
             WeatherScene.OFF -> 0f
         }
@@ -209,6 +211,12 @@ private fun SceneRenderer(scene: WeatherScene) {
         WeatherScene.OVERCAST -> {
             SkyGradient(listOf(Color(0xFF4A5460), Color(0xFF7A8390)))
             Cloudscape(tint = CloudTint.OVERCAST, density = 1.35f, layers = 4, baseDurSec = 300)
+        }
+        WeatherScene.OVERCAST_NIGHT -> {
+            // Deep slate-blue sky behind night clouds. Cloud bottoms catch
+            // residual city/moon light → NIGHT tint reads as dark grey-blue.
+            SkyGradient(listOf(Color(0xFF0E131C), Color(0xFF222A3E)))
+            Cloudscape(tint = CloudTint.NIGHT, density = 1.35f, layers = 4, baseDurSec = 320)
         }
         WeatherScene.SUNSET -> {
             SkyGradient(listOf(Color(0xFF2A1A4A), Color(0xFFF8B06A)))

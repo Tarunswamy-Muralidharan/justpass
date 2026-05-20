@@ -34,6 +34,15 @@ object NetworkModule {
         .addConverterFactory(GsonConverterFactory.create())
         .build()
 
+    private const val WEATHER_BASE_URL = "https://api.open-meteo.com/"
+
+    private val weatherRetrofit: Retrofit = Retrofit.Builder()
+        .baseUrl(WEATHER_BASE_URL)
+        .client(okHttpClient)
+        .addConverterFactory(GsonConverterFactory.create())
+        .build()
+
     val authApi: AuthApi = authRetrofit.create(AuthApi::class.java)
     val attendanceApi: AttendanceApi = sisRetrofit.create(AttendanceApi::class.java)
+    val weatherApi: WeatherApiService = weatherRetrofit.create(WeatherApiService::class.java)
 }
