@@ -2224,10 +2224,10 @@ fun GamesPopup(
                         DotMatrixBolt(
                             canvasSize = iconSize,
                             animated = true,
-                            // 4.2 s cycle per SPEC_FOR_KIMI § 3 — same cadence
-                            // as the dashboard tile so the popup + tile feel
-                            // like the same heartbeat.
-                            cycleMs = 4200
+                            // Popup loops fast (~1.4 s) — the tray surfaces
+                            // briefly and a snappy bolt feels more alive
+                            // than the dashboard tile's calmer 4.2 s pulse.
+                            cycleMs = 1400
                         )
                     }
                 }
