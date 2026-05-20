@@ -10,6 +10,7 @@ import com.google.firebase.remoteconfig.remoteConfigSettings
 object AdConfig {
     private const val KEY_ADS_ENABLED = "ads_enabled"
     private const val KEY_ADS_USE_TEST = "ads_use_test_ids"
+    private const val KEY_TEST_DEVICE_IDS = "ads_test_device_ids"
     private const val PREFS = "ad_config_cache"
 
     // Real (production) AdMob unit IDs.
@@ -40,26 +41,14 @@ object AdConfig {
     val interstitialAdUnitId: String get() = if (useTestIds) TEST_INTERSTITIAL_ID else REAL_INTERSTITIAL_ID
 
     fun init(context: Context) {
-        // Register test devices (MobileAds.initialize called in MainActivity)
-        MobileAds.setRequestConfiguration(
-            RequestConfiguration.Builder()
-                .setTestDeviceIds(listOf(
-                    "D872E5F72EB689824EFAEAEE0181E4AE",  // Moto G54 (ZD222GJ6WD)
-                    "7A84F9727359E7E95B313BCCA0FC5DA8"   // Edge 60 Fusion (ZN4224BRCG)
-                ))
-                .build()
-        )
-
-        // Eliminate the first-frame race. Two layers:
-        //  - SharedPreferences cache (sync, instant): every launch after the
-        //    first-ever reads the last activated value before any frame draws.
-        //  - Bundled XML defaults: first-ever launch (no cache) falls back to
-        //    `ads_enabled=true` from res/xml/remote_config_defaults.xml so ads
-        //    appear immediately even on a fresh install. Server flip true→false
-        //    causes a one-launch flicker, then prefs cache catches up.
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         _adsEnabled.value = prefs.getBoolean(KEY_ADS_ENABLED, false)
         _useTestIds.value = prefs.getBoolean(KEY_ADS_USE_TEST, false)
+
+        // Apply the last-known test-device list before any ad request fires.
+        // Format: comma-separated AdMob hashed device IDs (each device prints
+        // its own ID to logcat the first time it loads an ad).
+        applyTestDeviceIds(prefs.getString(KEY_TEST_DEVICE_IDS, "") ?: "")
 
         val remoteConfig = FirebaseRemoteConfig.getInstance()
         remoteConfig.setConfigSettingsAsync(
@@ -71,12 +60,31 @@ object AdConfig {
         remoteConfig.fetchAndActivate().addOnCompleteListener {
             val fresh = remoteConfig.getBoolean(KEY_ADS_ENABLED)
             val freshTest = remoteConfig.getBoolean(KEY_ADS_USE_TEST)
+            val freshDeviceIds = remoteConfig.getString(KEY_TEST_DEVICE_IDS)
             _adsEnabled.value = fresh
             _useTestIds.value = freshTest
+            applyTestDeviceIds(freshDeviceIds)
             prefs.edit()
                 .putBoolean(KEY_ADS_ENABLED, fresh)
                 .putBoolean(KEY_ADS_USE_TEST, freshTest)
+                .putString(KEY_TEST_DEVICE_IDS, freshDeviceIds)
                 .apply()
         }
+    }
+
+    /**
+     * Apply a comma-separated list of AdMob test device IDs. Devices on
+     * the list receive AdMob's test creative even when [useTestIds] is
+     * false (i.e. while the world is served real ads). Empty input = clear
+     * the list.
+     */
+    private fun applyTestDeviceIds(csv: String) {
+        val ids = csv.split(',')
+            .mapNotNull { raw -> raw.trim().ifBlank { null } }
+        MobileAds.setRequestConfiguration(
+            RequestConfiguration.Builder()
+                .setTestDeviceIds(ids)
+                .build()
+        )
     }
 }

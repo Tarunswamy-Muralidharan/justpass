@@ -224,12 +224,10 @@ fun SequenceMemoryScreen(onBack: () -> Unit, onLeaderboard: () -> Unit) {
                                             userIdx++
                                             if (userIdx >= sequence.size) {
                                                 level = sequence.size + 1
-                                                if (prefs.saveIfBetter(game, sequence.size.toDouble())) {
-                                                    bestLevel = sequence.size
-                                                    scope.launch {
-                                                        api.submit(prefs.playerId, game,
-                                                            sequence.size.toDouble(), prefs.displayName, prefs.classId)
-                                                    }
+                                                if (prefs.saveIfBetter(game, sequence.size.toDouble())) bestLevel = sequence.size
+                                                scope.launch {
+                                                    api.submit(prefs.playerId, game,
+                                                        sequence.size.toDouble(), prefs.displayName, prefs.classId)
                                                 }
                                                 inputEnabled = false
                                                 scope.launch {

@@ -180,12 +180,10 @@ fun TypingScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
                             val words = paragraph.length / 5.0
                             wpm = (words / minutes).toInt().coerceAtLeast(0)
                             done = true
-                            if (prefs.saveIfBetter(game, wpm.toDouble())) {
-                                bestWpm = wpm
-                                scope.launch {
-                                    api.submit(prefs.playerId, game,
-                                        wpm.toDouble(), prefs.displayName, prefs.classId)
-                                }
+                            if (prefs.saveIfBetter(game, wpm.toDouble())) bestWpm = wpm
+                            scope.launch {
+                                api.submit(prefs.playerId, game,
+                                    wpm.toDouble(), prefs.displayName, prefs.classId)
                             }
                         }
                     },

@@ -97,12 +97,10 @@ fun NumberMemoryScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
         lastWasRight = correct
         lastReached = digits
         if (correct) {
-            if (prefs.saveIfBetter(game, digits.toDouble())) {
-                bestDigits = digits
-                scope.launch {
-                    api.submit(prefs.playerId, game,
-                        digits.toDouble(), prefs.displayName, prefs.classId)
-                }
+            if (prefs.saveIfBetter(game, digits.toDouble())) bestDigits = digits
+            scope.launch {
+                api.submit(prefs.playerId, game,
+                    digits.toDouble(), prefs.displayName, prefs.classId)
             }
             digits++
         }

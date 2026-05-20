@@ -281,12 +281,10 @@ fun VisualMemoryScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
                                                     lives--
                                                     if (lives <= 0) {
                                                         stage = VisualStage.RESULT
-                                                        if (prefs.saveIfBetter(game, level.toDouble())) {
-                                                            bestLevel = level
-                                                            scope.launch {
-                                                                api.submit(prefs.playerId, game,
-                                                                    level.toDouble(), prefs.displayName, prefs.classId)
-                                                            }
+                                                        if (prefs.saveIfBetter(game, level.toDouble())) bestLevel = level
+                                                        scope.launch {
+                                                            api.submit(prefs.playerId, game,
+                                                                level.toDouble(), prefs.displayName, prefs.classId)
                                                         }
                                                     }
                                                 }

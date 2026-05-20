@@ -276,12 +276,10 @@ fun ChimpTestScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
                                 if (nextNum == 1) hidden = true
                                 nextNum++
                                 if (nextNum > level) {
-                                    if (prefs.saveIfBetter(game, level.toDouble())) {
-                                        bestLevel = level
-                                        scope.launch {
-                                            api.submit(prefs.playerId, game,
-                                                level.toDouble(), prefs.displayName, prefs.classId)
-                                        }
+                                    if (prefs.saveIfBetter(game, level.toDouble())) bestLevel = level
+                                    scope.launch {
+                                        api.submit(prefs.playerId, game,
+                                            level.toDouble(), prefs.displayName, prefs.classId)
                                     }
                                     level++
                                     scope.launch {

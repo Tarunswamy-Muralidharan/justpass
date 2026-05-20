@@ -116,11 +116,15 @@ fun ReactionTimeScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
                         ReactionStage.LIGHTS_OUT -> {
                             val ms = System.currentTimeMillis() - lightsOutAt
                             lastMs = ms
+                            // Local cache: track personal best. Server: submit
+                            // every attempt — submit_score_v2 clamps + only
+                            // keeps the better score, so the leaderboard sees
+                            // an attempts++ even when the new time isn't a PB.
                             if (prefs.saveIfBetter(game, ms.toDouble())) {
                                 bestMs = ms
-                                scope.launch {
-                                    api.submit(prefs.playerId, game, ms.toDouble(), prefs.displayName, prefs.classId)
-                                }
+                            }
+                            scope.launch {
+                                api.submit(prefs.playerId, game, ms.toDouble(), prefs.displayName, prefs.classId)
                             }
                             stage = ReactionStage.RESULT
                         }

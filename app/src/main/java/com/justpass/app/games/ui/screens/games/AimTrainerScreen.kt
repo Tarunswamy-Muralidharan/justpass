@@ -245,11 +245,10 @@ fun AimTrainerScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
                                 hits++
                                 if (hits >= targetTotal) {
                                     totalMs = System.currentTimeMillis() - startedAt
-                                    if (prefs.saveIfBetter(game, totalMs.toDouble())) {
-                                        scope.launch {
-                                            api.submit(prefs.playerId, game,
-                                                totalMs.toDouble(), prefs.displayName, prefs.classId)
-                                        }
+                                    prefs.saveIfBetter(game, totalMs.toDouble())
+                                    scope.launch {
+                                        api.submit(prefs.playerId, game,
+                                            totalMs.toDouble(), prefs.displayName, prefs.classId)
                                     }
                                     inProgress = false
                                 } else {

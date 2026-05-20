@@ -40,6 +40,16 @@
         <value>false</value>
     </entry>
     <entry>
+        <!-- Comma-separated list of AdMob test device IDs. These devices
+             receive AdMob TEST ads even when the rest of the world serves
+             production ads (useTestIds=false). Pull each device's hashed
+             ID from logcat the first time the app loads an ad on it — look
+             for: "Use AdRequest.Builder.addTestDevice("..."). Whitespace
+             between commas is trimmed. Examples below are dev devices. -->
+        <key>ads_test_device_ids</key>
+        <value>D872E5F72EB689824EFAEAEE0181E4AE,7A84F9727359E7E95B313BCCA0FC5DA8</value>
+    </entry>
+    <entry>
         <!-- Tournament feature gate. While false the Chess "Tourney" tile
              and Profile "Tournament Approvals" tile show a "Feature under
              development" toast on tap instead of opening the screens.

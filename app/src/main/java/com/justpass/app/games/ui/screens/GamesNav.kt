@@ -6,7 +6,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,10 +54,15 @@ fun GamesNav(
         }
     }
 
+    // Reserve room at the bottom for the JustPass LiquidGlassBottomBar so
+    // game tiles and tappable surfaces (e.g. the Chimp Test grid) aren't
+    // covered by the floating bar. Bar height ≈ 68 dp + bump + navigation
+    // gesture inset ≈ 110 dp total.
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(BBInk)
+            .padding(bottom = 110.dp)
     ) {
         Crossfade(
             targetState = route,
