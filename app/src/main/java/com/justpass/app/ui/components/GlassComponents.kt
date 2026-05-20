@@ -80,6 +80,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -1223,31 +1224,30 @@ private fun AnimatedControllerIcon(
     size: Dp = 70.dp,
     tapCounter: Int
 ) {
-    // Trace-in sweep that plays once when the bottom bar first composes
-    // (i.e. when the app is opened). A clipRect grows left→right exposing
-    // each stroke segment as it passes, with a glowing leading edge.
-    val trace = remember { Animatable(0f) }
+    // ── Spec-compliant DualSense line-art per SPEC_FOR_KIMI § 1. ──
+    // Each shape is drawn in viewBox 60×42 units then scaled into the canvas.
+    // On first composition every shape "pen-draws" — stroke trims from 0 to
+    // full length over 1.6 s with the spec's per-shape delays. On tap the
+    // body stays still and a "power-on" pass paints accent flashes over the
+    // four face buttons + halo + stick rings.
+    val shapes = remember { buildControllerShapes() }
+    val draw = remember(shapes.size) { List(shapes.size) { Animatable(0f) } }
     LaunchedEffect(Unit) {
-        trace.snapTo(0f)
-        trace.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
-    }
-
-    // Tap response: wiggle rotation + scale-down "press" + buttons flash.
-    val wiggle = remember { Animatable(0f) }
-    val press = remember { Animatable(0f) }
-    LaunchedEffect(tapCounter) {
-        if (tapCounter == 0) return@LaunchedEffect
-        kotlinx.coroutines.coroutineScope {
+        shapes.forEachIndexed { i, s ->
             launch {
-                wiggle.snapTo(-1f)
-                wiggle.animateTo(1f, tween(140, easing = FastOutSlowInEasing))
-                wiggle.animateTo(0f, spring(dampingRatio = 0.45f, stiffness = 600f))
-            }
-            launch {
-                press.snapTo(1f)
-                press.animateTo(0f, tween(420, easing = FastOutSlowInEasing))
+                kotlinx.coroutines.delay((s.delaySec * 1000).toLong())
+                draw[i].animateTo(1f, tween(1600, easing = FastOutSlowInEasing))
             }
         }
+    }
+
+    // Power-on (tap) — single 1.1 s envelope drives halo + face-button flashes
+    // + stick bloom + body glow. Per-button accent comes from the shape spec.
+    val power = remember { Animatable(0f) }
+    LaunchedEffect(tapCounter) {
+        if (tapCounter == 0) return@LaunchedEffect
+        power.snapTo(0f)
+        power.animateTo(1f, tween(1100, easing = FastOutSlowInEasing))
     }
 
     // Idle tilt when popup is open
@@ -1260,234 +1260,202 @@ private fun AnimatedControllerIcon(
     Canvas(
         modifier = Modifier
             .size(size)
-            .graphicsLayer {
-                rotationZ = wiggle.value * 10f + tilt
-                val s = 1f - press.value * 0.07f
-                scaleX = s
-                scaleY = s
-            }
+            .graphicsLayer { rotationZ = tilt }
     ) {
-        val w = this.size.width
-        val h = this.size.height
-        val reveal = trace.value.coerceIn(0f, 1f)
-        val pressV = press.value
+        val vbW = 60f
+        val vbH = 42f
+        val s = minOf(this.size.width / vbW, this.size.height / vbH)
+        val offX = (this.size.width - vbW * s) / 2f
+        val offY = (this.size.height - vbH * s) / 2f
 
-        // ── PS5 DualSense geometry ──
-        // Sony DualSense is 160 × 106 mm (≈1.5 : 1). Inside a square the
-        // body occupies a wide central band; grip lobes droop below to fill
-        // the remaining vertical space. Layout (front view, left → right):
-        //
-        //   shoulder-L   touchpad   shoulder-R
-        //      D-pad        PS         △
-        //                              □ ○
-        //                              ✕
-        //          L-stick      R-stick
-        //         /  grip lobe (left)  \         (right grip lobe)
-        //
-        // Thumbsticks are at the SAME vertical height (symmetric DualShock
-        // layout, not Xbox/Switch staggered).
-
-        val outlineStroke = w * 0.038f
-        val detailStroke = w * 0.028f
-
-        // Body extents — used for the status pip + grip-bottom reference.
-        val bodyTop = h * 0.30f
-        val gripBottom = h * 0.88f
-        val cxBody = w * 0.50f
-
-        // Touchpad — large, central, upper half.
-        val tpRect = Rect(w * 0.395f, h * 0.36f, w * 0.605f, h * 0.49f)
-
-        // D-pad cluster (upper-left of body, level with touchpad).
-        val dpadCx = w * 0.20f
-        val dpadCy = h * 0.43f
-        val dpadArmL = w * 0.072f
-        val dpadArmT = w * 0.023f
-
-        // Face buttons (upper-right, diamond layout — △ ○ ✕ □).
-        val faceCx = w * 0.80f
-        val faceCy = h * 0.43f
-        val faceR = w * 0.028f
-        val faceOff = w * 0.062f
-        val faceCenters = listOf(
-            Offset(faceCx, faceCy - faceOff),
-            Offset(faceCx + faceOff, faceCy),
-            Offset(faceCx, faceCy + faceOff),
-            Offset(faceCx - faceOff, faceCy),
-        )
-
-        // Thumbsticks — both at the same height in the lower-centre body.
-        val stickR = w * 0.078f
-        val stickInnerR = w * 0.030f
-        val stickY = h * 0.65f
-        val leftStick = Offset(w * 0.34f, stickY)
-        val rightStick = Offset(w * 0.66f, stickY)
-
-        // ── DualSense body silhouette ──
-        // Top edge: L1/R1 shoulder bumps poke up at the outside, then a long
-        // arc sweeps down into chunky grip lobes that angle outward more than
-        // the DualShock 4. Centre bottom has a small dip where the palms rest.
-        val bodyOutline = Path().apply {
-            // Outer edge of left shoulder bump
-            moveTo(w * 0.08f, h * 0.38f)
-            // Up & over left shoulder
-            cubicTo(
-                w * 0.07f, h * 0.31f,
-                w * 0.16f, h * 0.28f,
-                w * 0.22f, h * 0.305f,
-            )
-            // Inner top edge between shoulder and centre
-            cubicTo(
-                w * 0.28f, h * 0.325f,
-                w * 0.34f, h * 0.345f,
-                w * 0.42f, h * 0.35f,
-            )
-            // Flat centre top (under touchpad)
-            cubicTo(
-                w * 0.46f, h * 0.355f,
-                w * 0.54f, h * 0.355f,
-                w * 0.58f, h * 0.35f,
-            )
-            // Inner top edge on the right
-            cubicTo(
-                w * 0.66f, h * 0.345f,
-                w * 0.72f, h * 0.325f,
-                w * 0.78f, h * 0.305f,
-            )
-            // Up & over right shoulder (mirror of left)
-            cubicTo(
-                w * 0.84f, h * 0.28f,
-                w * 0.93f, h * 0.31f,
-                w * 0.92f, h * 0.38f,
-            )
-            // Right side curving outward toward right grip
-            cubicTo(
-                w * 0.99f, h * 0.52f,
-                w * 0.96f, h * 0.66f,
-                w * 0.88f, h * 0.73f,
-            )
-            // Right grip lobe — chunky, angled outward.
-            cubicTo(
-                w * 0.92f, h * 0.83f,
-                w * 0.82f, gripBottom,
-                w * 0.70f, h * 0.86f,
-            )
-            // Underside of right grip toward centre dip
-            cubicTo(
-                w * 0.62f, h * 0.82f,
-                w * 0.56f, h * 0.78f,
-                w * 0.50f, h * 0.78f,
-            )
-            // Underside of left grip
-            cubicTo(
-                w * 0.44f, h * 0.78f,
-                w * 0.38f, h * 0.82f,
-                w * 0.30f, h * 0.86f,
-            )
-            // Left grip lobe
-            cubicTo(
-                w * 0.18f, gripBottom,
-                w * 0.08f, h * 0.83f,
-                w * 0.12f, h * 0.73f,
-            )
-            // Left side back up
-            cubicTo(
-                w * 0.04f, h * 0.66f,
-                w * 0.01f, h * 0.52f,
-                w * 0.08f, h * 0.38f,
-            )
-            close()
-        }
-
-        // Subtle "white shade" fill — very low alpha so it reads as a hint
-        // of glass behind the outline, not a solid silhouette.
-        val innerShade = Color.White.copy(alpha = 0.08f)
-
-        clipRect(left = 0f, top = 0f, right = w * reveal, bottom = h) {
-            // 1) Thin interior fill — barely visible glass tint.
-            drawPath(bodyOutline, color = innerShade)
-
-            // 2) Body outline (the highlight border).
-            drawPath(
-                bodyOutline,
-                color = tint,
-                style = Stroke(width = outlineStroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
-            )
-
-            // 3) Touchpad — outline only, slightly lighter shade behind.
-            drawRoundRect(
-                color = innerShade,
-                topLeft = Offset(tpRect.left, tpRect.top),
-                size = Size(tpRect.width, tpRect.height),
-                cornerRadius = CornerRadius(w * 0.015f, w * 0.015f),
-            )
-            drawRoundRect(
-                color = tint,
-                topLeft = Offset(tpRect.left, tpRect.top),
-                size = Size(tpRect.width, tpRect.height),
-                cornerRadius = CornerRadius(w * 0.015f, w * 0.015f),
-                style = Stroke(width = detailStroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
-            )
-
-            // 4) D-pad — plus rendered as two thin lines, rounded caps.
-            drawLine(
-                tint,
-                Offset(dpadCx - dpadArmL, dpadCy), Offset(dpadCx + dpadArmL, dpadCy),
-                strokeWidth = dpadArmT * 2f, cap = StrokeCap.Round,
-            )
-            drawLine(
-                tint,
-                Offset(dpadCx, dpadCy - dpadArmL), Offset(dpadCx, dpadCy + dpadArmL),
-                strokeWidth = dpadArmT * 2f, cap = StrokeCap.Round,
-            )
-
-            // 5) Face buttons — hollow rings. On tap they fill briefly.
-            for (c in faceCenters) {
-                if (pressV > 0.05f) {
-                    drawCircle(tint.copy(alpha = pressV), faceR * 0.85f, c)
+        withTransform({
+            translate(offX, offY)
+            scale(s, s, pivot = Offset.Zero)
+        }) {
+            val pm = PathMeasure()
+            shapes.forEachIndexed { i, shape ->
+                val p = draw[i].value.coerceIn(0f, 1f)
+                if (p <= 0f) return@forEachIndexed
+                val full = shape.pathBuilder()
+                val toDraw = if (p >= 1f) full else Path().also {
+                    pm.setPath(full, false)
+                    val len = pm.length
+                    if (len > 0f) pm.getSegment(0f, len * p, it, true)
                 }
-                drawCircle(tint, faceR, c, style = Stroke(width = detailStroke))
+                drawPath(
+                    toDraw,
+                    color = tint,
+                    style = Stroke(width = 1.6f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                )
             }
 
-            // 6) Thumbsticks — outer ring + inner nub.
-            drawCircle(tint, stickR, leftStick, style = Stroke(width = detailStroke))
-            drawCircle(tint, stickR, rightStick, style = Stroke(width = detailStroke))
-            drawCircle(tint, stickInnerR, leftStick)
-            drawCircle(tint, stickInnerR, rightStick)
+            // ── Power-on accent pass ──
+            // Per-button flash uses each face button's accent colour. Spec
+            // staggers buttons by ~0.10 s; we fold that into a single envelope
+            // by deriving each button's local progress from the global power.
+            val pw = power.value
+            if (pw > 0f) {
+                shapes.forEachIndexed { i, shape ->
+                    val flash = shape.flashColor ?: return@forEachIndexed
+                    val localStart = shape.flashDelayFrac.coerceIn(0f, 0.9f)
+                    val localDur = 1f - localStart
+                    val t = ((pw - localStart) / localDur).coerceIn(0f, 1f)
+                    if (t <= 0f) return@forEachIndexed
+                    // Triangular envelope — fade in, peak at 35%, fade out.
+                    val env = if (t < 0.35f) t / 0.35f else 1f - (t - 0.35f) / 0.65f
+                    if (env <= 0f) return@forEachIndexed
+                    val full = shape.pathBuilder()
+                    drawPath(
+                        full,
+                        color = flash.copy(alpha = (env * 0.85f).coerceIn(0f, 1f)),
+                        style = Stroke(width = 2.4f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                    )
+                }
 
-            // 7) PS button — small dot below touchpad centre.
-            drawCircle(
-                tint,
-                radius = w * 0.012f,
-                center = Offset(cxBody, tpRect.bottom + h * 0.04f),
-            )
+                // Halo ellipse breathes outward once.
+                val haloEnv = if (pw < 0.5f) pw / 0.5f else 1f - (pw - 0.5f) / 0.5f
+                val haloAlpha = haloEnv * 0.55f
+                val haloScale = 1f + pw * 0.18f
+                val rx = 29f * haloScale
+                val ry = 17f * haloScale
+                drawOval(
+                    color = Color(0xFF3DA9FC).copy(alpha = haloAlpha),
+                    topLeft = Offset(30f - rx, 22f - ry),
+                    size = Size(rx * 2f, ry * 2f),
+                    style = Stroke(width = 0.6f),
+                )
 
-            // Status pip when popup is open.
-            if (selected) {
+                // Stick radial bloom — soft blue tint inside the two rings.
+                val stickBloom = haloEnv * 0.35f
                 drawCircle(
-                    tint.copy(alpha = 0.9f),
-                    radius = h * 0.016f,
-                    center = Offset(cxBody, bodyTop - h * 0.04f),
+                    color = Color(0xFF3DA9FC).copy(alpha = stickBloom),
+                    radius = 4.5f,
+                    center = Offset(22f, 27f),
+                )
+                drawCircle(
+                    color = Color(0xFF3DA9FC).copy(alpha = stickBloom),
+                    radius = 4.5f,
+                    center = Offset(38f, 27f),
                 )
             }
         }
-
-        // Glowing leading edge during trace-in sweep.
-        if (reveal < 1f) {
-            val edgeX = w * reveal
-            val edgeHalfW = w * 0.045f
-            drawRect(
-                brush = Brush.horizontalGradient(
-                    listOf(Color.Transparent, tint.copy(alpha = 0.85f), Color.Transparent),
-                    startX = edgeX - edgeHalfW,
-                    endX = edgeX + edgeHalfW,
-                ),
-                topLeft = Offset(edgeX - edgeHalfW, h * 0.10f),
-                size = Size(edgeHalfW * 2f, h * 0.80f),
-            )
-        }
     }
 }
+
+/** Single shape in the controller line-art with its pen-draw delay and
+ *  optional power-on flash colour. */
+private data class CtrlShape(
+    val key: String,
+    val pathBuilder: () -> Path,
+    val delaySec: Float,
+    val flashColor: Color? = null,
+    val flashDelayFrac: Float = 0f,
+)
+
+/** Builds the ordered list of stroke shapes — viewBox 60×42 — from
+ *  SPEC_FOR_KIMI § 1. */
+private fun buildControllerShapes(): List<CtrlShape> = listOf(
+    // Main shell — `M 14 8 C 8 8, 4 14, 4 22 …`
+    CtrlShape("shell", {
+        Path().apply {
+            moveTo(14f, 8f)
+            cubicTo(8f, 8f, 4f, 14f, 4f, 22f)
+            cubicTo(4f, 30f, 8f, 36f, 14f, 36f)
+            cubicTo(18f, 36f, 20f, 32f, 24f, 30f)
+            lineTo(36f, 30f)
+            cubicTo(40f, 32f, 42f, 36f, 46f, 36f)
+            cubicTo(52f, 36f, 56f, 30f, 56f, 22f)
+            cubicTo(56f, 14f, 52f, 8f, 46f, 8f)
+            lineTo(36f, 8f)
+            cubicTo(33f, 8f, 30f, 10f, 30f, 10f)
+            cubicTo(30f, 10f, 27f, 8f, 24f, 8f)
+            close()
+        }
+    }, delaySec = 0f),
+
+    // L1 + R1 shoulder bumps — small quadratic arcs above the shell.
+    CtrlShape("l1", {
+        Path().apply {
+            moveTo(10f, 7f)
+            quadraticTo(14f, 4f, 18f, 7f)
+        }
+    }, delaySec = 0.25f),
+    CtrlShape("r1", {
+        Path().apply {
+            moveTo(42f, 7f)
+            quadraticTo(46f, 4f, 50f, 7f)
+        }
+    }, delaySec = 0.30f),
+
+    // D-pad cross outline — `h 3 v -3 h 3 v 3 h 3 v 3 h -3 v 3 h -3 v -3 h -3 z`
+    CtrlShape("dpad", {
+        Path().apply {
+            moveTo(14f, 16f)
+            relativeLineTo(3f, 0f); relativeLineTo(0f, -3f)
+            relativeLineTo(3f, 0f); relativeLineTo(0f, 3f)
+            relativeLineTo(3f, 0f); relativeLineTo(0f, 3f)
+            relativeLineTo(-3f, 0f); relativeLineTo(0f, 3f)
+            relativeLineTo(-3f, 0f); relativeLineTo(0f, -3f)
+            relativeLineTo(-3f, 0f)
+            close()
+        }
+    }, delaySec = 0.45f, flashColor = Color(0xFF3DA9FC), flashDelayFrac = 0.05f),
+
+    // Face buttons △ ○ ✕ □ with per-button accent colours.
+    CtrlShape("fb-top", { // △ triangle
+        Path().apply {
+            moveTo(44f, 11.2f); lineTo(45.6f, 14f); lineTo(42.4f, 14f); close()
+        }
+    }, delaySec = 0.55f, flashColor = Color(0xFF2BD882), flashDelayFrac = 0.10f),
+    CtrlShape("fb-right", { // ○ circle
+        Path().apply { addOval(Rect(46.9f, 15.9f, 50.1f, 19.1f)) }
+    }, delaySec = 0.60f, flashColor = Color(0xFFFF5A7A), flashDelayFrac = 0.20f),
+    CtrlShape("fb-bottom", { // ✕ cross (two short strokes)
+        Path().apply {
+            moveTo(42.8f, 20.7f); lineTo(45.2f, 23.1f)
+            moveTo(45.2f, 20.7f); lineTo(42.8f, 23.1f)
+        }
+    }, delaySec = 0.65f, flashColor = Color(0xFF3DA9FC), flashDelayFrac = 0.30f),
+    CtrlShape("fb-left", { // □ square
+        Path().apply { addRect(Rect(38.1f, 16.1f, 40.9f, 18.9f)) }
+    }, delaySec = 0.70f, flashColor = Color(0xFFFF7EB2), flashDelayFrac = 0.40f),
+
+    // Touchpad rect + LED + 3 mic dots.
+    CtrlShape("touch", {
+        Path().apply {
+            addRoundRect(
+                androidx.compose.ui.geometry.RoundRect(
+                    rect = Rect(25f, 13f, 35f, 19f),
+                    cornerRadius = CornerRadius(1.5f, 1.5f),
+                )
+            )
+        }
+    }, delaySec = 0.80f),
+    CtrlShape("led", {
+        Path().apply { moveTo(29f, 20.5f); lineTo(31f, 20.5f) }
+    }, delaySec = 0.85f, flashColor = Color(0xFF2BD882), flashDelayFrac = 0.0f),
+    CtrlShape("m1", { Path().apply { addOval(Rect(27.5f, 22.5f, 28.5f, 23.5f)) } }, delaySec = 0.90f),
+    CtrlShape("m2", { Path().apply { addOval(Rect(29.5f, 22.5f, 30.5f, 23.5f)) } }, delaySec = 0.92f),
+    CtrlShape("m3", { Path().apply { addOval(Rect(31.5f, 22.5f, 32.5f, 23.5f)) } }, delaySec = 0.94f),
+
+    // Analog sticks — outer rings + inner caps for each side.
+    CtrlShape("ls-ring", { Path().apply { addOval(Rect(17.5f, 22.5f, 26.5f, 31.5f)) } }, delaySec = 1.00f),
+    CtrlShape("ls-cap",  { Path().apply { addOval(Rect(19.5f, 24.5f, 24.5f, 29.5f)) } }, delaySec = 1.10f),
+    CtrlShape("rs-ring", { Path().apply { addOval(Rect(33.5f, 22.5f, 42.5f, 31.5f)) } }, delaySec = 1.00f),
+    CtrlShape("rs-cap",  { Path().apply { addOval(Rect(35.5f, 24.5f, 40.5f, 29.5f)) } }, delaySec = 1.10f),
+
+    // Home / PS button rect below the touchpad.
+    CtrlShape("home", {
+        Path().apply {
+            addRoundRect(
+                androidx.compose.ui.geometry.RoundRect(
+                    rect = Rect(29f, 32f, 31f, 33.4f),
+                    cornerRadius = CornerRadius(0.4f, 0.4f),
+                )
+            )
+        }
+    }, delaySec = 1.20f),
+)
 
 /**
  * Animated Chess icon — true isometric 3D chessboard with thick rounded base,
