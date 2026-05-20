@@ -476,24 +476,24 @@ fun AttendanceApp() {
                 wipeState = 1
                 Analytics.logFeatureUsed("human_benchmark")
                 scope.launch {
-                    // Wait until the curtain has mostly filled (spec: last
-                    // cell starts at ~0.55 s, screen flash crests at ~0.68 s)
-                    // before swapping the underlying screen, so the user
-                    // never sees a popping content change.
-                    kotlinx.coroutines.delay(650)
+                    // Wipe runs ~900 ms. By 700 ms the cell mask is mostly
+                    // full (Games is essentially visible everywhere inside
+                    // the overlay), so we kick off the Crossfade swap so the
+                    // underlying Crossfade has settled to Games by the time
+                    // the overlay unmounts — no end-of-wipe pop.
+                    kotlinx.coroutines.delay(700)
                     currentScreen = Screen.Games
-                    // Hold the curtain a touch longer for the bloom + the
-                    // first HB content fade-in (`hb-content` 0.25 s + delay).
-                    kotlinx.coroutines.delay(300)
+                    kotlinx.coroutines.delay(400)
                     wipeState = 0
                 }
             }
 
             fun closeHB() {
-                // Set the destination screen first so the contracting curtain
-                // peels back over the dashboard instead of the HB screen the
-                // user is leaving. The PixelWipeOverlay renders fully opaque
-                // at progress 0 in contract mode, so the swap is invisible.
+                // Swap the underlying Crossfade to Dashboard first, then
+                // start the contracting wipe. The overlay's mask renders
+                // Games at full coverage at progress 0, so the underlying
+                // Crossfade transition (Games → Dashboard, 200 ms) is hidden
+                // behind the mask while it shrinks back to the origin.
                 currentScreen = Screen.Dashboard
                 selectedTabIndex = 0
                 wipeState = 2
@@ -856,13 +856,26 @@ fun AttendanceApp() {
                     }
                 )
             }
-            // Pixel wipe transition overlay
+            // Pixel wipe transition overlay — renders Games inside a growing /
+            // shrinking pixel mask. The underlying Crossfade shows Dashboard
+            // during open and Dashboard during close (after the pre-emptive
+            // swap), so the cells act as a real reveal — every cell that
+            // turns on uncovers a piece of HB instead of waiting for the
+            // whole curtain and then yanking it.
             if (wipeState != 0) {
                 PixelWipeOverlay(
                     contracting = wipeState == 2,
                     originX = wipeOriginX,
-                    originY = wipeOriginY
-                )
+                    originY = wipeOriginY,
+                ) {
+                    // Destination screen rendered inside the cell mask. We
+                    // pass no-op handlers — the real interactive Games screen
+                    // comes from the Crossfade once the wipe lands.
+                    com.justpass.app.games.ui.screens.GamesNav(
+                        onBack = {},
+                        onLeaderboard = {},
+                    )
+                }
             }
         }
     }
