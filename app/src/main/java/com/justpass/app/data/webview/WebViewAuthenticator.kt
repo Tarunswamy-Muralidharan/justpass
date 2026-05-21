@@ -116,7 +116,7 @@ class WebViewAuthenticator(private val context: Context) {
         private const val LOGIN_URL_PATTERN = "accounts.psgitech.ac.in"
         private const val ATTENDANCE_API_PATTERN = "/sis/attendance/"
         private const val CA_MARKS_API_URL = "https://laudea.psgitech.ac.in/sis/ca/marks/v2/"
-        private const val ATTENDANCE_API_BASE = "https://laudea.psgitech.ac.in/sis/attendance/"
+        private const val ATTENDANCE_API_BASE = "https://laudea.psgitech.ac.in/sis/Attendance/"
         private const val TIMETABLE_API_BASE = "https://laudea.psgitech.ac.in/sis/time/table/"
         private const val MEETINGS_BASE_URL = "https://laudea.psgitech.ac.in/meetings/"
         // Browser-like User-Agent — the SIS server rejects/stalls requests without one
@@ -984,7 +984,7 @@ class WebViewAuthenticator(private val context: Context) {
                         headers['Authorization'] = authHeader;
                     }
 
-                    fetch('https://laudea.psgitech.ac.in/sis/attendance/$rollNumber', {
+                    fetch('https://laudea.psgitech.ac.in/sis/Attendance/$rollNumber', {
                         method: 'GET',
                         credentials: 'include',
                         headers: headers
@@ -1216,7 +1216,7 @@ class WebViewAuthenticator(private val context: Context) {
     suspend fun fetchAbsentDays(rollNumber: String): Result<List<AbsentDay>>? {
         val token = cachedAuthToken ?: return null
         android.util.Log.d("WebViewAuth", "Fetching absent days for: $rollNumber")
-        val response = authenticatedGet("https://laudea.psgitech.ac.in/sis/attendance/absent/$rollNumber", token)
+        val response = authenticatedGet("https://laudea.psgitech.ac.in/sis/Attendance/absent/$rollNumber", token)
             ?: return Result.failure(Exception("Network error fetching absent days"))
         return response.use { resp ->
             val responseCode = resp.code
@@ -1248,7 +1248,7 @@ class WebViewAuthenticator(private val context: Context) {
     suspend fun fetchPresentDays(rollNumber: String): Result<List<AbsentDay>>? {
         val token = cachedAuthToken ?: return null
         android.util.Log.d("WebViewAuth", "Fetching present days for: $rollNumber")
-        val response = authenticatedGet("https://laudea.psgitech.ac.in/sis/attendance/present/$rollNumber", token)
+        val response = authenticatedGet("https://laudea.psgitech.ac.in/sis/Attendance/present/$rollNumber", token)
             ?: return Result.failure(Exception("Network error fetching present days"))
         return response.use { resp ->
             val responseCode = resp.code
