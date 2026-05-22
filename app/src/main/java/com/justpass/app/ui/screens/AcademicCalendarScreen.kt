@@ -24,6 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -128,8 +131,29 @@ fun AcademicCalendarScreen(
                 }
             }
         } else {
+            val swipeThresholdPx = with(LocalDensity.current) { 56.dp.toPx() }
+            var accumulatedDrag by remember { mutableStateOf(0f) }
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { accumulatedDrag = 0f },
+                            onDragEnd = {
+                                if (accumulatedDrag > swipeThresholdPx) {
+                                    // Right swipe → previous month
+                                    slideDirection = -1
+                                    viewModel.previousMonth()
+                                } else if (accumulatedDrag < -swipeThresholdPx) {
+                                    slideDirection = 1
+                                    viewModel.nextMonth()
+                                }
+                                accumulatedDrag = 0f
+                            },
+                            onDragCancel = { accumulatedDrag = 0f },
+                            onHorizontalDrag = { _, dx -> accumulatedDrag += dx }
+                        )
+                    },
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 160.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {

@@ -134,6 +134,7 @@ class MainActivity : ComponentActivity() {
         CircularNotificationWorker.schedule(this)
         HolidayNotificationWorker.schedule(this)
         com.justpass.app.worker.ClassMarksUploadWorker.schedule(this)
+        com.justpass.app.worker.LeaderboardBeatenWorker.schedule(this)
         setContent {
             AttendanceWidgetLaudeaTheme {
                 AttendanceApp()
@@ -165,6 +166,7 @@ fun AttendanceApp() {
     // Handle navigate_to from notification intents and shared file intents
     val activity = context as? ComponentActivity
     val navigateTo = remember { activity?.intent?.getStringExtra("navigate_to") }
+    val notifLeaderboardGameId = remember { activity?.intent?.getStringExtra("leaderboard_game_id") }
     val sharedFileUri = remember {
         activity?.intent?.let { intent ->
             when (intent.action) {
@@ -179,9 +181,17 @@ fun AttendanceApp() {
         else when (navigateTo) {
             "calendar" -> Screen.AcademicCalendar
             "circulars" -> Screen.Circulars
+            "games_leaderboard" -> Screen.GamesLeaderboard
             else -> Screen.Dashboard
         }
     var currentScreen by remember { mutableStateOf(initialScreen) }
+    // Selected leaderboard game when launched from a game-over screen or
+    // a "beaten" notification. null = open Overall tab.
+    var leaderboardGame by remember {
+        mutableStateOf<com.justpass.app.games.data.model.Game?>(
+            notifLeaderboardGameId?.let { com.justpass.app.games.data.model.Game.fromId(it) }
+        )
+    }
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var selectedCourseCode by remember { mutableStateOf("") }
     var selectedCourseTitle by remember { mutableStateOf("") }
@@ -808,10 +818,14 @@ fun AttendanceApp() {
                         "tab_3" -> {}
                         Screen.Games.name -> com.justpass.app.games.ui.screens.GamesNav(
                             onBack = { currentScreen = Screen.Dashboard; selectedTabIndex = 0 },
-                            onLeaderboard = { currentScreen = Screen.GamesLeaderboard }
+                            onLeaderboard = { g ->
+                                leaderboardGame = g
+                                currentScreen = Screen.GamesLeaderboard
+                            }
                         )
                         Screen.GamesLeaderboard.name -> com.justpass.app.games.ui.screens.LeaderboardScreen(
-                            onBack = { currentScreen = Screen.Games }
+                            onBack = { currentScreen = Screen.Games },
+                            initialGame = leaderboardGame
                         )
                         "tab_4" -> TimetableScreen(cardState = cardState)
                         // Profile accessed via header profile pic
@@ -873,7 +887,7 @@ fun AttendanceApp() {
                     // comes from the Crossfade once the wipe lands.
                     com.justpass.app.games.ui.screens.GamesNav(
                         onBack = {},
-                        onLeaderboard = {},
+                        onLeaderboard = { _ -> },
                     )
                 }
             }

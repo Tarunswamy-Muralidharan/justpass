@@ -1,6 +1,7 @@
 package com.justpass.app.games.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,22 +60,40 @@ import com.justpass.app.games.ui.theme.MonoFont
 
 private val OverallAccent = BBHot
 
+// Medal palette for top-3 ranks.
+private val Gold = Color(0xFFFFD54F)
+private val Silver = Color(0xFFE0E6F0)
+private val Bronze = Color(0xFFD08A4A)
+
+private fun rankColor(rank: Int, accent: Color): Color = when (rank) {
+    1 -> Gold
+    2 -> Silver
+    3 -> Bronze
+    else -> accent
+}
+
 @Composable
-fun LeaderboardScreen(onBack: () -> Unit) {
+fun LeaderboardScreen(
+    onBack: () -> Unit,
+    initialGame: Game? = null
+) {
     val context = LocalContext.current
     val prefs = remember { ScorePrefs.getInstance(context) }
     val api = remember { ScoresApi() }
     val games = Game.entries
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    // Scope toggle: 0 = Global, 1 = Your class. Class scope only meaningful
-    // when biodata supplies a class id.
+    val initialTab = remember(initialGame) {
+        if (initialGame == null) 0 else games.indexOf(initialGame).let { if (it < 0) 0 else it + 1 }
+    }
+    var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     val classId = remember { prefs.classId }
-    var scope by rememberSaveable { mutableIntStateOf(0) }
+    // Scope: 0 = My Section (default if biodata loaded), 1 = Whole College.
+    // If classId is null (no biodata), force college scope.
+    var scope by rememberSaveable { mutableIntStateOf(if (classId != null) 0 else 1) }
     var perGame by remember { mutableStateOf<List<ScoreRow>>(emptyList()) }
     var overall by remember { mutableStateOf<List<OverallRow>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
 
-    val effectiveClass = if (scope == 1) classId else null
+    val effectiveClass = if (scope == 0) classId else null
 
     LaunchedEffect(selectedTab, scope) {
         loading = true
@@ -104,7 +123,6 @@ fun LeaderboardScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .systemBarsPadding()
         ) {
-            // Top bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -116,14 +134,13 @@ fun LeaderboardScreen(onBack: () -> Unit) {
                 }
             }
 
-            // Editorial header
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 18.dp)
             ) {
                 Text(
-                    "ISSUE 08 · GLOBAL",
+                    "ISSUE 08 · COLLEGE",
                     color = BBHot,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
@@ -162,33 +179,35 @@ fun LeaderboardScreen(onBack: () -> Unit) {
                 ) {
                     DotSep(text = "${games.size} games")
                     Bullet()
-                    DotSep(text = if (scope == 1 && classId != null) classId else "Global leaderboard")
+                    DotSep(
+                        text = if (scope == 0 && classId != null) "Section · $classId"
+                               else "Whole college"
+                    )
                     Bullet()
                     DotSep(text = "Top 100")
                 }
             }
 
-            // Scope toggle (Global / Your class)
+            // Scope toggle — Section first (when biodata available), College second.
             Row(
                 modifier = Modifier
                     .padding(horizontal = 14.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 EditorialChip(
-                    label = "Global",
+                    label = if (classId != null) "My section · $classId" else "Section (no biodata)",
                     active = scope == 0,
-                    onClick = { scope = 0 }
+                    onClick = { if (classId != null) scope = 0 }
                 )
                 EditorialChip(
-                    label = if (classId != null) "Class · $classId" else "Class (no biodata)",
+                    label = "Whole college",
                     active = scope == 1,
-                    onClick = { if (classId != null) scope = 1 }
+                    onClick = { scope = 1 }
                 )
             }
 
             Spacer(Modifier.height(4.dp))
 
-            // Tab pills (segmented look)
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -239,11 +258,7 @@ private fun Bullet() {
 
 @Composable
 private fun DotSep(text: String) {
-    Text(
-        text,
-        color = Color.White.copy(alpha = 0.7f),
-        fontSize = 12.sp
-    )
+    Text(text, color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
 }
 
 @Composable
@@ -260,6 +275,37 @@ private fun EditorialChip(label: String, active: Boolean, onClick: () -> Unit) {
             color = if (active) BBInk else Color.White.copy(alpha = 0.7f),
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+/**
+ * Big colored rank pill. Top-3 get medal colors; rest use the row accent.
+ */
+@Composable
+private fun BigRank(rank: Int, accent: Color) {
+    val color = rankColor(rank, accent)
+    val isMedal = rank in 1..3
+    Box(
+        modifier = Modifier
+            .width(54.dp)
+            .height(54.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isMedal) color.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.05f))
+            .border(
+                width = if (isMedal) 1.5.dp else 1.dp,
+                color = if (isMedal) color else Color.White.copy(alpha = 0.10f),
+                shape = RoundedCornerShape(12.dp)
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = if (rank < 100) String.format("%02d", rank) else rank.toString(),
+            color = color,
+            fontSize = if (rank < 100) 26.sp else 22.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = DisplayFont,
+            letterSpacing = (-1).sp
         )
     }
 }
@@ -320,8 +366,6 @@ private fun EmptyState(text: String) {
 
 @Composable
 private fun EditorialPerGameRow(rank: Int, row: ScoreRow, game: Game, isMe: Boolean) {
-    // Name = biodata-supplied displayName. Roll = playerId (now a roll
-    // number for logged-in users; "anon_XXX" for offline / pre-login).
     val nameDisplay = row.displayName?.takeIf { it.isNotBlank() } ?: row.playerId
     val rollSubtitle = if (
         !row.displayName.isNullOrBlank() &&
@@ -334,13 +378,8 @@ private fun EditorialPerGameRow(rank: Int, row: ScoreRow, game: Game, isMe: Bool
             .padding(top = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            String.format("%02d", rank),
-            color = Color.White.copy(alpha = 0.5f),
-            fontFamily = MonoFont,
-            fontSize = 11.sp,
-            modifier = Modifier.width(28.dp)
-        )
+        BigRank(rank = rank, accent = game.accent)
+        Spacer(Modifier.width(12.dp))
         Column(
             modifier = Modifier.weight(1f).padding(end = 12.dp)
         ) {
@@ -399,12 +438,6 @@ private fun EditorialPerGameRow(rank: Int, row: ScoreRow, game: Game, isMe: Bool
                     modifier = Modifier.padding(start = 3.dp, bottom = 4.dp)
                 )
             }
-            Text(
-                "RANK #$rank",
-                color = Color.White.copy(alpha = 0.45f),
-                fontSize = 9.sp,
-                letterSpacing = 1.6.sp
-            )
         }
     }
     Divider()
@@ -424,13 +457,8 @@ private fun EditorialOverallRow(rank: Int, row: OverallRow, isMe: Boolean) {
             .padding(top = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            String.format("%02d", rank),
-            color = Color.White.copy(alpha = 0.5f),
-            fontFamily = MonoFont,
-            fontSize = 11.sp,
-            modifier = Modifier.width(28.dp)
-        )
+        BigRank(rank = rank, accent = OverallAccent)
+        Spacer(Modifier.width(12.dp))
         Column(
             modifier = Modifier.weight(1f).padding(end = 12.dp)
         ) {
@@ -489,12 +517,6 @@ private fun EditorialOverallRow(rank: Int, row: OverallRow, isMe: Boolean) {
                     modifier = Modifier.padding(start = 3.dp, bottom = 4.dp)
                 )
             }
-            Text(
-                "RANK #$rank",
-                color = Color.White.copy(alpha = 0.45f),
-                fontSize = 9.sp,
-                letterSpacing = 1.6.sp
-            )
         }
     }
     Divider()

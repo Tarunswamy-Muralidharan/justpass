@@ -98,6 +98,12 @@ fun ReactionTimeScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
             rightValue = if (bestMs > 0) "$bestMs" else "—",
             rightUnit = if (bestMs > 0) "ms" else ""
         )
+        Spacer(Modifier.height(8.dp))
+        com.justpass.app.games.ui.components.RivalAboveStrip(
+            game = game,
+            currentScore = lastMs.takeIf { it > 0 }?.toDouble(),
+            modifier = Modifier.padding(horizontal = 18.dp)
+        )
 
         Box(
             modifier = Modifier
@@ -137,14 +143,14 @@ fun ReactionTimeScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
                     .padding(horizontal = 18.dp, vertical = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Lights gantry
+                // Lights gantry — F1-scale signals
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(16.dp))
                         .background(Color.Black)
-                        .border(1.dp, Color(0xFF1A1A1A), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        .border(1.dp, Color(0xFF1A1A1A), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 18.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     val showGreen = stage == ReactionStage.LIGHTS_OUT || stage == ReactionStage.RESULT
                     repeat(5) { i ->
@@ -154,15 +160,15 @@ fun ReactionTimeScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
                             else -> Color(0xFF2A0A0A)
                         }
                         val glow = showGreen || i < litCount
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             repeat(2) { LightDot(color = color, glow = glow) }
                         }
                     }
                 }
                 Box(
                     modifier = Modifier
-                        .width(3.dp)
-                        .height(30.dp)
+                        .width(4.dp)
+                        .height(36.dp)
                         .background(Color(0xFF222222))
                 )
 
@@ -289,9 +295,9 @@ private fun LightDot(color: Color, glow: Boolean) {
     val anim by animateColorAsState(color, tween(90), label = "lightColor")
     Box(
         modifier = Modifier
-            .size(16.dp)
+            .size(34.dp)
             .shadow(
-                elevation = if (glow) 18.dp else 0.dp,
+                elevation = if (glow) 28.dp else 0.dp,
                 shape = CircleShape,
                 spotColor = color,
                 ambientColor = color
