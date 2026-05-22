@@ -126,6 +126,12 @@ fun VerbalMemoryScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
             rightLabel = "Best",
             rightValue = String.format("%02d", bestScore)
         )
+        androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(8.dp))
+        com.justpass.app.games.ui.components.RivalAboveStrip(
+            game = game,
+            currentScore = score.takeIf { it > 0 }?.toDouble(),
+            modifier = androidx.compose.ui.Modifier.padding(horizontal = 18.dp)
+        )
 
         // Lives strip
         Row(

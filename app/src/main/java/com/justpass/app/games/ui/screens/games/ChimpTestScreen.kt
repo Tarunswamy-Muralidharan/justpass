@@ -102,6 +102,12 @@ fun ChimpTestScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
             rightLabel = "Best",
             rightValue = String.format("%02d", bestLevel)
         )
+        androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(8.dp))
+        com.justpass.app.games.ui.components.RivalAboveStrip(
+            game = game,
+            currentScore = level.takeIf { it > 4 }?.toDouble(),
+            modifier = androidx.compose.ui.Modifier.padding(horizontal = 18.dp)
+        )
 
         // Phase + lives
         Row(

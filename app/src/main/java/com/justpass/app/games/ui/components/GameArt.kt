@@ -529,91 +529,117 @@ private fun ArtChimp() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1F0908))
+            .background(Color(0xFF1A0810))
     ) {
+        // Glow + sparse star-field background
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawCircle(
                 brush = Brush.radialGradient(
-                    listOf(BBHot.copy(alpha = 0.18f), Color.Transparent),
-                    center = Offset(size.width * 0.5f, size.height * 0.5f),
-                    radius = size.width * 0.6f
+                    listOf(BBHot.copy(alpha = 0.30f), Color.Transparent),
+                    center = Offset(size.width * 0.55f, size.height * 0.55f),
+                    radius = size.width * 0.65f
                 ),
-                radius = size.width * 0.7f,
-                center = Offset(size.width * 0.5f, size.height * 0.5f)
+                radius = size.width * 0.8f,
+                center = Offset(size.width * 0.55f, size.height * 0.55f)
             )
-            val gridCols = 7
-            val gridRows = 5
-            val w = size.width / gridCols
-            val h = size.height / gridRows
-            for (i in 0..gridCols) {
-                drawLine(
-                    Color.White.copy(alpha = 0.08f),
-                    Offset(i * w, 0f), Offset(i * w, size.height),
-                    strokeWidth = 1f
-                )
-            }
-            for (i in 0..gridRows) {
-                drawLine(
-                    Color.White.copy(alpha = 0.08f),
-                    Offset(0f, i * h), Offset(size.width, i * h),
-                    strokeWidth = 1f
+            // Sparse white-dot particles for depth
+            val dots = listOf(
+                0.10f to 0.18f, 0.30f to 0.10f, 0.85f to 0.22f,
+                0.92f to 0.50f, 0.08f to 0.80f, 0.74f to 0.86f,
+                0.20f to 0.62f, 0.50f to 0.92f
+            )
+            dots.forEach { (fx, fy) ->
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.18f),
+                    radius = 1.5f,
+                    center = Offset(size.width * fx, size.height * fy)
                 )
             }
         }
-        val nums = listOf(
-            Triple(1, 0.18f, 0.20f),
-            Triple(2, 0.62f, 0.14f),
-            Triple(3, 0.38f, 0.54f),
-            Triple(4, 0.78f, 0.62f),
-            Triple(5, 0.14f, 0.78f)
+        // Stacked numbered chips with perspective offset/rotation
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            // Back chip ("3") — most faded, rotated
+            ChimpChip(
+                num = 3,
+                rot = 14f,
+                offsetX = 18.dp,
+                offsetY = (-6).dp,
+                bg = Color.Transparent,
+                border = BBHot.copy(alpha = 0.45f),
+                txt = BBHot.copy(alpha = 0.75f)
+            )
+            // Middle chip ("2") — translucent hot
+            ChimpChip(
+                num = 2,
+                rot = -8f,
+                offsetX = (-12).dp,
+                offsetY = (-2).dp,
+                bg = BBHot.copy(alpha = 0.38f),
+                border = BBHot.copy(alpha = 0.85f),
+                txt = Color.White
+            )
+            // Front chip ("1") — solid white card with big bold number
+            ChimpChip(
+                num = 1,
+                rot = 4f,
+                offsetX = 4.dp,
+                offsetY = 6.dp,
+                bg = Color.White,
+                border = Color.White,
+                txt = BBInk,
+                size = 56.dp,
+                fontSize = 30.sp
+            )
+        }
+        // Bottom kicker label
+        Text(
+            "REMEMBER · 1 · 2 · 3",
+            color = Color.White.copy(alpha = 0.32f),
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 1.6.sp,
+            fontFamily = MonoFont,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 6.dp)
         )
-        nums.forEach { (n, fx, fy) ->
-            ChimpNumber(n, fx, fy)
-        }
     }
 }
 
 @Composable
-private fun ChimpNumber(n: Int, fx: Float, fy: Float) {
+private fun ChimpChip(
+    num: Int,
+    rot: Float,
+    offsetX: Dp,
+    offsetY: Dp,
+    bg: Color,
+    border: Color,
+    txt: Color,
+    size: Dp = 44.dp,
+    fontSize: androidx.compose.ui.unit.TextUnit = 22.sp
+) {
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .wrapContentSize(Alignment.TopStart)
+            .offset(x = offsetX, y = offsetY)
+            .rotate(rot)
+            .size(size)
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg)
+            .border(1.5.dp, border, RoundedCornerShape(10.dp)),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .offsetFraction(fx, fy)
-                .size(24.dp)
-                .clip(CircleShape)
-                .background(if (n == 1) Color.White else Color.White.copy(alpha = 0.08f))
-                .border(
-                    if (n == 1) 0.dp else 1.5.dp,
-                    if (n == 1) Color.Transparent else BBHot.copy(alpha = 0.6f),
-                    CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                "$n",
-                color = if (n == 1) BBInk else BBHot,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = DisplayFont
-            )
-        }
+        Text(
+            "$num",
+            color = txt,
+            fontSize = fontSize,
+            fontWeight = FontWeight.Black,
+            fontFamily = DisplayFont,
+            letterSpacing = (-1).sp
+        )
     }
 }
-
-private fun Modifier.offsetFraction(fx: Float, fy: Float): Modifier =
-    this.then(
-        Modifier.offset {
-            // use the parent Box's measured size via layout — but we don't have that
-            // here. Use a placeholder offset; ChimpNumber wraps in Box so caller
-            // controls layout. Keep a simple translation in dp via a fixed small
-            // canvas size assumption (~150x100 tile).
-            androidx.compose.ui.unit.IntOffset(
-                x = (fx * 150f).toInt(),
-                y = (fy * 100f).toInt()
-            )
-        }
-    )

@@ -101,6 +101,12 @@ fun VisualMemoryScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
             rightValue = String.format("%02d", bestLevel),
             rightUnit = "lvl"
         )
+        androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(8.dp))
+        com.justpass.app.games.ui.components.RivalAboveStrip(
+            game = game,
+            currentScore = level.takeIf { it > 1 }?.toDouble(),
+            modifier = androidx.compose.ui.Modifier.padding(horizontal = 18.dp)
+        )
 
         // Phase + lives strip
         Row(

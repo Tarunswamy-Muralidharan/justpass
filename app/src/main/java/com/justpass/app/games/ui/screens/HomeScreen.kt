@@ -80,13 +80,11 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 HBLogo(size = 20.dp, ink = BBInk, fill = Color.White)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CircleIcon(size = 36.dp, onClick = onLeaderboard) {
-                        Text("★", color = Color.White, fontSize = 14.sp)
-                    }
-                    CircleIcon(size = 36.dp) {
-                        Text("◔", color = Color.White, fontSize = 14.sp)
-                    }
+                CircleIcon(size = 36.dp, onClick = onLeaderboard) {
+                    com.justpass.app.games.ui.components.PodiumIcon(
+                        size = 18.dp,
+                        accent = BBHot
+                    )
                 }
             }
 

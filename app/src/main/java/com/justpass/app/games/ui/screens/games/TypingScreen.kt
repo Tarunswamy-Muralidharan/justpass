@@ -96,6 +96,12 @@ fun TypingScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
             rightValue = String.format("%02d", bestWpm),
             rightUnit = if (bestWpm > 0) "wpm" else ""
         )
+        androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(8.dp))
+        com.justpass.app.games.ui.components.RivalAboveStrip(
+            game = game,
+            currentScore = liveWpm.takeIf { it > 0 }?.toDouble(),
+            modifier = androidx.compose.ui.Modifier.padding(horizontal = 18.dp)
+        )
         AdBanner()
 
         Column(

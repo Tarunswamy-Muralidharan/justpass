@@ -42,7 +42,7 @@ private sealed class GameRoute {
 @Composable
 fun GamesNav(
     onBack: () -> Unit,
-    onLeaderboard: () -> Unit
+    onLeaderboard: (Game?) -> Unit
 ) {
     var route by remember { mutableStateOf<GameRoute>(GameRoute.Home) }
 
@@ -54,10 +54,6 @@ fun GamesNav(
         }
     }
 
-    // Reserve room at the bottom for the JustPass LiquidGlassBottomBar so
-    // game tiles and tappable surfaces (e.g. the Chimp Test grid) aren't
-    // covered by the floating bar. Bar height ≈ 68 dp + bump + navigation
-    // gesture inset ≈ 110 dp total.
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -72,11 +68,11 @@ fun GamesNav(
             when (current) {
                 GameRoute.Home -> HomeScreen(
                     onPlay = { game -> route = GameRoute.Play(game) },
-                    onLeaderboard = onLeaderboard
+                    onLeaderboard = { onLeaderboard(null) }
                 )
                 is GameRoute.Play -> {
                     val gameOnBack: () -> Unit = { route = GameRoute.Home }
-                    val gameOnLb: () -> Unit = onLeaderboard
+                    val gameOnLb: () -> Unit = { onLeaderboard(current.game) }
                     when (current.game) {
                         Game.REACTION_TIME -> ReactionTimeScreen(gameOnBack, gameOnLb)
                         Game.SEQUENCE_MEMORY -> SequenceMemoryScreen(gameOnBack, gameOnLb)

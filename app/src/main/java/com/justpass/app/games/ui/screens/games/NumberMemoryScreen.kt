@@ -131,6 +131,12 @@ fun NumberMemoryScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
             rightValue = String.format("%02d", bestDigits),
             rightUnit = if (bestDigits > 0) "digits" else ""
         )
+        androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(8.dp))
+        com.justpass.app.games.ui.components.RivalAboveStrip(
+            game = game,
+            currentScore = digits.takeIf { it > 1 }?.toDouble(),
+            modifier = androidx.compose.ui.Modifier.padding(horizontal = 18.dp)
+        )
         AdBanner()
 
         Column(

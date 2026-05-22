@@ -89,6 +89,12 @@ fun AimTrainerScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
             rightValue = if (bestMs != null) "${bestMs / 1000.0}".take(4) else "—",
             rightUnit = if (bestMs != null) "s" else ""
         )
+        androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(8.dp))
+        com.justpass.app.games.ui.components.RivalAboveStrip(
+            game = game,
+            currentScore = if (hits >= targetTotal && totalMs > 0) totalMs.toDouble() else null,
+            modifier = androidx.compose.ui.Modifier.padding(horizontal = 18.dp)
+        )
 
         // Progress bar
         Column(modifier = Modifier.padding(horizontal = 18.dp).padding(top = 14.dp)) {
