@@ -285,77 +285,20 @@ fun DashboardScreen(
                         )
                         Text(uiState.rollNumber, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    // Profile picture on the right — with pulsing ripple rings
-                    val pulseTransition = rememberInfiniteTransition(label = "profilePulse")
-                    val pulse1Alpha by pulseTransition.animateFloat(
-                        initialValue = 0.9f,
-                        targetValue = 0f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(2000, easing = LinearEasing),
-                            repeatMode = RepeatMode.Restart
-                        ),
-                        label = "p1A"
-                    )
-                    val pulse1Scale by pulseTransition.animateFloat(
-                        initialValue = 1f,
-                        targetValue = 1.6f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(2000, easing = LinearEasing),
-                            repeatMode = RepeatMode.Restart
-                        ),
-                        label = "p1S"
-                    )
-                    // Second ripple, offset by half cycle
-                    val pulse2Alpha by pulseTransition.animateFloat(
-                        initialValue = 0f,
-                        targetValue = 0f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(2000, easing = LinearEasing),
-                            repeatMode = RepeatMode.Restart
-                        ),
-                        label = "p2A"
-                    )
-                    val pulse2Scale by pulseTransition.animateFloat(
-                        initialValue = 1.3f,
-                        targetValue = 1.8f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(2000, easing = LinearEasing),
-                            repeatMode = RepeatMode.Restart
-                        ),
-                        label = "p2S"
-                    )
-                    // Manually compute second ripple alpha from first (offset by half)
-                    val ripple2Alpha = if (pulse1Scale < 1.3f) (pulse1Scale - 1f) / 0.3f * 0.7f
-                                       else (1.6f - pulse1Scale) / 0.3f * 0.7f
-
+                    // Profile picture on the right — with WebView-backed
+                    // sticker-shader rainbow ripple ring around it.
                     val primaryColor = MaterialTheme.colorScheme.primary
                     Box(
                         modifier = Modifier
-                            .size(52.dp)
+                            .size(80.dp)
                             .clickable { onProfileClick() },
                         contentAlignment = Alignment.Center
                     ) {
-                        // Ripple ring 1
-                        Box(
+                        // Shader-style gooey ripple ring (HTML/SVG-filter
+                        // hosted in a tiny transparent WebView).
+                        com.justpass.app.ui.components.ShaderRing(
+                            size = 80.dp,
                             modifier = Modifier
-                                .size(42.dp)
-                                .graphicsLayer {
-                                    scaleX = pulse1Scale
-                                    scaleY = pulse1Scale
-                                    alpha = pulse1Alpha
-                                }
-                                .border(2.dp, primaryColor, CircleShape)
-                        )
-                        // Ripple ring 2 (staggered)
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .graphicsLayer {
-                                    scaleX = pulse1Scale * 0.85f + 0.15f
-                                    scaleY = pulse1Scale * 0.85f + 0.15f
-                                    alpha = (pulse1Alpha * 0.6f).coerceIn(0f, 0.6f)
-                                }
-                                .border(1.5.dp, primaryColor.copy(alpha = 0.5f), CircleShape)
                         )
                         // Profile pic — centered
                         Box(
