@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; background:#0f0; overflow:hidden; }
+  .stage { position:fixed; inset:0; display:grid; place-items:center; }
+  .ring {
+    width: 100vmin;
+    height: 100vmin;
+    border-radius: 50%;
+    background: repeating-radial-gradient(
+      circle at center,
+      #ff0000 0px, #ffffff 2px, #ffffff 12px,
+      #0000ff 14px, #000000 16px, #000000 30px,
+      #ff0000 32px
+    );
+  }
+</style>
+</head>
+<body>
+  <div class="stage"><div class="ring"></div></div>
+</body>
+</html>

@@ -1720,15 +1720,40 @@ class WebViewAuthenticator(private val context: Context) {
 
         return withContext(Dispatchers.IO) {
             try {
-                // The SIS Angular app fetches the display picture via:
-                //   /sis/students/downloadUrl?contentType=image/jpeg&filename={roll}.jpg_{roll}&id=sis-itech/2023/displayPicture/{roll}.jpg_{roll}&originalname={roll}.jpg
-                val filename = "${rollNumber}.jpg_${rollNumber}"
-                val id = "sis-itech/2023/displayPicture/$filename"
+                // Fetch the student record to get the displayPicture sub-object
+                // (contentType, filename, id, originalname, size). The SIS Angular
+                // app forwards this whole object as query params to the downloadUrl
+                // endpoint — there's no shared format we can hardcode because each
+                // student's S3 path depends on upload year + file size.
+                val studentResp = authenticatedGet("${SIS_BASE_URL}/students/$rollNumber", token)
+                if (studentResp == null || !studentResp.isSuccessful) {
+                    android.util.Log.w("WebViewAuth", "Profile pic: student fetch failed (${studentResp?.code})")
+                    studentResp?.close()
+                    return@withContext null
+                }
+                val studentJson = studentResp.use { it.body?.string() ?: "" }
+                val displayPicture = try {
+                    org.json.JSONObject(studentJson).optJSONObject("displayPicture")
+                } catch (_: Exception) { null }
+                if (displayPicture == null) {
+                    android.util.Log.w("WebViewAuth", "Profile pic: no displayPicture field in student record")
+                    return@withContext null
+                }
+                val contentType = displayPicture.optString("contentType", "image/jpeg")
+                val filename = displayPicture.optString("filename", "")
+                val id = displayPicture.optString("id", "")
+                val originalname = displayPicture.optString("originalname", "${rollNumber}.jpg")
+                val size = displayPicture.optLong("size", 0L)
+                if (filename.isEmpty() || id.isEmpty()) {
+                    android.util.Log.w("WebViewAuth", "Profile pic: displayPicture missing filename/id")
+                    return@withContext null
+                }
+                val encodedContent = java.net.URLEncoder.encode(contentType, "UTF-8")
                 val encodedFilename = java.net.URLEncoder.encode(filename, "UTF-8")
                 val encodedId = java.net.URLEncoder.encode(id, "UTF-8")
-                val encodedOriginal = java.net.URLEncoder.encode("${rollNumber}.jpg", "UTF-8")
+                val encodedOriginal = java.net.URLEncoder.encode(originalname, "UTF-8")
                 val url = java.net.URL(
-                    "${SIS_BASE_URL}/students/downloadUrl?contentType=image%2Fjpeg&filename=$encodedFilename&id=$encodedId&originalname=$encodedOriginal&size=79087"
+                    "${SIS_BASE_URL}/students/downloadUrl?contentType=$encodedContent&filename=$encodedFilename&id=$encodedId&originalname=$encodedOriginal&size=$size"
                 )
                 android.util.Log.d("WebViewAuth", "Fetching profile pic URL: $url")
                 val connection = url.openConnection() as java.net.HttpURLConnection
