@@ -290,23 +290,25 @@ fun DashboardScreen(
                     val primaryColor = MaterialTheme.colorScheme.primary
                     Box(
                         modifier = Modifier
-                            .size(80.dp)
+                            .size(48.dp)
                             .clickable { onProfileClick() },
                         contentAlignment = Alignment.Center
                     ) {
-                        // Shader-style gooey ripple ring (HTML/SVG-filter
-                        // hosted in a tiny transparent WebView).
+                        // Rainbow gooey ripple ring (animated WebP asset,
+                        // 400px canvas, 26px ring width). Container sized
+                        // so the ring's inner edge sits right at the 42dp
+                        // profile picture's outer edge.
                         com.justpass.app.ui.components.ShaderRing(
-                            size = 80.dp,
+                            size = 48.dp,
                             modifier = Modifier
                         )
-                        // Profile pic — centered
+                        // Profile pic — centered (no border; the rainbow
+                        // ring frames the picture already).
                         Box(
                             modifier = Modifier
                                 .size(42.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                .border(1.5.dp, primaryColor.copy(alpha = 0.4f), CircleShape),
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
                             contentAlignment = Alignment.Center
                         ) {
                             val pb = profileBitmap
