@@ -147,9 +147,8 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
 
             _uiState.value = _uiState.value.copy(myProfile = profile, isLoading = false)
 
-            if (profile.gamesPlayed == 0 && profile.nameMode == "random") {
-                _uiState.value = _uiState.value.copy(showNameSetup = true)
-            }
+            // Name setup dialog removed — chess now uses the biodata real
+            // name unconditionally (see ChessProfile.visibleName).
 
             lobby.goOnline(myPlayerId, profile.visibleName)
             _uiState.value = _uiState.value.copy(isOnline = true)

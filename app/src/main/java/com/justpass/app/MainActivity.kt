@@ -135,6 +135,7 @@ class MainActivity : ComponentActivity() {
         HolidayNotificationWorker.schedule(this)
         com.justpass.app.worker.ClassMarksUploadWorker.schedule(this)
         com.justpass.app.worker.LeaderboardBeatenWorker.schedule(this)
+        com.justpass.app.worker.BugReplyNotifWorker.schedule(this)
         setContent {
             AttendanceWidgetLaudeaTheme {
                 AttendanceApp()
@@ -182,6 +183,8 @@ fun AttendanceApp() {
             "calendar" -> Screen.AcademicCalendar
             "circulars" -> Screen.Circulars
             "games_leaderboard" -> Screen.GamesLeaderboard
+            "bug_report" -> Screen.BugReport
+            "bug_inbox" -> Screen.BugReportInbox
             else -> Screen.Dashboard
         }
     var currentScreen by remember { mutableStateOf(initialScreen) }

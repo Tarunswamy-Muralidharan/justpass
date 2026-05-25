@@ -22,8 +22,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.justpass.app.data.local.SecurePreferences
 import com.justpass.app.games.data.api.ScoresApi
 import com.justpass.app.games.data.local.ScorePrefs
 import com.justpass.app.games.data.model.Game
@@ -31,17 +33,20 @@ import com.justpass.app.games.data.model.ScoreRow
 import kotlin.math.abs
 
 /**
- * Strip shown during gameplay that names the classmate one step above you
- * on the section leaderboard, with the points needed to overtake. Scopes
- * to the player's section by default; falls back to college if biodata
- * isn't loaded.
+ * Strip shown during gameplay that names the next player above the user
+ * on the section leaderboard + the points needed to overtake. As the user
+ * climbs past a rival mid-game, the strip automatically advances to the
+ * next one. When the user has overtaken every other player in their
+ * section, switches to the "TOP — beat your record" chip.
  *
- * The leaderboard is fetched once when the strip enters composition. If
- * the user has no biodata + no scores yet, the strip renders nothing.
+ * Scopes to the player's section via biodata; falls back to college if
+ * biodata isn't loaded. Scope label uses the programme name (e.g.
+ * "Computer Science and Business Systems") instead of the literal word
+ * "SECTION".
  *
  * @param currentScore caller's live in-run score. null = haven't scored
- *                     yet (show the bottom of the section ladder as the
- *                     first target).
+ *                     yet (show the bottom of the ladder as the first
+ *                     target).
  */
 @Composable
 fun RivalAboveStrip(
@@ -51,21 +56,41 @@ fun RivalAboveStrip(
 ) {
     val context = LocalContext.current
     val prefs = remember { ScorePrefs.getInstance(context) }
+    val securePrefs = remember { SecurePreferences.getInstance(context) }
     val api = remember { ScoresApi() }
     val classId = remember { prefs.classId }
     val selfId = remember { prefs.playerId }
+    // Programme name (e.g. "Computer Science and Business Systems") for
+    // the scope label. Falls back to dept code or "MY GROUP" if biodata
+    // hasn't hydrated.
+    val scopeLabel = remember {
+        (securePrefs.programmeName?.takeIf { it.isNotBlank() }
+            ?: securePrefs.cachedDepartment?.takeIf { it.isNotBlank() }
+            ?: "MY GROUP").uppercase()
+    }
+    // True if the underlying rows came from the section query (not the
+    // college fallback). Affects whether the LeadingChip references the
+    // programme or the whole college.
+    var sourcedFromSection by remember { mutableStateOf(false) }
 
     var rows by remember(game, classId) { mutableStateOf<List<ScoreRow>>(emptyList()) }
     LaunchedEffect(game, classId) {
-        // Prefer section. If biodata absent, fall back to college.
         val section = if (classId != null) api.leaderboard(game, classId = classId) else emptyList()
-        rows = if (section.isNotEmpty()) section else api.leaderboard(game, classId = null)
+        if (section.isNotEmpty()) {
+            rows = section
+            sourcedFromSection = true
+        } else {
+            rows = api.leaderboard(game, classId = null)
+            sourcedFromSection = false
+        }
     }
 
     if (rows.isEmpty()) return
     val others = rows.filter { it.playerId != selfId }
     if (others.isEmpty()) return
 
+    // Recompute on every recomposition so the rival advances as the user's
+    // in-run score climbs past leaderboard entries.
     val rival: ScoreRow? = when {
         currentScore == null -> {
             // Not yet on board — first target is the bottom of the ladder.
@@ -74,20 +99,21 @@ fun RivalAboveStrip(
         }
         game.lowerIsBetter -> {
             // Lower is better → "above me" = faster (lower) than current.
-            // Closest among those = nearest lower neighbour.
+            // Nearest lower neighbour = the next one to beat.
             others.filter { it.bestScore < currentScore }
                 .maxByOrNull { it.bestScore }
         }
         else -> {
             // Higher is better → "above me" = scored more than current.
+            // Nearest higher neighbour = the next one to beat.
             others.filter { it.bestScore > currentScore }
                 .minByOrNull { it.bestScore }
         }
     }
 
     if (rival == null) {
-        // Leading the board — nobody above.
-        LeadingChip(game = game, modifier = modifier)
+        // Surpassed everyone in the chosen scope.
+        LeadingChip(game = game, scopeLabel = scopeLabel, modifier = modifier)
         return
     }
 
@@ -96,7 +122,7 @@ fun RivalAboveStrip(
     val rivalScore = formatScore(rival.bestScore, game)
     val gap = formatScore(diff, game)
     val verb = if (currentScore == null) "first target" else "to beat"
-    val scopeLabel = if (classId != null && rows === rows /* section */) "SECTION" else "COLLEGE"
+    val effectiveLabel = if (sourcedFromSection) scopeLabel else "WHOLE COLLEGE"
 
     Row(
         modifier = modifier
@@ -114,11 +140,12 @@ fun RivalAboveStrip(
                 .padding(horizontal = 7.dp, vertical = 3.dp)
         ) {
             Text(
-                "RIVAL · $scopeLabel",
+                "RIVAL · $effectiveLabel",
                 color = Color(0xFF0A0A1A),
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Black,
-                letterSpacing = 1.2.sp
+                letterSpacing = 1.2.sp,
+                maxLines = 1
             )
         }
         Column(
@@ -144,7 +171,7 @@ fun RivalAboveStrip(
 }
 
 @Composable
-private fun LeadingChip(game: Game, modifier: Modifier = Modifier) {
+private fun LeadingChip(game: Game, scopeLabel: String, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -156,11 +183,13 @@ private fun LeadingChip(game: Game, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.Center
     ) {
         Text(
-            "LEADING THIS SECTION",
+            "TOP OF $scopeLabel · BEAT YOUR RECORD",
             color = game.accent,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Black,
-            letterSpacing = 1.6.sp
+            letterSpacing = 1.4.sp,
+            textAlign = TextAlign.Center,
+            maxLines = 1
         )
     }
 }

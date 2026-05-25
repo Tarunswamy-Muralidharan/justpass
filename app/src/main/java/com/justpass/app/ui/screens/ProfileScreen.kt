@@ -431,10 +431,32 @@ fun ProfileScreen(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                val bugReplyUnread by com.justpass.app.ui.components.rememberBugReplyUnread()
                 ListItem(
-                    headlineContent = { Text("Report Bug / Feature Request") },
+                    headlineContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Report Bug / Feature Request")
+                            if (bugReplyUnread) {
+                                Spacer(Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFFF1744))
+                                )
+                            }
+                        }
+                    },
                     leadingContent = { Icon(Icons.Default.Feedback, null) },
-                    supportingContent = { Text("Tell me what's broken — text + screenshot", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    supportingContent = {
+                        Text(
+                            if (bugReplyUnread) "New reply waiting"
+                            else "Tell me what's broken — text + screenshot",
+                            fontSize = 12.sp,
+                            color = if (bugReplyUnread) Color(0xFFFF1744)
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
                     modifier = Modifier.clickable {
                         Analytics.logProfileAction("bug_report")
                         onBugReportClick()

@@ -10,7 +10,9 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.storage.FirebaseStorage
 import com.justpass.app.data.model.BugReport
+import com.justpass.app.data.model.BugReportMessage
 import kotlinx.coroutines.tasks.await
+import com.google.firebase.firestore.FieldValue
 import java.io.ByteArrayOutputStream
 
 /**
@@ -46,6 +48,7 @@ class BugReportRepository(private val context: Context) {
                 imageUrl = uploadImageOrEmpty(imageUri, requestId)
             }
 
+            val now = System.currentTimeMillis()
             val payload = hashMapOf(
                 "reporterPlayerId" to report.reporterPlayerId,
                 "reporterName" to report.reporterName,
@@ -59,8 +62,12 @@ class BugReportRepository(private val context: Context) {
                 "appVersion" to report.appVersion,
                 "status" to "open",
                 "resolution" to "",
-                "createdAt" to System.currentTimeMillis(),
-                "resolvedAt" to 0L
+                "createdAt" to now,
+                "resolvedAt" to 0L,
+                "messages" to emptyList<Map<String, Any>>(),
+                // New report → admin has unread, user doesn't (they sent it).
+                "adminUnread" to true,
+                "userUnread" to false
             )
             docRef.set(payload).await()
             requestId
@@ -122,27 +129,7 @@ class BugReportRepository(private val context: Context) {
                     onUpdate(emptyList())
                     return@addSnapshotListener
                 }
-                val list = snap?.documents?.map { doc ->
-                    BugReport(
-                        id = doc.id,
-                        reporterPlayerId = doc.getString("reporterPlayerId") ?: "",
-                        reporterName = doc.getString("reporterName") ?: "",
-                        reporterRollNumber = doc.getString("reporterRollNumber") ?: "",
-                        reporterDepartment = doc.getString("reporterDepartment") ?: "",
-                        title = doc.getString("title") ?: "",
-                        description = doc.getString("description") ?: "",
-                        imageUrl = doc.getString("imageUrl") ?: "",
-                        deviceModel = doc.getString("deviceModel") ?: "",
-                        osVersion = doc.getString("osVersion") ?: "",
-                        appVersion = doc.getString("appVersion") ?: "",
-                        status = doc.getString("status") ?: "open",
-                        resolution = doc.getString("resolution") ?: "",
-                        createdAt = doc.getLong("createdAt") ?: 0L,
-                        resolvedAt = doc.getLong("resolvedAt") ?: 0L,
-                        adminReply = doc.getString("adminReply") ?: "",
-                        repliedAt = doc.getLong("repliedAt") ?: 0L
-                    )
-                } ?: emptyList()
+                val list = snap?.documents?.map { doc -> doc.toBugReport() } ?: emptyList()
                 onUpdate(list)
             }
     }
@@ -158,27 +145,7 @@ class BugReportRepository(private val context: Context) {
                     onUpdate(emptyList())
                     return@addSnapshotListener
                 }
-                val list = snap?.documents?.map { doc ->
-                    BugReport(
-                        id = doc.id,
-                        reporterPlayerId = doc.getString("reporterPlayerId") ?: "",
-                        reporterName = doc.getString("reporterName") ?: "",
-                        reporterRollNumber = doc.getString("reporterRollNumber") ?: "",
-                        reporterDepartment = doc.getString("reporterDepartment") ?: "",
-                        title = doc.getString("title") ?: "",
-                        description = doc.getString("description") ?: "",
-                        imageUrl = doc.getString("imageUrl") ?: "",
-                        deviceModel = doc.getString("deviceModel") ?: "",
-                        osVersion = doc.getString("osVersion") ?: "",
-                        appVersion = doc.getString("appVersion") ?: "",
-                        status = doc.getString("status") ?: "open",
-                        resolution = doc.getString("resolution") ?: "",
-                        createdAt = doc.getLong("createdAt") ?: 0L,
-                        resolvedAt = doc.getLong("resolvedAt") ?: 0L,
-                        adminReply = doc.getString("adminReply") ?: "",
-                        repliedAt = doc.getLong("repliedAt") ?: 0L
-                    )
-                } ?: emptyList()
+                val list = snap?.documents?.map { doc -> doc.toBugReport() } ?: emptyList()
                 onUpdate(list)
             }
     }
@@ -198,16 +165,87 @@ class BugReportRepository(private val context: Context) {
     }
 
     suspend fun setReply(reportId: String, message: String): Boolean {
+        // Kept for backwards compat with any callers still using the old
+        // single-reply path. New flows should use [appendMessage].
+        return appendMessage(reportId, from = "admin", text = message)
+    }
+
+    /**
+     * Append a new message to the conversation thread + flip the
+     * opposite side's unread flag. [from] is `"user"` or `"admin"`.
+     */
+    suspend fun appendMessage(reportId: String, from: String, text: String): Boolean {
+        if (text.isBlank()) return false
         return try {
-            reports.document(reportId).update(mapOf(
-                "adminReply" to message,
-                "repliedAt" to System.currentTimeMillis()
-            )).await()
+            val now = System.currentTimeMillis()
+            val msg = mapOf("from" to from, "text" to text, "timestamp" to now)
+            val unreadField = if (from == "admin") "userUnread" else "adminUnread"
+            val updates = mutableMapOf<String, Any>(
+                "messages" to FieldValue.arrayUnion(msg),
+                unreadField to true
+            )
+            if (from == "admin") {
+                // Keep legacy single-reply fields in sync for older clients.
+                updates["adminReply"] = text
+                updates["repliedAt"] = now
+            } else {
+                updates["lastUserMessageAt"] = now
+            }
+            reports.document(reportId).update(updates).await()
             true
         } catch (e: Exception) {
-            Log.e(TAG, "setReply failed: ${e.message}")
+            Log.e(TAG, "appendMessage failed: ${e.message}")
             false
         }
+    }
+
+    /**
+     * Mark the [side]'s ("user" or "admin") unread flag false. Called
+     * when that side opens the thread for that report.
+     */
+    suspend fun markRead(reportId: String, side: String): Boolean {
+        val field = if (side == "user") "userUnread" else "adminUnread"
+        return try {
+            reports.document(reportId).update(field, false).await()
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "markRead failed: ${e.message}")
+            false
+        }
+    }
+
+    private fun com.google.firebase.firestore.DocumentSnapshot.toBugReport(): BugReport {
+        @Suppress("UNCHECKED_CAST")
+        val rawMsgs = get("messages") as? List<Map<String, Any?>>
+        val msgs = rawMsgs?.map { m ->
+            BugReportMessage(
+                from = (m["from"] as? String) ?: "user",
+                text = (m["text"] as? String) ?: "",
+                timestamp = (m["timestamp"] as? Number)?.toLong() ?: 0L
+            )
+        } ?: emptyList()
+        return BugReport(
+            id = id,
+            reporterPlayerId = getString("reporterPlayerId") ?: "",
+            reporterName = getString("reporterName") ?: "",
+            reporterRollNumber = getString("reporterRollNumber") ?: "",
+            reporterDepartment = getString("reporterDepartment") ?: "",
+            title = getString("title") ?: "",
+            description = getString("description") ?: "",
+            imageUrl = getString("imageUrl") ?: "",
+            deviceModel = getString("deviceModel") ?: "",
+            osVersion = getString("osVersion") ?: "",
+            appVersion = getString("appVersion") ?: "",
+            status = getString("status") ?: "open",
+            resolution = getString("resolution") ?: "",
+            createdAt = getLong("createdAt") ?: 0L,
+            resolvedAt = getLong("resolvedAt") ?: 0L,
+            messages = msgs,
+            userUnread = getBoolean("userUnread") ?: false,
+            adminUnread = getBoolean("adminUnread") ?: false,
+            adminReply = getString("adminReply") ?: "",
+            repliedAt = getLong("repliedAt") ?: 0L
+        )
     }
 
     companion object { private const val TAG = "BugReportRepo" }

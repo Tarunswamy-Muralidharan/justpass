@@ -111,6 +111,7 @@ fun BugReportScreen(
         if (selectedTab == 1) {
             MyReportsTab(
                 reports = state.myReports,
+                onSendReply = { id, msg -> viewModel.replyAsUser(id, msg) },
                 modifier = Modifier.fillMaxSize().padding(padding)
             )
             return@Scaffold
@@ -222,7 +223,7 @@ fun BugReportScreen(
 }
 
 @Composable
-private fun MyReportsTab(reports: List<BugReport>, modifier: Modifier = Modifier) {
+private fun MyReportsTab(reports: List<BugReport>, onSendReply: (String, String) -> Unit, modifier: Modifier = Modifier) {
     if (reports.isEmpty()) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -240,12 +241,12 @@ private fun MyReportsTab(reports: List<BugReport>, modifier: Modifier = Modifier
         contentPadding = PaddingValues(vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(reports) { r -> MyReportCard(r) }
+        items(reports) { r -> MyReportCard(r, onSend = { msg -> onSendReply(r.id, msg) }) }
     }
 }
 
 @Composable
-private fun MyReportCard(r: BugReport) {
+private fun MyReportCard(r: BugReport, onSend: (String) -> Unit) {
     val tint = when (r.status) {
         "fixed" -> Color(0xFF00E676).copy(alpha = 0.10f)
         "wontfix", "duplicate" -> Color(0xFF90A4AE).copy(alpha = 0.10f)
@@ -260,8 +261,21 @@ private fun MyReportCard(r: BugReport) {
     val date = remember(r.createdAt) {
         SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(Date(r.createdAt))
     }
+    // Merge legacy adminReply (single field) with the new messages array
+    // so threads created before this migration still render correctly.
+    val thread = remember(r.id, r.messages, r.adminReply, r.repliedAt) {
+        val arr = r.messages.toMutableList()
+        if (r.adminReply.isNotBlank() && arr.none { it.text == r.adminReply && it.from == "admin" }) {
+            arr.add(com.justpass.app.data.model.BugReportMessage(
+                from = "admin", text = r.adminReply, timestamp = r.repliedAt
+            ))
+        }
+        arr.sortedBy { it.timestamp }
+    }
+    var draft by remember(r.id) { mutableStateOf("") }
+
     GlassListCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), tintColor = tint) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(r.title, fontWeight = FontWeight.Bold, fontSize = 15.sp,
                     color = Color.White, modifier = Modifier.weight(1f))
@@ -278,33 +292,62 @@ private fun MyReportCard(r: BugReport) {
             Text(date, fontSize = 11.sp, color = Color(0xFF90A4AE))
             Text(r.description, fontSize = 13.sp, color = Color(0xFFCFD8DC))
 
-            if (r.adminReply.isNotBlank()) {
-                val replyDate = remember(r.repliedAt) {
-                    if (r.repliedAt > 0L)
-                        SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(Date(r.repliedAt))
-                    else ""
-                }
-                Box(
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF1E2A3A))
-                        .padding(10.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(12.dp),
-                                tint = Color(0xFF64B5F6))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Reply from developer", fontSize = 10.sp,
-                                color = Color(0xFF64B5F6), fontWeight = FontWeight.Bold)
-                            if (replyDate.isNotBlank()) {
-                                Spacer(Modifier.weight(1f))
-                                Text(replyDate, fontSize = 10.sp, color = Color(0xFF607D8B))
-                            }
-                        }
-                        Text(r.adminReply, fontSize = 12.sp, color = Color(0xFFCFD8DC))
-                    }
+            // Conversation thread bubbles
+            thread.forEach { m -> MessageBubble(m) }
+
+            // Inline reply input — user can keep the thread going.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { if (it.length <= 500) draft = it },
+                    placeholder = { Text("Reply…", fontSize = 12.sp) },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = Color.White),
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp)
+                )
+                TextButton(
+                    onClick = {
+                        if (draft.isNotBlank()) { onSend(draft.trim()); draft = "" }
+                    },
+                    enabled = draft.isNotBlank()
+                ) { Text("Send", fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageBubble(m: com.justpass.app.data.model.BugReportMessage) {
+    val isAdmin = m.from == "admin"
+    val bg = if (isAdmin) Color(0xFF1E2A3A) else Color(0xFF1B3A1E)
+    val accent = if (isAdmin) Color(0xFF64B5F6) else Color(0xFF81C784)
+    val label = if (isAdmin) "Developer" else "You"
+    val time = remember(m.timestamp) {
+        if (m.timestamp > 0L)
+            SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(Date(m.timestamp))
+        else ""
+    }
+    Box(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .padding(10.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(12.dp), tint = accent)
+                Spacer(Modifier.width(4.dp))
+                Text(label, fontSize = 10.sp, color = accent, fontWeight = FontWeight.Bold)
+                if (time.isNotBlank()) {
+                    Spacer(Modifier.weight(1f))
+                    Text(time, fontSize = 10.sp, color = Color(0xFF607D8B))
                 }
             }
+            Text(m.text, fontSize = 12.sp, color = Color(0xFFCFD8DC))
         }
     }
 }
