@@ -285,30 +285,63 @@ fun DashboardScreen(
                         )
                         Text(uiState.rollNumber, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    // Profile picture on the right — with WebView-backed
-                    // sticker-shader rainbow ripple ring around it.
+                    // Profile picture on the right — with pulsing ripple rings
+                    val pulseTransition = rememberInfiniteTransition(label = "profilePulse")
+                    val pulse1Alpha by pulseTransition.animateFloat(
+                        initialValue = 0.9f,
+                        targetValue = 0f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(2000, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "p1A"
+                    )
+                    val pulse1Scale by pulseTransition.animateFloat(
+                        initialValue = 1f,
+                        targetValue = 1.6f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(2000, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "p1S"
+                    )
+
                     val primaryColor = MaterialTheme.colorScheme.primary
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(52.dp)
                             .clickable { onProfileClick() },
                         contentAlignment = Alignment.Center
                     ) {
-                        // Rainbow gooey ripple ring (animated WebP asset,
-                        // 400px canvas, 26px ring width). Container sized
-                        // so the ring's inner edge sits right at the 42dp
-                        // profile picture's outer edge.
-                        com.justpass.app.ui.components.ShaderRing(
-                            size = 48.dp,
+                        // Ripple ring 1
+                        Box(
                             modifier = Modifier
+                                .size(42.dp)
+                                .graphicsLayer {
+                                    scaleX = pulse1Scale
+                                    scaleY = pulse1Scale
+                                    alpha = pulse1Alpha
+                                }
+                                .border(2.dp, primaryColor, CircleShape)
                         )
-                        // Profile pic — centered (no border; the rainbow
-                        // ring frames the picture already).
+                        // Ripple ring 2 (staggered)
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .graphicsLayer {
+                                    scaleX = pulse1Scale * 0.85f + 0.15f
+                                    scaleY = pulse1Scale * 0.85f + 0.15f
+                                    alpha = (pulse1Alpha * 0.6f).coerceIn(0f, 0.6f)
+                                }
+                                .border(1.5.dp, primaryColor.copy(alpha = 0.5f), CircleShape)
+                        )
+                        // Profile pic — centered
                         Box(
                             modifier = Modifier
                                 .size(42.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .border(1.5.dp, primaryColor.copy(alpha = 0.4f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             val pb = profileBitmap
