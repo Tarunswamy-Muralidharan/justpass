@@ -122,6 +122,7 @@ class BugReportViewModel(application: Application) : AndroidViewModel(applicatio
         inboxListener?.remove()
         inboxListener = repo.listenAllReports { list ->
             _uiState.value = _uiState.value.copy(reports = list)
+            list.filter { it.adminUnread }.forEach { markReadAsAdmin(it.id) }
         }
     }
 
@@ -129,13 +130,17 @@ class BugReportViewModel(application: Application) : AndroidViewModel(applicatio
         inboxListener?.remove(); inboxListener = null
     }
 
-    /** Reporter-side: listen to my own reports so admin replies appear live. */
+    /** Reporter-side: listen to my own reports so admin replies appear live.
+     *  Auto-clears the user's unread flag on any report that has it set —
+     *  the dot indicator on dashboard + profile tile drops the moment the
+     *  user opens BugReportScreen. */
     fun startListeningMine() {
         val pid = _uiState.value.reporterPlayerId
         if (pid.isBlank()) return
         mineListener?.remove()
         mineListener = repo.listenMyReports(pid) { list ->
             _uiState.value = _uiState.value.copy(myReports = list)
+            list.filter { it.userUnread }.forEach { markReadAsUser(it.id) }
         }
     }
 
@@ -149,11 +154,30 @@ class BugReportViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /** Admin (developer) appends a reply to the thread. */
     fun replyToReport(reportId: String, message: String) {
         if (message.isBlank()) return
         viewModelScope.launch {
-            repo.setReply(reportId, message.trim().take(500))
+            repo.appendMessage(reportId, from = "admin", text = message.trim().take(500))
         }
+    }
+
+    /** User appends a follow-up message to one of their own reports. */
+    fun replyAsUser(reportId: String, message: String) {
+        if (message.isBlank()) return
+        viewModelScope.launch {
+            repo.appendMessage(reportId, from = "user", text = message.trim().take(500))
+        }
+    }
+
+    /** Mark the thread as read on the user's side (clears the dot). */
+    fun markReadAsUser(reportId: String) {
+        viewModelScope.launch { repo.markRead(reportId, "user") }
+    }
+
+    /** Mark the thread as read on the admin's side (clears the dot). */
+    fun markReadAsAdmin(reportId: String) {
+        viewModelScope.launch { repo.markRead(reportId, "admin") }
     }
 
     override fun onCleared() {

@@ -307,6 +307,7 @@ fun DashboardScreen(
                     )
 
                     val primaryColor = MaterialTheme.colorScheme.primary
+                    val bugReplyUnread by com.justpass.app.ui.components.rememberBugReplyUnread()
                     Box(
                         modifier = Modifier
                             .size(52.dp)
@@ -359,6 +360,17 @@ fun DashboardScreen(
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
+                        }
+                        // Red dot indicator — unread bug-report reply.
+                        if (bugReplyUnread) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFF1744))
+                                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                            )
                         }
                     }
                 }

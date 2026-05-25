@@ -131,35 +131,19 @@ private fun ReportCard(
                 }
             }
 
-            // Existing admin reply (if any) shown inline so the admin can
-            // see what they previously sent and edit on tap.
-            if (r.adminReply.isNotBlank()) {
-                val replyDate = remember(r.repliedAt) {
-                    if (r.repliedAt > 0L)
-                        SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(Date(r.repliedAt))
-                    else ""
+            // Full conversation thread — user + admin messages in time order.
+            // Merges legacy adminReply (single field) with the new messages
+            // array so older reports still display correctly.
+            val thread = remember(r.id, r.messages, r.adminReply, r.repliedAt) {
+                val arr = r.messages.toMutableList()
+                if (r.adminReply.isNotBlank() && arr.none { it.text == r.adminReply && it.from == "admin" }) {
+                    arr.add(com.justpass.app.data.model.BugReportMessage(
+                        from = "admin", text = r.adminReply, timestamp = r.repliedAt
+                    ))
                 }
-                Box(
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF1E2A3A))
-                        .padding(10.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(12.dp),
-                                tint = Color(0xFF64B5F6))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Your reply", fontSize = 10.sp, color = Color(0xFF64B5F6),
-                                fontWeight = FontWeight.Bold)
-                            if (replyDate.isNotBlank()) {
-                                Spacer(Modifier.weight(1f))
-                                Text(replyDate, fontSize = 10.sp, color = Color(0xFF607D8B))
-                            }
-                        }
-                        Text(r.adminReply, fontSize = 12.sp, color = Color(0xFFCFD8DC))
-                    }
-                }
+                arr.sortedBy { it.timestamp }
             }
+            thread.forEach { m -> AdminMessageBubble(m) }
 
             HorizontalDivider(color = Color(0xFF263238))
             Text("Reporter", fontSize = 11.sp, color = Color(0xFF607D8B))
@@ -198,10 +182,7 @@ private fun ReportCard(
                     Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(14.dp),
                         tint = Color(0xFF64B5F6))
                     Spacer(Modifier.width(4.dp))
-                    Text(
-                        if (r.adminReply.isBlank()) "Reply" else "Edit reply",
-                        fontSize = 12.sp, color = Color(0xFF64B5F6)
-                    )
+                    Text("Reply", fontSize = 12.sp, color = Color(0xFF64B5F6))
                 }
             }
         }
@@ -209,13 +190,44 @@ private fun ReportCard(
 
     if (showReplyDialog) {
         ReplyDialog(
-            initial = r.adminReply,
+            initial = "", // Always start blank — replies append, never overwrite.
             onDismiss = { showReplyDialog = false },
             onSend = { msg ->
                 onSendReply(msg)
                 showReplyDialog = false
             }
         )
+    }
+}
+
+@Composable
+private fun AdminMessageBubble(m: com.justpass.app.data.model.BugReportMessage) {
+    val isAdmin = m.from == "admin"
+    val bg = if (isAdmin) Color(0xFF1E2A3A) else Color(0xFF2A1E3A)
+    val accent = if (isAdmin) Color(0xFF64B5F6) else Color(0xFFFFB74D)
+    val label = if (isAdmin) "You (developer)" else "Reporter"
+    val time = remember(m.timestamp) {
+        if (m.timestamp > 0L)
+            SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(Date(m.timestamp))
+        else ""
+    }
+    Box(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .padding(10.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(12.dp), tint = accent)
+                Spacer(Modifier.width(4.dp))
+                Text(label, fontSize = 10.sp, color = accent, fontWeight = FontWeight.Bold)
+                if (time.isNotBlank()) {
+                    Spacer(Modifier.weight(1f))
+                    Text(time, fontSize = 10.sp, color = Color(0xFF607D8B))
+                }
+            }
+            Text(m.text, fontSize = 12.sp, color = Color(0xFFCFD8DC))
+        }
     }
 }
 

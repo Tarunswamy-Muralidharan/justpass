@@ -67,11 +67,10 @@ data class ChessProfile(
     val lastOnline: Long = 0L
 ) {
     val rating: Int get() = 1000 + (wins * 15) - (losses * 10) + (draws * 3)
-    val visibleName: String get() = when (nameMode) {
-        "custom" -> nickname.ifBlank { displayName }
-        "real" -> displayName
-        else -> nickname // random name stored in nickname field
-    }
+    // Always show the real biodata name. Anonymous nicknames removed
+    // 2026-05-25 — same identity across PWA + Android, no more guessing
+    // who's who behind a random `SilentKnight#42` handle.
+    val visibleName: String get() = displayName.ifBlank { nickname }
 }
 
 data class FriendRequest(

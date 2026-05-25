@@ -77,15 +77,20 @@ class ChessRepository {
             ensureFirebaseAuth()
             val doc = profileCollection.document(playerId).get().await()
             if (doc.exists()) {
+                // Force-overwrite stored displayName with the current
+                // biodata real name + lock nameMode to "real" — the
+                // anonymous nickname mode was removed 2026-05-25.
+                val storedName = doc.getString("displayName") ?: ""
+                if (storedName != realName || doc.getString("nameMode") != "real") {
+                    profileCollection.document(playerId).update(
+                        mapOf("displayName" to realName, "nameMode" to "real")
+                    ).await()
+                }
                 ChessProfile(
                     id = doc.id,
-                    // Prefer the stored displayName so callers passing a wrong
-                    // realName (e.g. abandonment-credit path used to pass the
-                    // opponent's name) don't corrupt the local profile and flip
-                    // the Game Over dialog's "$myName wins!" between players.
-                    displayName = doc.getString("displayName") ?: realName,
-                    nickname = doc.getString("nickname") ?: generateRandomName(rollNumber),
-                    nameMode = doc.getString("nameMode") ?: "random",
+                    displayName = realName,
+                    nickname = doc.getString("nickname") ?: "",
+                    nameMode = "real",
                     wins = doc.getLong("wins")?.toInt() ?: 0,
                     losses = doc.getLong("losses")?.toInt() ?: 0,
                     draws = doc.getLong("draws")?.toInt() ?: 0,
@@ -93,11 +98,12 @@ class ChessRepository {
                     lastOnline = doc.getLong("lastOnline") ?: 0L
                 )
             } else {
-                val randomName = generateRandomName(rollNumber)
+                // Fresh profile uses real name; nickname field is kept for
+                // backwards compat with old PWA reads but no longer surfaced.
                 val profile = hashMapOf(
                     "displayName" to realName,
-                    "nickname" to randomName,
-                    "nameMode" to "random",
+                    "nickname" to "",
+                    "nameMode" to "real",
                     "wins" to 0,
                     "losses" to 0,
                     "draws" to 0,
@@ -105,7 +111,7 @@ class ChessRepository {
                     "lastOnline" to System.currentTimeMillis()
                 )
                 profileCollection.document(playerId).set(profile).await()
-                ChessProfile(id = playerId, displayName = realName, nickname = randomName)
+                ChessProfile(id = playerId, displayName = realName, nameMode = "real")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Profile error: ${e.message}")
