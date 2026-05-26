@@ -65,6 +65,7 @@ import com.google.android.gms.ads.RequestConfiguration
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.remoteConfigSettings
 import com.justpass.app.worker.AttendanceRefreshWorker
+import com.justpass.app.worker.CAMarksNotificationWorker
 import com.justpass.app.worker.CircularNotificationWorker
 import com.justpass.app.worker.HolidayNotificationWorker
 import kotlinx.coroutines.delay
@@ -133,6 +134,7 @@ class MainActivity : ComponentActivity() {
         AttendanceRefreshWorker.schedulePeriodicRefresh(this)
         CircularNotificationWorker.schedule(this)
         HolidayNotificationWorker.schedule(this)
+        CAMarksNotificationWorker.schedule(this)
         com.justpass.app.worker.ClassMarksUploadWorker.schedule(this)
         com.justpass.app.worker.LeaderboardBeatenWorker.schedule(this)
         com.justpass.app.worker.BugReplyNotifWorker.schedule(this)
@@ -185,8 +187,10 @@ fun AttendanceApp() {
             "games_leaderboard" -> Screen.GamesLeaderboard
             "bug_report" -> Screen.BugReport
             "bug_inbox" -> Screen.BugReportInbox
+            "camarks" -> Screen.Dashboard
             else -> Screen.Dashboard
         }
+    val initialTabIndex = if (navigateTo == "camarks") 1 else 0
     var currentScreen by remember { mutableStateOf(initialScreen) }
     // Selected leaderboard game when launched from a game-over screen or
     // a "beaten" notification. null = open Overall tab.
@@ -195,7 +199,7 @@ fun AttendanceApp() {
             notifLeaderboardGameId?.let { com.justpass.app.games.data.model.Game.fromId(it) }
         )
     }
-    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var selectedTabIndex by remember { mutableIntStateOf(initialTabIndex) }
     var selectedCourseCode by remember { mutableStateOf("") }
     var selectedCourseTitle by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf(securePrefs.displayName ?: "") }

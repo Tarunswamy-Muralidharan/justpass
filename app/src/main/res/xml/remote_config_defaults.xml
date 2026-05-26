@@ -68,4 +68,12 @@
         <key>class_compare_enabled</key>
         <value>false</value>
     </entry>
+    <entry>
+        <!-- Minimum required versionCode. Clients whose installed versionCode
+             is below this value see a non-dismissable "Update Required" dialog
+             and cannot use the app until they update. Bump this in Firebase
+             Console only for critical/breaking releases. Default 1 = no force. -->
+        <key>min_version_code</key>
+        <value>1</value>
+    </entry>
 </defaultsMap>
