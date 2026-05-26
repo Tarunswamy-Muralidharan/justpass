@@ -36,8 +36,11 @@ import androidx.core.content.ContextCompat
 import com.justpass.app.data.analytics.Analytics
 import com.justpass.app.data.local.SecurePreferences
 import com.justpass.app.data.repository.AttendanceRepository
+import com.justpass.app.data.update.PlayUpdater
 import com.justpass.app.data.update.UpdateChecker
 import com.justpass.app.data.update.UpdateInfo
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import com.justpass.app.ui.components.GlassCardFallback
 import com.justpass.app.ui.components.LiquidGlassBottomBar
 import com.justpass.app.ui.components.LiquidGlassScaffold
@@ -388,6 +391,74 @@ fun AttendanceApp() {
             properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
         )
         return
+    }
+
+    // ─── Play Store in-app updates ─────────────────────────────────────────
+    // IMMEDIATE flow (Play Console inAppUpdatePriority >= 4) shows Google's
+    // blocking full-screen UI — Play Store equivalent of a force update,
+    // restricted to installs from com.android.vending. FLEXIBLE flow
+    // (priority 0..3) downloads in the background; on DOWNLOADED we surface
+    // a dismissable "Restart" card. Sideloads fall through to the existing
+    // GitHub `min_version_code` gate above.
+    val activityForUpdate = context as ComponentActivity
+    val playUpdater = remember { PlayUpdater(activityForUpdate) }
+    var playUpdateDownloaded by remember { mutableStateOf(false) }
+    val playUpdateLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { /* no-op: install state tracked via InstallStateUpdatedListener */ }
+
+    LaunchedEffect(Unit) {
+        val isPlayInstall = try {
+            val installer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                context.packageManager.getInstallSourceInfo(context.packageName).installingPackageName
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getInstallerPackageName(context.packageName)
+            }
+            installer == "com.android.vending"
+        } catch (_: Exception) { false }
+        if (isPlayInstall) {
+            playUpdater.check(playUpdateLauncher) { playUpdateDownloaded = true }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                playUpdater.resumeImmediateIfInProgress(playUpdateLauncher)
+            }
+        }
+        activityForUpdate.lifecycle.addObserver(observer)
+        onDispose {
+            activityForUpdate.lifecycle.removeObserver(observer)
+            playUpdater.unregister()
+        }
+    }
+
+    if (playUpdateDownloaded) {
+        AlertDialog(
+            onDismissRequest = { playUpdateDownloaded = false },
+            title = { Text("Update Ready",
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = Color.White) },
+            text = { Text("The latest JustPass update has been downloaded. Restart to install.",
+                color = Color.White.copy(alpha = 0.8f)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        playUpdater.completeFlexibleUpdate()
+                        playUpdateDownloaded = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+                ) { Text("Restart", color = Color.White) }
+            },
+            dismissButton = {
+                TextButton(onClick = { playUpdateDownloaded = false }) {
+                    Text("Later", color = Color.White.copy(alpha = 0.7f))
+                }
+            },
+            containerColor = Color(0xFF1E2A3A)
+        )
     }
 
     var showBatteryDialog by remember { mutableStateOf(false) }
