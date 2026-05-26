@@ -13,6 +13,7 @@
 // Auth failures are returned as HTTP 401 (NOT a WS close) so the
 // Android client sees a clean error instead of a mysterious 1006.
 
+import { handleUpdateAnnouncement } from "./admin";
 import { verifyFirebaseIdToken } from "./auth";
 import {
   handleDeleteMe,
@@ -145,6 +146,28 @@ export default {
         }
       }
 
+      return jsonResponse(404, { error: "not_found", path: url.pathname });
+    }
+
+    // Admin-only Remote Config writes. Currently only announcement publishing.
+    if (url.pathname.startsWith("/admin")) {
+      if (!env.FIREBASE_PROJECT_ID) {
+        return jsonResponse(500, {
+          error: "server_misconfigured",
+          reason: "FIREBASE_PROJECT_ID secret not set",
+        });
+      }
+      const token = extractBearer(request);
+      if (!token) {
+        return jsonResponse(401, { error: "unauthorized" });
+      }
+      const verified = await verifyFirebaseIdToken(token, env.FIREBASE_PROJECT_ID);
+      if (!verified) {
+        return jsonResponse(401, { error: "unauthorized" });
+      }
+      if (url.pathname === "/admin/announcement") {
+        return handleUpdateAnnouncement(request, env, verified.uid);
+      }
       return jsonResponse(404, { error: "not_found", path: url.pathname });
     }
 

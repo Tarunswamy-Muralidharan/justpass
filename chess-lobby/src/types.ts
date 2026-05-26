@@ -8,6 +8,15 @@ export interface Env {
   // SIS passwords stored in pwa_creds. Set via `wrangler secret put PWA_CRED_KEY`.
   // The cron handler decrypts to log into Keycloak on the user's behalf.
   PWA_CRED_KEY: string;
+  // Google Cloud service account JSON (full file contents as one string).
+  // Used by /admin/announcement to mint OAuth2 access tokens for the
+  // Firebase Remote Config + Firestore REST APIs. Required IAM roles:
+  //   - "Firebase Remote Config Admin"  (Remote Config writes)
+  //   - "Cloud Datastore User"          (admin_uids existence check)
+  // Set via: `wrangler secret put FIREBASE_SERVICE_ACCOUNT < sa.json`
+  // Leave unset if you don't need the admin panel — the rest of the Worker
+  // ignores it and the /admin/* routes return 500 server_misconfigured.
+  FIREBASE_SERVICE_ACCOUNT: string;
 }
 
 // Class marks comparison — payload uploaded by Android client.

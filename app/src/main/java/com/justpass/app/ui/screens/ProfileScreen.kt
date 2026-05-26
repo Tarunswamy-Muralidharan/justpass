@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Feedback
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Info
@@ -74,6 +75,7 @@ fun ProfileScreen(
     onBugReportClick: () -> Unit = {},
     onBugReportInboxClick: () -> Unit = {},
     onManageAdminsClick: () -> Unit = {},
+    onAnnouncementAdminClick: () -> Unit = {},
     weatherScene: com.justpass.app.ui.components.WeatherScene = com.justpass.app.ui.components.WeatherScene.OFF,
     onWeatherSceneChange: (com.justpass.app.ui.components.WeatherScene) -> Unit = {},
     autoWeatherEnabled: Boolean = false,
@@ -657,6 +659,17 @@ fun ProfileScreen(
                             modifier = Modifier.clickable {
                                 Analytics.logProfileAction("manage_admins")
                                 onManageAdminsClick()
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+                        ListItem(
+                            headlineContent = { Text("Announcement") },
+                            supportingContent = { Text("Broadcast a dialog to every user", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)) },
+                            leadingContent = { Icon(Icons.Default.Campaign, null) },
+                            modifier = Modifier.clickable {
+                                Analytics.logProfileAction("announcement_admin")
+                                onAnnouncementAdminClick()
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )

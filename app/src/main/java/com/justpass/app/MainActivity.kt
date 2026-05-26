@@ -150,7 +150,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Screen {
-    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, ClassCompare, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, Games, GamesLeaderboard, LiteRt, CreateTournament, TournamentApproval, BugReport, BugReportInbox, ManageAdmins
+    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, ClassCompare, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, Games, GamesLeaderboard, LiteRt, CreateTournament, TournamentApproval, BugReport, BugReportInbox, ManageAdmins, AnnouncementAdmin
 }
 
 private val bottomTabs = listOf(
@@ -673,7 +673,7 @@ fun AttendanceApp() {
                 }
             ) { cardState ->
                 Crossfade(
-                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Games, Screen.GamesLeaderboard, Screen.Profile, Screen.LiteRt, Screen.CreateTournament, Screen.TournamentApproval, Screen.BugReport, Screen.BugReportInbox, Screen.ManageAdmins)) currentScreen.name
+                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Games, Screen.GamesLeaderboard, Screen.Profile, Screen.LiteRt, Screen.CreateTournament, Screen.TournamentApproval, Screen.BugReport, Screen.BugReportInbox, Screen.ManageAdmins, Screen.AnnouncementAdmin)) currentScreen.name
                                   else "tab_$selectedTabIndex",
                     animationSpec = tween(200),
                     label = "screenFade"
@@ -789,6 +789,9 @@ fun AttendanceApp() {
                             onBack = { currentScreen = Screen.Profile }
                         )
                         Screen.ManageAdmins.name -> com.justpass.app.ui.screens.ManageAdminsScreen(
+                            onBack = { currentScreen = Screen.Profile }
+                        )
+                        Screen.AnnouncementAdmin.name -> com.justpass.app.ui.screens.AnnouncementAdminScreen(
                             onBack = { currentScreen = Screen.Profile }
                         )
                         Screen.LiteRt.name -> com.justpass.app.ui.screens.LiteRtScreen(
@@ -916,6 +919,7 @@ fun AttendanceApp() {
                             onBugReportClick = { currentScreen = Screen.BugReport },
                             onBugReportInboxClick = { currentScreen = Screen.BugReportInbox },
                             onManageAdminsClick = { currentScreen = Screen.ManageAdmins },
+                            onAnnouncementAdminClick = { currentScreen = Screen.AnnouncementAdmin },
                             weatherScene = weatherScene,
                             onWeatherSceneChange = { newScene ->
                                 weatherScene = newScene
