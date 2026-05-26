@@ -1,5 +1,7 @@
 package com.justpass.app.ui.components
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -113,64 +115,75 @@ fun WeatherBackgroundLayer(
     scene: WeatherScene,
     drawSplashes: Boolean,
 ) {
-    if (scene == WeatherScene.OFF) return
-    if (drawSplashes) {
-        // Only some scenes spawn splashes
-        when (scene) {
-            WeatherScene.RAIN, WeatherScene.HEAVY_RAIN, WeatherScene.THUNDERSTORM ->
-                SplashLayer(
-                    intensity = when (scene) {
-                        WeatherScene.RAIN -> 1.2f
-                        WeatherScene.HEAVY_RAIN -> 2.6f
-                        else -> 2.8f
-                    }
-                )
-            else -> Unit
+    // Crossfade between scenes so weather changes blend smoothly instead of
+    // hard-cutting. Old scene fades out while new one fades in — both run
+    // their own infinite animations during the ~900ms transition. Empty Box
+    // is used for OFF / non-rain splash scenes so the crossfade still drives
+    // a clean fade-out of any previous content.
+    Crossfade(
+        targetState = scene,
+        animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+        label = if (drawSplashes) "weather-splashes" else "weather-scene",
+    ) { current ->
+        if (current == WeatherScene.OFF) {
+            Box(modifier = Modifier.fillMaxSize())
+            return@Crossfade
         }
-        return
-    }
-    Box(modifier = Modifier.fillMaxSize()) {
-        SceneRenderer(scene)
-        // Readability scrim — darkens lower 75% so tile text contrasts against
-        // bright daytime gradients (clear/partly/sunrise/sunset/haze/etc).
-        // Strength scales by scene: bright daytime = heavier, dark scenes
-        // (storm/night/aurora) = lighter so the sky doesn't get muddy.
-        val scrimAlpha = when (scene) {
-            WeatherScene.CLEAR_DAY,
-            WeatherScene.PARTLY_DAY,
-            WeatherScene.SUNRISE,
-            WeatherScene.HAZE -> 0.28f
-            WeatherScene.CLOUDY,
-            WeatherScene.SUNSET,
-            WeatherScene.WINDY,
-            WeatherScene.SNOW -> 0.22f
-            WeatherScene.OVERCAST,
-            WeatherScene.FOG -> 0.18f
-            WeatherScene.RAIN,
-            WeatherScene.HEAVY_RAIN,
-            WeatherScene.THUNDERSTORM,
-            WeatherScene.CLEAR_NIGHT,
-            WeatherScene.PARTLY_NIGHT,
-            WeatherScene.OVERCAST_NIGHT,
-            WeatherScene.AURORA -> 0.08f
-            WeatherScene.OFF -> 0f
+        if (drawSplashes) {
+            when (current) {
+                WeatherScene.RAIN, WeatherScene.HEAVY_RAIN, WeatherScene.THUNDERSTORM ->
+                    SplashLayer(
+                        intensity = when (current) {
+                            WeatherScene.RAIN -> 1.2f
+                            WeatherScene.HEAVY_RAIN -> 2.6f
+                            else -> 2.8f
+                        }
+                    )
+                else -> Box(modifier = Modifier.fillMaxSize())
+            }
+            return@Crossfade
         }
-        if (scrimAlpha > 0f) {
-            Canvas(Modifier.fillMaxSize()) {
-                // Sky stays untouched (top 25%) → scrim ramps up to full strength
-                // by 50% of screen height. Cards typically sit below this band.
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.Black.copy(alpha = scrimAlpha * 0.35f),
-                            Color.Black.copy(alpha = scrimAlpha),
-                            Color.Black.copy(alpha = scrimAlpha * 0.95f),
+        Box(modifier = Modifier.fillMaxSize()) {
+            SceneRenderer(current)
+            // Readability scrim — darkens lower 75% so tile text contrasts against
+            // bright daytime gradients (clear/partly/sunrise/sunset/haze/etc).
+            // Strength scales by scene: bright daytime = heavier, dark scenes
+            // (storm/night/aurora) = lighter so the sky doesn't get muddy.
+            val scrimAlpha = when (current) {
+                WeatherScene.CLEAR_DAY,
+                WeatherScene.PARTLY_DAY,
+                WeatherScene.SUNRISE,
+                WeatherScene.HAZE -> 0.28f
+                WeatherScene.CLOUDY,
+                WeatherScene.SUNSET,
+                WeatherScene.WINDY,
+                WeatherScene.SNOW -> 0.22f
+                WeatherScene.OVERCAST,
+                WeatherScene.FOG -> 0.18f
+                WeatherScene.RAIN,
+                WeatherScene.HEAVY_RAIN,
+                WeatherScene.THUNDERSTORM,
+                WeatherScene.CLEAR_NIGHT,
+                WeatherScene.PARTLY_NIGHT,
+                WeatherScene.OVERCAST_NIGHT,
+                WeatherScene.AURORA -> 0.08f
+                WeatherScene.OFF -> 0f
+            }
+            if (scrimAlpha > 0f) {
+                Canvas(Modifier.fillMaxSize()) {
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = scrimAlpha * 0.35f),
+                                Color.Black.copy(alpha = scrimAlpha),
+                                Color.Black.copy(alpha = scrimAlpha * 0.95f),
+                            ),
+                            startY = 0f,
+                            endY = size.height,
                         ),
-                        startY = 0f,
-                        endY = size.height,
-                    ),
-                )
+                    )
+                }
             }
         }
     }
