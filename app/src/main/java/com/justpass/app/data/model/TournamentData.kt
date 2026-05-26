@@ -51,7 +51,11 @@ data class Tournament(
  */
 object TournamentAdmins {
     val HARDCODED_PLAYER_IDS: Set<String> = setOf(
-        "p_678fd629" // Tarunswamy Muralidharan — bootstrap admin
+        "p_678fd629", // stale entry from earlier hash result — kept so any
+                      // legacy admin_roles / admin_uids docs that point here
+                      // still resolve to admin until they're migrated.
+        "p_678fd663"  // Tarunswamy Muralidharan — current bootstrap admin
+                      // (hash of roll 715523244037 with abs(hashCode).toString(16))
     )
 
     @Volatile private var dynamicPlayerIds: Set<String> = emptySet()
