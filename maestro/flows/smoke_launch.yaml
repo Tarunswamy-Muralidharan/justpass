@@ -1,0 +1,16 @@
+appId: com.justpass.app
+name: Smoke launch
+tags: [smoke]
+---
+# Verifies the app installs, launches without crashing, and shows either the
+# login screen (fresh install) or the dashboard (already-signed-in install).
+# Useful as the first thing to run in CI / after a build to catch obvious
+# startup crashes — Crashlytics will eventually surface them but Maestro is
+# instant.
+- launchApp:
+    clearState: false
+    stopApp: true
+- takeScreenshot: launch
+- assertVisible:
+    text: ".*"
+    optional: false

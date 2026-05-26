@@ -1401,11 +1401,12 @@ class WebViewAuthenticator(private val context: Context) {
      * Fetch student profile to get nodeId (timetable config) for this student.
      * API: GET /sis/students/{rollNumber}
      */
-    suspend fun fetchStudentNodeId(rollNumber: String): String? {
-        val token = cachedAuthToken ?: return null
+    suspend fun fetchStudentNodeId(rollNumber: String): String? = withContext(Dispatchers.IO) {
+        val token = cachedAuthToken ?: return@withContext null
         android.util.Log.d("WebViewAuth", "Fetching student nodeId for: $rollNumber")
-        val response = authenticatedGet("https://laudea.psgitech.ac.in/sis/students/$rollNumber", token) ?: return null
-        return response.use { resp ->
+        val response = authenticatedGet("https://laudea.psgitech.ac.in/sis/students/$rollNumber", token)
+            ?: return@withContext null
+        response.use { resp ->
             if (resp.code == 200) {
                 val json = resp.body?.string() ?: return@use null
                 val map = gson.fromJson(json, Map::class.java)
