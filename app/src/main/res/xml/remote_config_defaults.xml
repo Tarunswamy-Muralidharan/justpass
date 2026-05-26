@@ -76,4 +76,26 @@
         <key>min_version_code</key>
         <value>1</value>
     </entry>
+    <entry>
+        <!-- Dashboard announcement dialog. Migrated from Firestore on
+             2026-05-26. Workflow: flip `announcement_active` to true, set a
+             unique `announcement_id` (clients track dismissal per-id), set
+             `announcement_title` + `announcement_message`. Once a user taps
+             "Got it", the id is saved in SecurePrefs and the dialog never
+             re-shows for them — unless you publish a different id. -->
+        <key>announcement_active</key>
+        <value>false</value>
+    </entry>
+    <entry>
+        <key>announcement_id</key>
+        <value></value>
+    </entry>
+    <entry>
+        <key>announcement_title</key>
+        <value></value>
+    </entry>
+    <entry>
+        <key>announcement_message</key>
+        <value></value>
+    </entry>
 </defaultsMap>

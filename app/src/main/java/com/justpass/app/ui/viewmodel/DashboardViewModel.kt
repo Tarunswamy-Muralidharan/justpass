@@ -59,7 +59,7 @@ data class DashboardUiState(
     // CGPA from GPA calculator (null = not calculated yet)
     val calculatorCgpa: Double? = null,
     val hasGpaData: Boolean = false,
-    // Remote announcement from Firestore
+    // Remote announcement from Firebase Remote Config
     val announcement: Announcement? = null
 )
 
@@ -446,27 +446,43 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    /** Fetch announcement from Firestore announcements/current */
+    /**
+     * Fetch announcement from Firebase Remote Config.
+     *
+     * Reads 4 keys: announcement_active (Boolean), announcement_id (String),
+     * announcement_title (String), announcement_message (String). Migrated
+     * from Firestore on 2026-05-26 — Remote Config is free per-fetch and
+     * supports conditional targeting, vs Firestore costing a read per
+     * Dashboard open. The bundled XML defaults guarantee active=false so a
+     * cold start never surfaces a stale dialog before the network fetch
+     * completes.
+     *
+     * Per-id dismissal still uses [SecurePreferences.dismissedAnnouncementId]
+     * so changing `announcement_id` in the console is how you re-prompt users
+     * who previously dismissed an earlier announcement.
+     */
     private fun fetchAnnouncement() {
-        com.google.firebase.firestore.FirebaseFirestore.getInstance()
-            .collection("announcements").document("current")
-            .get()
-            .addOnSuccessListener { doc ->
-                if (doc.exists() && doc.getBoolean("active") == true) {
-                    val id = doc.getString("id") ?: doc.id
-                    // Don't show if user already dismissed this announcement
-                    if (id == securePrefs.dismissedAnnouncementId) return@addOnSuccessListener
-                    _uiState.value = _uiState.value.copy(
-                        announcement = Announcement(
-                            id = id,
-                            title = doc.getString("title") ?: "Announcement",
-                            message = doc.getString("message") ?: "",
-                            active = true
-                        )
-                    )
-                }
+        val remoteConfig = com.google.firebase.remoteconfig.FirebaseRemoteConfig.getInstance()
+        // No setDefaultsAsync here — the bundled remote_config_defaults.xml is
+        // already loaded by MainActivity's earlier LaunchedEffect. fetchAndActivate
+        // respects the global cache window, so this is effectively a cache read
+        // when called from Dashboard init after MainActivity has fetched.
+        remoteConfig.fetchAndActivate().addOnCompleteListener {
+            val active = remoteConfig.getBoolean("announcement_active")
+            if (!active) {
+                _uiState.value = _uiState.value.copy(announcement = null)
+                return@addOnCompleteListener
             }
-            .addOnFailureListener { /* silently ignore — don't block app */ }
+            val id = remoteConfig.getString("announcement_id")
+            if (id.isBlank()) return@addOnCompleteListener
+            if (id == securePrefs.dismissedAnnouncementId) return@addOnCompleteListener
+            val message = remoteConfig.getString("announcement_message")
+            if (message.isBlank()) return@addOnCompleteListener
+            val title = remoteConfig.getString("announcement_title").ifBlank { "Announcement" }
+            _uiState.value = _uiState.value.copy(
+                announcement = Announcement(id = id, title = title, message = message, active = true)
+            )
+        }
     }
 
     fun dismissAnnouncement() {
