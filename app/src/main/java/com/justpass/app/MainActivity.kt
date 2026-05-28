@@ -573,34 +573,6 @@ fun AttendanceApp() {
             var wipeOriginX by remember { mutableFloatStateOf(0.5f) }
             var wipeOriginY by remember { mutableFloatStateOf(0.5f) }
 
-            // QPapers feature gate: batch >= 2025 AND remote config `qpapers_enabled`
-            // (default true so the tile shows unless we explicitly kill it).
-            // Falls back to deriving the year from the roll number (same scheme
-            // used by CgpaCalculatorScreen) because securePrefs.batchYear is 0
-            // until biodata fetch lands.
-            val qpapersBatchEligible = remember {
-                val explicit = securePrefs.batchYear.takeIf { it > 0 }
-                val derived = securePrefs.rollNumber?.drop(4)?.take(2)?.toIntOrNull()?.let { 2000 + it }
-                val year = explicit ?: derived ?: 0
-                android.util.Log.d("QPapersGate", "explicit=$explicit derived=$derived year=$year roll=${securePrefs.rollNumber}")
-                year >= 2025
-            }
-            var qpapersEnabledRC by remember { mutableStateOf(true) }
-            LaunchedEffect(Unit) {
-                runCatching {
-                    val rc = FirebaseRemoteConfig.getInstance()
-                    rc.setDefaultsAsync(mapOf("qpapers_enabled" to true))
-                    qpapersEnabledRC = rc.getBoolean("qpapers_enabled")
-                    android.util.Log.d("QPapersGate", "qpapersEnabledRC=$qpapersEnabledRC")
-                }
-            }
-            // TODO: Fix Remote Config param after RC kill switch is needed.
-            // For now the gate is just batch eligibility — debug build override.
-            val qpapersVisible = qpapersBatchEligible && (qpapersEnabledRC || BuildConfig.DEBUG)
-            LaunchedEffect(qpapersVisible) {
-                android.util.Log.d("QPapersGate", "qpapersVisible=$qpapersVisible batch=$qpapersBatchEligible rc=$qpapersEnabledRC")
-            }
-
             // Admin status — derived from roll number hash (same scheme used elsewhere).
             // Reused for the QPapers approval queue gate.
             val qpaperIsAdmin = remember(securePrefs.rollNumber) {
@@ -611,6 +583,30 @@ fun AttendanceApp() {
                     com.justpass.app.data.model.TournamentAdmins.isAdmin(pid)
                 }
             }
+
+            // QPapers feature gate: batch >= 2025 OR admin, AND remote config
+            // `qpapers_enabled` (default true). Falls back to deriving the year
+            // from the roll number because securePrefs.batchYear is 0 until
+            // biodata fetch lands.
+            val qpapersBatchEligible = remember {
+                val explicit = securePrefs.batchYear.takeIf { it > 0 }
+                val derived = securePrefs.rollNumber?.drop(4)?.take(2)?.toIntOrNull()?.let { 2000 + it }
+                val year = explicit ?: derived ?: 0
+                year >= 2025
+            }
+            var qpapersEnabledRC by remember { mutableStateOf(true) }
+            LaunchedEffect(Unit) {
+                runCatching {
+                    val rc = FirebaseRemoteConfig.getInstance()
+                    rc.setDefaultsAsync(mapOf("qpapers_enabled" to true))
+                    qpapersEnabledRC = rc.getBoolean("qpapers_enabled")
+                }
+            }
+            // Admins always see the tile so they can reach the approval queue.
+            // Debug builds bypass the RC check so testing isn't blocked by a
+            // misconfigured kill switch.
+            val qpapersVisible = (qpapersBatchEligible || qpaperIsAdmin) &&
+                (qpapersEnabledRC || BuildConfig.DEBUG)
 
             fun launchHB(ox: Float = 0.5f, oy: Float = 0.5f) {
                 wipeOriginX = ox
