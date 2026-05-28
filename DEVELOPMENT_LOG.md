@@ -8314,3 +8314,91 @@ A  app/src/main/java/com/justpass/app/worker/LeaderboardBeatenWorker.kt
 - **Ethical scaling matters in security research** — bypassing an ACL once to read your own data is defensible; shipping the bypass to 1.4k users via Play Store is qualitatively different. The risk shifts from "researcher discovered a flaw" to "developer mass-distributes an exploit." Logging that distinction in `project_sis_attendance_403.md` for future-me.
 
 ---
+
+### Challenge 131: v3.0.5 — R8 release-only crashes (NetworkOnMainThread + SyllabusViewModel null) + Play Console recommended actions
+
+**Date:** 2026-05-28
+
+**Trigger:** Two open Crashlytics issues on v3.0.4 (versionCode 13) that the v3.0.4 release did NOT fix, plus a user report that Syllabus was "not able to load" on the Play Store build. All three turned out to be R8-only bugs — minify is off in debug, so none reproduced locally before upload.
+
+**Open Crashlytics issues at start of session:**
+
+1. `SecurePreferences.<init>` — `KeyStoreException: Signature/MAC verification failed` — 7 events / 1 user / 7d, but device pinned to v12 (3.0.3). Already fixed in `44849c3` (v3.0.4). No code action needed; the stuck user just needs to update.
+2. `WebViewAuthenticator.<init>:47` — `android.os.NetworkOnMainThreadException` — 2 events / 2 users / 30d, including on the current production v3.0.4. Stack trace bottoms out at `fetchStudentNodeId` → `Closeable.kt:47` → `okhttp3.Response.close (Response.kt:302)`. The `<init>:47` frame is a misleading R8-inlined source line — line 47 in current source is `private val gson = Gson()`, which obviously doesn't touch the network.
+
+**Root cause of the NetworkOnMainThread crash:**
+
+`WebViewAuthenticator` has 8 suspend functions that consume an okhttp `Response`:
+- `fetchAttendanceDirect`, `fetchCAMarksDirect`, `fetchAbsentDays`, `fetchPresentDays`, `fetchExemptionsDirect`, `fetchTimetableDirect`, `fetchResultDirect` (7 of them)
+- `fetchStudentNodeId` (the 8th — the only one with explicit `withContext(Dispatchers.IO)` already)
+
+The 7 unwrapped functions called `authenticatedGet` (which is itself `suspend fun ... = withContext(Dispatchers.IO) { … }`), got the `Response` back, then did `response.use { resp -> … }` in the **caller's** dispatcher. From `viewModelScope`, that caller is `Dispatchers.Main.immediate`. When `.use{}` ran `closeFinally`, `okhttp3.Response.close` had to drain the unread tail of the socket synchronously → StrictMode on the main thread killed it.
+
+`fetchStudentNodeId` already had `withContext(Dispatchers.IO)`, but R8 optimization with `proguard-android-optimize.txt` can fold/inline the close path enough that the close call drifts out of the IO scope, especially when the suspend coroutine resumes on a different thread.
+
+**Fix (defense in depth):**
+
+For every `okhttp3.Response`-consuming suspend fun in `WebViewAuthenticator.kt`:
+1. Wrap the ENTIRE body in `withContext(Dispatchers.IO)`. Never trust a nested helper's IO scope to cover the close path.
+2. Replace `response.use { resp -> … }` with `try { … } finally { runCatching { response.close() } }`. Removes `kotlin.io.CloseableKt.closeFinally` from the call chain — R8 can't elide what isn't there.
+
+ProGuard additions in `app/proguard-rules.pro`:
+```
+-keep class okhttp3.Response { public void close(); }
+-keep class kotlin.io.CloseableKt { *; }
+-keep class kotlinx.coroutines.** { *; }
+-keep class kotlin.coroutines.** { *; }
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory { *; }
+-dontwarn kotlinx.coroutines.**
+```
+
+**Syllabus screen bug (separate R8 issue, surfaced same session):**
+
+User installed v3.0.4 from Play, tapped Syllabus, got "Failed to load syllabus: null" on Mechanical Engineering · R2025. JSON is present, key `MECH_R2025` exists, structure is correct. Worked fine in every debug build. Smoking gun: `isMinifyEnabled = true` is release-only.
+
+`SyllabusViewModel.loadSyllabus` parsed the asset with `Gson().fromJson(json, object : TypeToken<Map<String, DeptWrapper>>() {}.type)` where `DeptWrapper` was a `private data class` nested in the viewmodel. R8 stripped the generic Signature attribute on the anonymous TypeToken AND/OR the nested DeptWrapper class fields, even with the `-keep class com.justpass.app.ui.viewmodel.**$* { *; }` rule that *should* have covered it. Gson returned a null/empty map, the `?: emptyList()` actually worked, but somewhere downstream an NPE got swallowed with a null detail message — hence the literal string `null` in the error UI.
+
+Fix: scrap the anonymous-TypeToken-on-private-nested-class pattern entirely. Use the public top-level `JsonParser` + per-subject `gson.fromJson(el, SyllabusSubject::class.java)`. `SyllabusSubject` is in `com.justpass.app.data.model.**` which is already `-keep`d. No generics, no anonymous subclasses, no R8 surface area. Also improved the catch message to include the exception class name so the next failure mode isn't another "null".
+
+**Play Console release dashboard — 4 recommended actions:**
+
+1. `androidx.glance:glance-appwidget-proto` — SDK version has a critical note. Glance was pinned at 1.1.0.
+2. `androidx.glance:glance-appwidget-external-protobuf` — same critical note family.
+3. "Edge-to-edge may not display for all users" — user-experience flag.
+4. "Your app uses deprecated APIs or parameters for edge-to-edge" — same family.
+
+Glance bumped to 1.1.1 in `libs.versions.toml`. Theme changed from `android:Theme.Material.Light.NoActionBar` to `android:Theme.DeviceDefault.Light.NoActionBar` — the platform Material theme sets opaque status/nav bar colors via XML attrs that are deprecated on API 35+, which is what was triggering the warnings. `enableEdgeToEdge()` is already called in `MainActivity.onCreate`, so transparent system bars are handled at runtime; no need to set them in XML.
+
+**Vitals data captured (v3.0.4):**
+
+- User-perceived crash rate: 0.16% (better than peers, -0.03%)
+- ANR rate: 0.00%
+- Slow warm start: 4.06% (better than peers, -6.36%)
+- Slow hot start: 0.18%
+- **Excessive slow frames: 2.39% (WORSE than peers, +2.18%)** — and worse on v13 (3.39%) than v12 (2.46%)
+- **Excessive frozen frames: 5.18% (WORSE than peers, +4.43%)**
+- Excessive background network usage: 3.70%
+
+Slow + frozen frames are scoped to "Android UI toolkit" frames only — Compose's own composition doesn't show up here. The remaining surfaces that ARE toolkit-based in JustPass:
+- WebView for in-app Lichess (chess analysis screen)
+- PDF viewer in Circulars (`PdfRenderer` → `Bitmap` → `AndroidView`)
+- Widget RemoteViews
+- AlertDialog instances (a couple of legacy ones)
+
+Not fixed this session. Logged as the next perf workstream.
+
+**Version + release:**
+
+Bumped to versionCode 14 / versionName 3.0.5. `app-release.apk` built and sideloaded on Moto G54 (192.168.0.4:5555) via wireless ADB after `adb uninstall com.justpass.app` — Play-Store-signed v3.0.4 had to be removed first because the local release keystore doesn't match Play App Signing. User confirmed Syllabus now loads with no "null" error.
+
+**Obstacles + patterns from this session:**
+
+- **R8 release-only bugs are a class of their own** — three of today's three crashes/failures didn't reproduce in debug. The minify path is doing optimizations (inlining, generic erasure, dead-code) that change runtime behavior, not just code size. Two takeaways: (1) always sideload a `release` APK before uploading to Play, and (2) write defensive code that doesn't rely on R8 preserving generic info, reflection targets, or dispatcher fidelity. The proguard rules are belt; the code shape is suspenders.
+- **`response.use { … }` on okhttp3.Response is risky with R8 + coroutines** — `CloseableKt.closeFinally` can land on the wrong dispatcher after R8 inlining, even when the surrounding `withContext(Dispatchers.IO)` looks airtight. Explicit `try { … } finally { runCatching { close() } }` keeps the close inside the IO lambda's lexical block where R8 can't move it.
+- **R8 stack traces lie about line numbers when minified mappings are uploaded but inlining isn't perfectly reversed** — Crashlytics deobfuscation showed `WebViewAuthenticator.<init>:47` between `Response.close` and `closeFinally`, even though line 47 is `private val gson = Gson()`. Treat the visible frame as a hint, not a fact. Look at the surrounding frames (`Closeable.kt:47`, `fetchStudentNodeId:1408`) for the actual call path.
+- **"Critical note" warnings in the Play Console release dashboard are version-pin issues, not config issues** — clicking through to the Help text confirms it's about the SDK version (here, `androidx.glance` 1.1.0 had a known issue in its protobuf submodule). The fix is always a version bump.
+- **Platform `Theme.Material.*` themes set deprecated edge-to-edge attrs implicitly** — even an empty theme `<style name="..." parent="android:Theme.Material.Light.NoActionBar" />` inherits attribute values that the API 35+ deprecation list flags. `Theme.DeviceDefault.*` is the safer modern parent when the app does its own theming in Compose anyway.
+- **Local release build + Play Store production cannot coexist on the same device** — signing certs differ (Play App Signing vs local keystore), so `adb install` of a local release APK over the Play version fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Uninstall first; expect to re-login. For dev-cycle testing, install local builds on a device that hasn't installed from Play, or use a different package id for the dev variant.
+- **`Build aborted on Crashlytics symbol upload network failure`** — `:app:uploadCrashlyticsMappingFileRelease` fails the whole `assembleRelease` task if the network is down at upload time, even though the APK is fully built and signed by that point. Workaround for a flaky network: just rerun; or temporarily disable the upload in `firebaseCrashlytics { mappingFileUploadEnabled = false }` in the release build type. Don't ship without the mapping if you do that — Crashlytics traces will be obfuscated.
+
+---
