@@ -47,6 +47,8 @@ fun CAMarksScreen(
     viewModel: CAMarksViewModel = viewModel(),
     onBack: () -> Unit,
     onClassCompareClick: () -> Unit = {},
+    onQPapersClick: () -> Unit = {},
+    qpapersVisible: Boolean = false,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -120,9 +122,20 @@ fun CAMarksScreen(
                 }
                 uiState.courseMarksList.isEmpty() -> Text("No CA marks available", modifier = Modifier.align(Alignment.Center))
                 else -> {
+                    var bannerDismissed by remember { mutableStateOf(false) }
                     LazyColumn(modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 160.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (qpapersVisible && !bannerDismissed) {
+                            item {
+                                com.justpass.app.ui.components.ContributeBanner(
+                                    title = "Got the paper for these CAs?",
+                                    subtitle = "Help juniors — contribute the question paper.",
+                                    onClick = onQPapersClick,
+                                    onDismiss = { bannerDismissed = true },
+                                )
+                            }
+                        }
                         items(uiState.courseMarksList, key = { it.courseCode }) { CourseCard(it) }
                     }
                 }

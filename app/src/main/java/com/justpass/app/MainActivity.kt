@@ -154,7 +154,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Screen {
-    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, ClassCompare, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, Games, GamesLeaderboard, LiteRt, CreateTournament, TournamentApproval, BugReport, BugReportInbox, ManageAdmins
+    Login, Dashboard, AbsentDays, SubjectAttendance, SubjectDetail, Exemptions, Result, PrivacyPolicy, CAMarks, ClassCompare, Timetable, Profile, AcademicCalendar, Circulars, CgpaCalculator, ExamSeat, Syllabus, Chess, Games, GamesLeaderboard, LiteRt, CreateTournament, TournamentApproval, BugReport, BugReportInbox, ManageAdmins, QPapers
 }
 
 private val bottomTabs = listOf(
@@ -573,6 +573,30 @@ fun AttendanceApp() {
             var wipeOriginX by remember { mutableFloatStateOf(0.5f) }
             var wipeOriginY by remember { mutableFloatStateOf(0.5f) }
 
+            // QPapers feature gate: batch >= 2025 AND remote config `qpapers_enabled`
+            // (default true so the tile shows unless we explicitly kill it).
+            val qpapersBatchEligible = remember { securePrefs.batchYear >= 2025 }
+            var qpapersEnabledRC by remember { mutableStateOf(true) }
+            LaunchedEffect(Unit) {
+                runCatching {
+                    val rc = FirebaseRemoteConfig.getInstance()
+                    rc.setDefaultsAsync(mapOf("qpapers_enabled" to true))
+                    qpapersEnabledRC = rc.getBoolean("qpapers_enabled")
+                }
+            }
+            val qpapersVisible = qpapersBatchEligible && qpapersEnabledRC
+
+            // Admin status — derived from roll number hash (same scheme used elsewhere).
+            // Reused for the QPapers approval queue gate.
+            val qpaperIsAdmin = remember(securePrefs.rollNumber) {
+                val roll = securePrefs.rollNumber.orEmpty()
+                if (roll.isBlank()) false
+                else {
+                    val pid = "p_${kotlin.math.abs(roll.hashCode()).toString(16)}"
+                    com.justpass.app.data.model.TournamentAdmins.isAdmin(pid)
+                }
+            }
+
             fun launchHB(ox: Float = 0.5f, oy: Float = 0.5f) {
                 wipeOriginX = ox
                 wipeOriginY = oy
@@ -688,7 +712,7 @@ fun AttendanceApp() {
                 }
             ) { cardState ->
                 Crossfade(
-                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Games, Screen.GamesLeaderboard, Screen.Profile, Screen.LiteRt, Screen.CreateTournament, Screen.TournamentApproval, Screen.BugReport, Screen.BugReportInbox, Screen.ManageAdmins)) currentScreen.name
+                    targetState = if (currentScreen in listOf(Screen.AbsentDays, Screen.SubjectAttendance, Screen.SubjectDetail, Screen.Exemptions, Screen.Result, Screen.AcademicCalendar, Screen.Circulars, Screen.CgpaCalculator, Screen.ExamSeat, Screen.Syllabus, Screen.Chess, Screen.Games, Screen.GamesLeaderboard, Screen.Profile, Screen.LiteRt, Screen.CreateTournament, Screen.TournamentApproval, Screen.BugReport, Screen.BugReportInbox, Screen.ManageAdmins, Screen.QPapers)) currentScreen.name
                                   else "tab_$selectedTabIndex",
                     animationSpec = tween(200),
                     label = "screenFade"
@@ -730,7 +754,12 @@ fun AttendanceApp() {
                             onBack = {
                                 currentScreen = Screen.Dashboard
                                 selectedTabIndex = 0
-                            }
+                            },
+                            onQPapersClick = {
+                                Analytics.logFeatureUsed("qpapers_from_result")
+                                currentScreen = Screen.QPapers
+                            },
+                            qpapersVisible = qpapersVisible,
                         )
                         Screen.AcademicCalendar.name -> AcademicCalendarScreen(
                             cardState = cardState,
@@ -745,6 +774,14 @@ fun AttendanceApp() {
                                 currentScreen = Screen.Dashboard
                                 selectedTabIndex = 0
                             }
+                        )
+                        Screen.QPapers.name -> com.justpass.app.ui.screens.qpapers.QPapersFlow(
+                            cardState = cardState,
+                            isAdmin = qpaperIsAdmin,
+                            onBack = {
+                                currentScreen = Screen.Dashboard
+                                selectedTabIndex = 0
+                            },
                         )
                         Screen.CgpaCalculator.name -> {
                             val batch = securePrefs.batchYear.takeIf { it > 0 }
@@ -889,7 +926,12 @@ fun AttendanceApp() {
                             onProfileClick = {
                                 Analytics.logFeatureUsed("profile")
                                 currentScreen = Screen.Profile
-                            }
+                            },
+                            onQPapersClick = {
+                                Analytics.logFeatureUsed("qpapers")
+                                currentScreen = Screen.QPapers
+                            },
+                            qpapersVisible = qpapersVisible,
                         )
                         "tab_1" -> CAMarksScreen(
                             cardState = cardState,
@@ -898,6 +940,11 @@ fun AttendanceApp() {
                                 currentScreen = Screen.Dashboard
                             },
                             onClassCompareClick = { currentScreen = Screen.ClassCompare },
+                            onQPapersClick = {
+                                Analytics.logFeatureUsed("qpapers_from_camarks")
+                                currentScreen = Screen.QPapers
+                            },
+                            qpapersVisible = qpapersVisible,
                         )
                         Screen.ClassCompare.name -> com.justpass.app.ui.screens.ClassCompareScreen(
                             cardState = cardState,
