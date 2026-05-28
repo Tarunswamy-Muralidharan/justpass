@@ -2,7 +2,7 @@
 
 **Project:** `AttendanceWidgetLaudea` (`com.justpass.app`)  
 **Audit date:** 2026-05-28  
-**Skill version:** `jetpack-compose-audit` 2.1.1 (source-inferred mode)  
+**Skill version:** `jetpack-compose-audit` 2.1.1 (source-inferred mode, pass 2)  
 **Auditor:** Kimi Code CLI  
 **Module scoped:** `:app`
 
@@ -10,12 +10,12 @@
 
 ## Executive Summary
 
-**Overall: 48/100**
+**Overall: 47/100**
 
 | Category | Score | Weight | Weighted |
 |----------|-------|--------|----------|
 | Performance | 5/10 | 35% | 1.75 |
-| State management | 4/10 | 25% | 1.00 |
+| State management | 3/10 | 25% | 0.75 |
 | Side effects | 6/10 | 20% | 1.20 |
 | Composable API quality | 4/10 | 20% | 0.80 |
 
@@ -24,8 +24,8 @@
 **Top 3 fixes (act on these alone if short on time):**
 
 1. **Swap `collectAsState()` → `collectAsStateWithLifecycle()` at 24 call sites** — stops flow collection when the UI is backgrounded. Highest impact fix in the repo.
-2. **Add stable `key =` to 12 `items(...)` factories in lazy lists** — removes recomposition churn on scroll/reorder and prevents key-collision crashes.
-3. **Remove unnecessary `AndroidViewModel` inheritance** and centralize hardcoded strings/colors — improves testability and dark-mode correctness.
+2. **Migrate from manual `Crossfade` screen switching to Navigation Compose with type-safe destinations** — `MainActivity.kt` currently acts as a god composable holding all navigation state; this is the root cause of brittle back handling and state duplication.
+3. **Add stable `key =` to 12 `items(...)` factories in lazy lists + wrap expensive composition work in `remember`** — removes recomposition churn on scroll/reorder and stops weather/OCR allocations from running on every recomposition.
 
 ---
 
@@ -77,7 +77,37 @@ items(state.reports, key = { it.id }) { r -> ReportCard(r) }
 
 ---
 
-#### P2. No `@Stable` / `@Immutable` on UI state data classes
+#### P2. Expensive work in composition — allocations & compute run on every recomposition
+**Impact:** `WeatherBackground`, `CgpaCalculatorScreen`, and `ChessScreen` perform O(N) allocations and compute inside composable bodies instead of `remember` or `derivedStateOf`.
+
+| File | Line | Smell |
+|------|------|-------|
+| `WeatherBackground.kt` | 462 | `val blobs = (0 until blobCount.toInt()).map { i -> CloudBlob(Random(seed).nextFloat(), ...) }` — fresh list + `Random` on every recomposition of the cloud layer |
+| `WeatherBackground.kt` | 946 | `val branches = (0 until rng.nextInt(3)).map { ... }` — allocation inside tree-branch composable |
+| `CgpaCalculatorScreen.kt` | 863–870 | OCR spatial parsing: `filter { codeRegex.find(it.text) ... }.sortedBy { it.centerY }.zipWithNext().map { ... }.average()` inside a `@Composable` function |
+| `ChessScreen.kt` | 1588–1596 | `onlinePlayers.map { it.id }.toSet()`, `onlineNames`, `friends.sortedWith(...)` computed inline on every recomposition of the friends dialog |
+| `ExemptionsScreen.kt` | 87 | `uiState.exemptions.sortedByDescending { it.fromDate }` inside `LazyColumn` content — re-sorts on every recomposition |
+
+**Fix patterns:**
+```kotlin
+// WeatherBackground — wrap in remember
+val blobs = remember(blobCount, density) {
+    (0 until blobCount.toInt()).map { i -> ... }
+}
+
+// CgpaCalculatorScreen — move OCR logic out of Compose entirely
+val sortedCodes = remember(allItems) { spatialParse(allItems) }
+
+// ChessScreen — derivedStateOf for derived lists
+val sortedFriends by remember(onlinePlayers, friends) {
+    derivedStateOf { friends.sortedWith(...) }
+}
+```
+**References:** https://developer.android.com/develop/ui/compose/performance/stability/fix
+
+---
+
+#### P3. No `@Stable` / `@Immutable` on UI state data classes
 **Impact:** Under SSM, raw `data class` UiState types are treated as unstable. While Strong Skipping mitigates direct recompositions, expensive `equals()` on large state objects still forces instance-level work and can cap performance in deeply-nested trees.
 
 **Affected files (all `data class *UiState` in ViewModels):**
@@ -98,7 +128,7 @@ data class DashboardUiState(
 
 ---
 
-#### P3. Autoboxing hot-path state in game screens
+#### P4. Autoboxing hot-path state in game screens
 **Impact:** `mutableStateOf<Set<Int>>` and `mutableStateOf<Job?>` force allocation overhead per recomposition in time-sensitive game loops.
 
 | File | Line | Smell |
@@ -113,7 +143,7 @@ data class DashboardUiState(
 
 ---
 
-#### P4. Heavy `rememberInfiniteTransition` usage in always-visible UI
+#### P5. Heavy `rememberInfiniteTransition` usage in always-visible UI
 **Impact:** Multiple infinite transitions run simultaneously in the bottom bar (`AnimatedHomeIcon`, `AnimatedCalendarIcon`, `AnimatedCalculatorIcon`, `AnimatedStarIcon`, `AnimatedControllerIcon`, `AnimatedChessIcon`) and dashboard (`profilePulse`, `orb`, `cgpaIndicator`). While these are visible, they burn animation clock ticks continuously.
 
 | File | Approx. line | Label |
@@ -129,14 +159,14 @@ data class DashboardUiState(
 
 ---
 
-#### P5. `contentPadding = PaddingValues(bottom = 160.dp)` copy-pasted across 10+ screens
+#### P6. `contentPadding = PaddingValues(bottom = 160.dp)` copy-pasted across 10+ screens
 **Impact:** Magic number repeated everywhere; makes design-system changes brittle.
 
 **References:** https://developer.android.com/develop/ui/compose/layouts/spacing
 
 ---
 
-## Category: State Management (4/10)
+## Category: State Management (3/10)
 
 ### Deductions
 
@@ -183,7 +213,25 @@ val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
 ---
 
-#### S2. Excessive `AndroidViewModel` inheritance
+#### S2. Custom navigation architecture — no Navigation Compose, no type-safe destinations
+**Impact:** `MainActivity.kt` (1045 lines) manually switches screens via `var currentScreen by remember { mutableStateOf(initialScreen) }` wrapped in a `Crossfade`. There is no `NavHost`, no navigation back-stack, and no type-safe argument passing. This forces:
+- Manual `BackHandler` logic with a long `when` chain for every screen exit
+- Screen arguments passed as hoisted `remember` vars (`selectedCourseCode`, `selectedCourseTitle`, `displayName`, `leaderboardGame`) that leak across the entire app lifetime
+- No deep-link support beyond hand-rolled intent parsing in `AttendanceApp()`
+- Process death restores to dashboard regardless of previous screen (no `rememberSaveable` on `currentScreen`)
+
+**Evidence:**
+- `MainActivity.kt:201` — `var currentScreen by remember { mutableStateOf(initialScreen) }`
+- `MainActivity.kt:690` — `Crossfade(targetState = currentScreen)` switches content
+- `MainActivity.kt:642` — `BackHandler(enabled = gamesPopupOpen || wipeState != 0 || currentScreen != Screen.Dashboard || selectedTabIndex != 0)` with 15+ branch manual routing
+- `MainActivity.kt:177–188` — Deep-link parsing is hand-rolled string matching against intent extras
+
+**Fix:** Migrate to `androidx.navigation:navigation-compose` with Navigation 2.8+ type-safe destinations (`Serializable`/`Parcelable` routes). Pass arguments via the route, not hoisted MainActivity state.
+**References:** https://developer.android.com/develop/ui/compose/navigation
+
+---
+
+#### S3. Excessive `AndroidViewModel` inheritance
 **Impact:** Ties ViewModels to the Android `Application` context, making unit testing harder and violating the ViewModel boundary guideline. Most ViewModels in this repo do not appear to use `Application` for anything beyond obtaining `SecurePreferences` or similar, which can be injected or obtained via a repository/factory.
 
 **Affected ViewModels (all extend `AndroidViewModel`):**
@@ -194,7 +242,7 @@ val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
 ---
 
-#### S3. State hoisting violations in game screens
+#### S4. State hoisting violations in game screens
 **Impact:** Game state (`level`, `lives`, `stage`, `bestLevel`) is owned directly inside game composables rather than hoisted to a ViewModel or at least a screen-level holder. Configuration changes and process death will reset game progress.
 
 | File | Lines | State owned inline |
@@ -209,30 +257,22 @@ val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
 ---
 
+#### S5. `MainActivity.kt` is a "god composable"
+**Impact:** `AttendanceApp()` holds ~30 pieces of mutable state (`currentScreen`, `selectedTabIndex`, `weatherScene`, `autoWeatherEnabled`, `gamesPopupOpen`, `wipeState`, `wipeOriginX`, `wipeOriginY`, `loginScreenKey`, `isLoggingOut`, `updateInfo`, `forceUpdate`, `sideloadBlocked`, `maintenanceMessage`, `maintenanceRetryKey`, `playUpdateDownloaded`, `showBatteryDialog`, etc.). This violates single-responsibility, makes the composable un-previewable, and guarantees recompositions ripple across the entire UI tree when any leaf state changes.
+
+**Evidence:** `MainActivity.kt:169–1044` — `AttendanceApp()` composable.
+
+**Fix:** Extract navigation scaffold into its own composable, hoist weather state into a dedicated holder, and move business-logic state (updates, maintenance, battery dialog) into `MainViewModel`.
+**References:** https://developer.android.com/develop/ui/compose/state#state-hoisting
+
+---
+
 ## Category: Side Effects (6/10)
 
 ### Deductions
 
-#### E1. `DisposableEffect(lifecycleOwner)` pattern in `DashboardScreen.kt`
-**Impact:** Uses the verbose `DisposableEffect` + `LifecycleEventObserver` combo to observe lifecycle events. On `lifecycle-runtime-compose` 2.8+ (you are on 2.10.0), `LifecycleStartEffect` / `LifecycleResumeEffect` are the modern, half-the-code replacements.
-
-| File | Line | Old pattern |
-|------|------|-------------|
-| `DashboardScreen.kt` | 179 | `DisposableEffect(lifecycleOwner) { val observer = LifecycleEventObserver { _, event -> if (event == ON_RESUME) ... }` |
-
-**Fix:**
-```kotlin
-LifecycleResumeEffect(lifecycleOwner) {
-    viewModel.refreshIfStale()
-    onPauseOrDispose { }
-}
-```
-**References:** https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary
-
----
-
-#### E2. Broad `LaunchedEffect(Unit)` keys for one-shot work
-**Impact:** Several `LaunchedEffect(Unit)` blocks perform fire-and-forget initialization. While not inherently wrong, they silently re-fire after process death + restoration if the surrounding composable is still in the backstack. Keying on the actual changing identity (e.g., `userId`, `screenRoute`) is safer.
+#### E1. Broad `LaunchedEffect(Unit)` keys for one-shot work
+**Impact:** Several `LaunchedEffect(Unit)` blocks perform fire-and-forget initialization. They silently re-fire after process death + restoration if the surrounding composable is still in the backstack. Keying on the actual changing identity (e.g., `userId`, `screenRoute`) is safer.
 
 **Moderate-risk sites:**
 - `MainActivity.kt:214` — `LaunchedEffect(Unit)` for Firebase remote-config fetch
@@ -241,12 +281,13 @@ LifecycleResumeEffect(lifecycleOwner) {
 - `MainActivity.kt:300` — `LaunchedEffect(Unit)` for battery optimization dialog
 - `DashboardScreen.kt:147` — `LaunchedEffect(Unit)` for deep-link handling
 - `DashboardScreen.kt:172` — `LaunchedEffect(Unit)` for version check
+- `SubjectDetailScreen.kt:73` — `LaunchedEffect(courseCode)` fetches repository data; broad key means it re-fires on recomposition if `courseCode` capture changes reference
 
 **References:** https://developer.android.com/develop/ui/compose/side-effects#launchedeffect
 
 ---
 
-#### E3. `LaunchedEffect(uiState.messages.size, uiState.isGenerating, uiState.streamingText)` in `LiteRtScreen.kt`
+#### E2. `LaunchedEffect(uiState.messages.size, uiState.isGenerating, uiState.streamingText)` in `LiteRtScreen.kt`
 **Impact:** Three separate state fields in one `LaunchedEffect` key. Any change to any field restarts the effect. If the effect is scrolling a list to bottom, `streamingText` changing every token causes redundant scroll coroutines.
 
 | File | Line | Key |
@@ -255,6 +296,23 @@ LifecycleResumeEffect(lifecycleOwner) {
 
 **Fix:** Split into two effects: one keyed on `messages.size` for scroll-to-bottom, one keyed on `isGenerating` for focus/IME management.
 **References:** https://developer.android.com/develop/ui/compose/side-effects#launchedeffect
+
+---
+
+#### E3. Mutable-state backwards write in `VerbalMemoryScreen.kt`
+**Impact:** Mutating a `MutableState<MutableSet<String>>` value directly (`seen.value.add(current)`) relies on Snapshot mutation semantics rather than immutable replacement. This is fragile and can break if the set instance is ever frozen or reused.
+
+| File | Line | Smell |
+|------|------|-------|
+| `VerbalMemoryScreen.kt` | 105 | `seen.value.add(current)` |
+| `VerbalMemoryScreen.kt` | 112 | `seen.value = mutableSetOf()` |
+
+**Fix:**
+```kotlin
+seen.value = seen.value.toMutableSet().apply { add(current) }
+// or better: use SnapshotStateList<String>() + remember
+```
+**References:** https://developer.android.com/develop/ui/compose/side-effects
 
 ---
 
@@ -389,17 +447,17 @@ LiquidGlassScaffold { innerPadding ->
 - **Impact:** Stops redundant flow collection when UI is paused; lifecycle-correct; zero behavior change when foregrounded.
 - **Effort:** Low (global find/replace + add import).
 
-### 2. Add stable `key =` to 12 lazy-list `items(...)` factories
-- **Files:** `BugReportInboxScreen.kt`, `BugReportScreen.kt`, `CAMarksScreen.kt`, `ChessScreen.kt` (×2), `ExemptionsScreen.kt`, `ManageAdminsScreen.kt` (×2), `ProfileScreen.kt`, `SubjectAttendanceScreen.kt`, `TournamentApprovalScreen.kt`, `TimetableScreen.kt`
-- **Doc:** https://developer.android.com/develop/ui/compose/lists#item-keys
-- **Impact:** Fewer reallocated compositions on scroll/reorder; eliminates `Key already used` crash surface.
-- **Effort:** Low.
+### 2. Migrate manual screen switching to Navigation Compose
+- **Files:** `MainActivity.kt` (primary); all screen composables (secondary — add nav arguments).
+- **Doc:** https://developer.android.com/develop/ui/compose/navigation
+- **Impact:** Eliminates god-composable state surface; enables proper back-stack, deep links, and process-death restoration; removes fragile manual `BackHandler`.
+- **Effort:** High (architectural).
 
-### 3. Remove unnecessary `AndroidViewModel` + centralize hardcoded strings & colors
-- **Files:** 18 ViewModels; `MainActivity.kt`; all game screens; `LeaderboardScreen.kt`; `ChessScreen.kt`
-- **Doc:** https://developer.android.com/topic/libraries/architecture/viewmodel, https://developer.android.com/guide/topics/resources/string-resource
-- **Impact:** Unit-testable ViewModels; i18n-ready; dark-mode-safe.
-- **Effort:** Medium (structural).
+### 3. Add stable `key =` to 12 lazy-list `items(...)` + wrap expensive composition work in `remember`
+- **Files:** Lazy lists listed in P1; `WeatherBackground.kt`; `CgpaCalculatorScreen.kt`; `ChessScreen.kt`.
+- **Doc:** https://developer.android.com/develop/ui/compose/lists#item-keys, https://developer.android.com/develop/ui/compose/performance/stability/fix
+- **Impact:** Fewer reallocated compositions on scroll/reorder; eliminates `Key already used` crash surface; stops weather/OCR math from recomposing.
+- **Effort:** Low–Medium.
 
 ---
 
@@ -426,4 +484,4 @@ LiquidGlassScaffold { innerPadding ->
 
 ---
 
-*Report generated by `jetpack-compose-audit` 2.1.1 source-inferred analysis.*
+*Report generated by `jetpack-compose-audit` 2.1.1 source-inferred analysis (pass 2).*
