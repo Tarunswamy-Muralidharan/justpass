@@ -167,6 +167,10 @@ dependencies {
     implementation("com.google.android.play:app-update:2.1.0")
     implementation("com.google.android.play:app-update-ktx:2.1.0")
 
+    // Play In-App Review (rating prompt — Google quota-managed)
+    implementation(libs.play.review)
+    implementation(libs.play.review.ktx)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

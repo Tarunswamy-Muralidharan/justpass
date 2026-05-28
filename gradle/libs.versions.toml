@@ -23,6 +23,7 @@ crashlyticsPlugin = "3.0.7"
 liquid = "1.1.1"
 playServicesAuth = "21.3.0"
 poi = "5.2.5"
+playReview = "2.0.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -85,6 +86,10 @@ poi-ooxml = { group = "org.apache.poi", name = "poi-ooxml", version.ref = "poi" 
 
 # Liquid Glass
 liquid = { group = "io.github.fletchmckee.liquid", name = "liquid", version.ref = "liquid" }
+
+# Play In-App Review
+play-review = { group = "com.google.android.play", name = "review", version.ref = "playReview" }
+play-review-ktx = { group = "com.google.android.play", name = "review-ktx", version.ref = "playReview" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
