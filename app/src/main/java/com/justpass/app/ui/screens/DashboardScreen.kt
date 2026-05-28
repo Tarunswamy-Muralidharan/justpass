@@ -69,6 +69,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.R
 import com.justpass.app.data.local.SecurePreferences
@@ -121,7 +122,7 @@ fun DashboardScreen(
     onLiteRtClick: () -> Unit = {},
     onProfileClick: () -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -175,16 +176,10 @@ fun DashboardScreen(
 
     // Refresh CGPA from saved grades whenever dashboard becomes visible
     // (e.g. after user imports results in GPA Calculator)
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                viewModel.loadCalculatorCgpa()
-                viewModel.loadTargetCgpa()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        viewModel.loadCalculatorCgpa()
+        viewModel.loadTargetCgpa()
+        onPauseOrDispose { }
     }
 
     LaunchedEffect(Unit) {
@@ -285,9 +280,13 @@ fun DashboardScreen(
                         )
                         Text(uiState.rollNumber, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    // Profile picture on the right — with pulsing ripple rings
+                    // Profile picture on the right — with pulsing ripple rings.
+                    // Keep these as State<Float> (no `by` delegate) so reads happen
+                    // inside the graphicsLayer{} lambda below — that's draw-phase
+                    // observation, which skips the composition + layout passes that
+                    // a delegated read would trigger on every animation frame.
                     val pulseTransition = rememberInfiniteTransition(label = "profilePulse")
-                    val pulse1Alpha by pulseTransition.animateFloat(
+                    val pulse1Alpha = pulseTransition.animateFloat(
                         initialValue = 0.9f,
                         targetValue = 0f,
                         animationSpec = infiniteRepeatable(
@@ -296,7 +295,7 @@ fun DashboardScreen(
                         ),
                         label = "p1A"
                     )
-                    val pulse1Scale by pulseTransition.animateFloat(
+                    val pulse1Scale = pulseTransition.animateFloat(
                         initialValue = 1f,
                         targetValue = 1.6f,
                         animationSpec = infiniteRepeatable(
@@ -319,9 +318,9 @@ fun DashboardScreen(
                             modifier = Modifier
                                 .size(42.dp)
                                 .graphicsLayer {
-                                    scaleX = pulse1Scale
-                                    scaleY = pulse1Scale
-                                    alpha = pulse1Alpha
+                                    scaleX = pulse1Scale.value
+                                    scaleY = pulse1Scale.value
+                                    alpha = pulse1Alpha.value
                                 }
                                 .border(2.dp, primaryColor, CircleShape)
                         )
@@ -330,9 +329,10 @@ fun DashboardScreen(
                             modifier = Modifier
                                 .size(42.dp)
                                 .graphicsLayer {
-                                    scaleX = pulse1Scale * 0.85f + 0.15f
-                                    scaleY = pulse1Scale * 0.85f + 0.15f
-                                    alpha = (pulse1Alpha * 0.6f).coerceIn(0f, 0.6f)
+                                    val s = pulse1Scale.value * 0.85f + 0.15f
+                                    scaleX = s
+                                    scaleY = s
+                                    alpha = (pulse1Alpha.value * 0.6f).coerceIn(0f, 0.6f)
                                 }
                                 .border(1.5.dp, primaryColor.copy(alpha = 0.5f), CircleShape)
                         )

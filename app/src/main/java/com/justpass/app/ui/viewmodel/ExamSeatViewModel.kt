@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.justpass.app.data.local.SecurePreferences
@@ -26,6 +27,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+@Immutable
 data class ExamSeatUiState(
     val isSearching: Boolean = false,
     val examSeat: ExamSeatData? = null,

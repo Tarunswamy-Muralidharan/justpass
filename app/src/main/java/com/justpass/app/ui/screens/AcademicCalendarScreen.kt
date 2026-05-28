@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.CalendarEvent
 import com.justpass.app.data.model.CalendarEventType
@@ -62,7 +63,7 @@ fun AcademicCalendarScreen(
     viewModel: CalendarViewModel = viewModel(),
     onBack: () -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isDark = isSystemInDarkTheme()
     val today = remember { LocalDate.now() }
     var slideDirection by remember { mutableIntStateOf(1) }

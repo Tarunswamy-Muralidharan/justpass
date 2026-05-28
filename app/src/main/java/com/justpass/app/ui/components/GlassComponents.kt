@@ -93,6 +93,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.cos
@@ -464,10 +465,13 @@ fun LiquidGlassBottomBar(
                     contentAlignment = Alignment.Center
                 ) {
                     if (isCenter) {
-                        // Center tab — sits in the bump, much bigger icon
-                        // Levitating float animation
+                        // Center tab — sits in the bump, much bigger icon.
+                        // levitateY stays as State<Float> (no `by`) so the read happens
+                        // inside the offset{} lambda below — that runs during layout,
+                        // not composition. Without this, every animation frame triggers
+                        // a recompose of the entire bottom nav row (it's always visible).
                         val levitateTransition = rememberInfiniteTransition(label = "levitate")
-                        val levitateY by levitateTransition.animateFloat(
+                        val levitateY = levitateTransition.animateFloat(
                             initialValue = 0f,
                             targetValue = 1f,
                             animationSpec = infiniteRepeatable(
@@ -478,10 +482,14 @@ fun LiquidGlassBottomBar(
                         )
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.offset(y = (-6).dp + (-3 * levitateY).dp).graphicsLayer {
-                                scaleX = bounceScale.value
-                                scaleY = bounceScale.value
-                            }
+                            modifier = Modifier
+                                .offset {
+                                    IntOffset(0, (-6f + -3f * levitateY.value).dp.roundToPx())
+                                }
+                                .graphicsLayer {
+                                    scaleX = bounceScale.value
+                                    scaleY = bounceScale.value
+                                }
                         ) {
                             val chessLabelColor by androidx.compose.animation.animateColorAsState(
                                 targetValue = if (selected) Color(0xFF4CAF50) else tint,
@@ -535,7 +543,7 @@ data class TabItemData(val label: String, val icon: ImageVector)
  * window lights up, chimney puffs smoke.
  */
 @Composable
-private fun AnimatedHomeIcon(selected: Boolean, tint: Color) {
+private fun AnimatedHomeIcon(selected: Boolean, tint: Color, modifier: Modifier = Modifier) {
     // Staggered animations for a richer sequence
     val doorOpen by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
@@ -566,7 +574,7 @@ private fun AnimatedHomeIcon(selected: Boolean, tint: Color) {
         }
     }
 
-    Canvas(modifier = Modifier.size(24.dp)) {
+    Canvas(modifier = modifier.size(24.dp)) {
         val w = size.width
         val h = size.height
         val stroke = w * 0.08f
@@ -662,7 +670,7 @@ private fun AnimatedHomeIcon(selected: Boolean, tint: Color) {
  * idle state with no reverse animation.
  */
 @Composable
-private fun AnimatedCalendarIcon(selected: Boolean, tint: Color) {
+private fun AnimatedCalendarIcon(selected: Boolean, tint: Color, modifier: Modifier = Modifier) {
     val redTop = Color(0xFFE53935)
     val bindingColor by animateColorAsState(
         targetValue = if (selected) redTop else tint,
@@ -702,7 +710,7 @@ private fun AnimatedCalendarIcon(selected: Boolean, tint: Color) {
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
 
-    Canvas(modifier = Modifier.size(24.dp)) {
+    Canvas(modifier = modifier.size(24.dp)) {
         val w = size.width
         val h = size.height
         val stroke = w * 0.08f
@@ -867,7 +875,7 @@ private fun generateCalendarPageParams(): List<CalendarPageParam> {
  * with a display strip and 2x3 button grid.
  */
 @Composable
-private fun AnimatedCalculatorIcon(selected: Boolean, tint: Color) {
+private fun AnimatedCalculatorIcon(selected: Boolean, tint: Color, modifier: Modifier = Modifier) {
     val card1 = remember { Animatable(0f) }
     val card2 = remember { Animatable(0f) }
     val card3 = remember { Animatable(0f) }
@@ -897,7 +905,7 @@ private fun AnimatedCalculatorIcon(selected: Boolean, tint: Color) {
     val gradeGreen = Color(0xFF00C853)
     val orangeBtn = Color(0xFFFF6D00)
 
-    Canvas(modifier = Modifier.size(24.dp)) {
+    Canvas(modifier = modifier.size(24.dp)) {
         val w = size.width
         val h = size.height
         val stroke = w * 0.08f
@@ -1070,7 +1078,7 @@ private fun generateGradeCardParams(): List<GradeCardParam> {
  * leaving a glowing trail, and the star pulses with warm light.
  */
 @Composable
-private fun AnimatedStarIcon(selected: Boolean, tint: Color) {
+private fun AnimatedStarIcon(selected: Boolean, tint: Color, modifier: Modifier = Modifier) {
     // Star glow
     val starGlow by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
@@ -1097,7 +1105,7 @@ private fun AnimatedStarIcon(selected: Boolean, tint: Color) {
         }
     }
 
-    Canvas(modifier = Modifier.size(24.dp)) {
+    Canvas(modifier = modifier.size(24.dp)) {
         val w = size.width
         val h = size.height
         val cx = w * 0.5f
@@ -1221,8 +1229,9 @@ private fun AnimatedStarIcon(selected: Boolean, tint: Color) {
 private fun AnimatedControllerIcon(
     selected: Boolean,
     tint: Color,
+    tapCounter: Int,
+    modifier: Modifier = Modifier,
     size: Dp = 70.dp,
-    tapCounter: Int
 ) {
     // ── Spec-compliant DualSense line-art per SPEC_FOR_KIMI § 1. ──
     // Each shape is drawn in viewBox 60×42 units then scaled into the canvas.
@@ -1258,7 +1267,7 @@ private fun AnimatedControllerIcon(
     )
 
     Canvas(
-        modifier = Modifier
+        modifier = modifier
             .size(size)
             .graphicsLayer { rotationZ = tilt }
     ) {
@@ -1462,7 +1471,7 @@ private fun buildControllerShapes(): List<CtrlShape> = listOf(
  * raised diamond tiles, knight L-hops + bishop diagonal slides. Infinite loop.
  */
 @Composable
-private fun AnimatedChessIcon(selected: Boolean, tint: Color, size: Dp = 24.dp) {
+private fun AnimatedChessIcon(selected: Boolean, tint: Color, modifier: Modifier = Modifier, size: Dp = 24.dp) {
     // ── Randomized piece movement — no repeating pattern ──
     // Knight valid L-moves on 4x4 grid
     fun knightTargets(r: Int, c: Int): List<Pair<Int, Int>> {
@@ -1558,7 +1567,7 @@ private fun AnimatedChessIcon(selected: Boolean, tint: Color, size: Dp = 24.dp) 
     val baseShadowC by androidx.compose.animation.animateColorAsState(
         if (selected) Color(0xFF2D3E1E) else Color(0xFF1A2332), colorSpec, label = "bs")
 
-    Canvas(modifier = Modifier.size(size)) {
+    Canvas(modifier = modifier.size(size)) {
         val w = size.toPx()
         val h = size.toPx()
         val cx = w * 0.5f

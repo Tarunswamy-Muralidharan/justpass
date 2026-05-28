@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.AbsentDay
 import com.justpass.app.ui.components.GlassListCard
@@ -32,7 +33,7 @@ private val PillShape = RoundedCornerShape(8.dp)
 
 @Composable
 fun AbsentDaysScreen(viewModel: AbsentDaysViewModel = viewModel(), onBack: () -> Unit) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
         GlassListCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {

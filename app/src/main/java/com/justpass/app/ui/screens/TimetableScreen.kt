@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.DayTimetable
 import com.justpass.app.data.model.SessionInfo
@@ -34,7 +35,7 @@ private val TabShape = RoundedCornerShape(12.dp)
 
 @Composable
 fun TimetableScreen(cardState: LiquidState, viewModel: TimetableViewModel = viewModel()) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isDark = isSystemInDarkTheme()
 
     // Recompute "Today" each time the screen is shown (survives midnight)
@@ -106,7 +107,7 @@ private fun DaySchedule(day: DayTimetable, isToday: Boolean) {
     val currentSessionIndex = if (isToday) getCurrentSessionIndex(day) else -1
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 12.dp, bottom = 160.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(day.sessions) { session -> SessionCard(session, isToday && session.sessionNumber == currentSessionIndex) }
+        items(day.sessions, key = { it.sessionNumber }) { session -> SessionCard(session, isToday && session.sessionNumber == currentSessionIndex) }
         if (day.sessions.isEmpty()) {
             item { Box(modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
                 Text("No classes scheduled", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp) } }

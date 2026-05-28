@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.TournamentRequest
 import com.justpass.app.ui.components.GlassListCard
@@ -28,7 +29,7 @@ fun TournamentApprovalScreen(
     onBack: () -> Unit,
     viewModel: TournamentViewModel = viewModel()
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     var rejectTarget by remember { mutableStateOf<TournamentRequest?>(null) }
 
     LaunchedEffect(state.isAdmin) {
@@ -71,7 +72,7 @@ fun TournamentApprovalScreen(
             contentPadding = PaddingValues(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(state.pendingRequests) { req ->
+            items(state.pendingRequests, key = { it.id }) { req ->
                 RequestCard(
                     req = req,
                     onApprove = { viewModel.approve(req.id) },

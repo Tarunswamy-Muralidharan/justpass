@@ -2,6 +2,7 @@ package com.justpass.app.ui.viewmodel
 
 import android.app.Application
 import android.util.Log
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.justpass.app.data.local.SecurePreferences
@@ -33,6 +34,7 @@ data class MatchHistoryEntry(
     val lichessGameId: String
 )
 
+@Immutable
 data class ChessUiState(
     val isOnline: Boolean = false,
     val isLoading: Boolean = true,

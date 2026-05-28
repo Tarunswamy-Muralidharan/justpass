@@ -3,6 +3,7 @@ package com.justpass.app.ui.viewmodel
 import android.app.Application
 import android.net.Uri
 import android.os.Build
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.firestore.ListenerRegistration
@@ -21,6 +22,7 @@ import kotlinx.coroutines.withContext
 
 enum class BugSubmitStep { IDLE, SUBMITTING, SUBMITTED, FAILED }
 
+@Immutable
 data class BugReportUiState(
     val isAdmin: Boolean = false,
     val reporterName: String = "",

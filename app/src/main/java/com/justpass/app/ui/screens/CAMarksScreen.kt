@@ -30,6 +30,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.Component
 import com.justpass.app.data.model.CourseMarks
@@ -47,7 +48,7 @@ fun CAMarksScreen(
     onBack: () -> Unit,
     onClassCompareClick: () -> Unit = {},
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     // Compare icon visibility: Remote Config flag AND this user's class has
     // already crossed the k=15 anonymity floor. We never render "need N more
@@ -122,7 +123,7 @@ fun CAMarksScreen(
                     LazyColumn(modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 160.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(uiState.courseMarksList) { CourseCard(it) }
+                        items(uiState.courseMarksList, key = { it.courseCode }) { CourseCard(it) }
                     }
                 }
             }

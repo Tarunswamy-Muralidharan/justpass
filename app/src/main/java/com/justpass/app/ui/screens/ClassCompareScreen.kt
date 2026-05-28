@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.ui.components.DistributionHistogram
 import com.justpass.app.ui.components.GlassCardShape
@@ -33,7 +34,7 @@ fun ClassCompareScreen(
     onBack: () -> Unit,
     viewModel: ClassRanksViewModel = viewModel(),
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -113,7 +114,7 @@ private fun ReadyContent(
     showDeleteConfirm: Boolean,
     onShowDelete: (Boolean) -> Unit,
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val ready = state as? ClassRanksViewModel.State.Ready ?: return
     val stats = ready.stats
     val context = androidx.compose.ui.platform.LocalContext.current

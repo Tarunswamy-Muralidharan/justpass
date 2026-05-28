@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,14 +61,24 @@ fun LiteRtScreen(
     onNavigate: (NavAction) -> Unit = {},
     viewModel: LiteRtViewModel = viewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    // Auto-scroll
-    LaunchedEffect(uiState.messages.size, uiState.isGenerating, uiState.streamingText) {
-        val target = uiState.messages.size - 1 + if (uiState.isGenerating) 1 else 0
+    // Auto-scroll on each new committed message — fires once per message, not per token.
+    LaunchedEffect(uiState.messages.size) {
+        val target = uiState.messages.size - 1
         if (target >= 0) listState.animateScrollToItem(target)
+    }
+
+    // Auto-scroll to the streaming-output slot when generation starts/ends.
+    // The slot is at index = messages.size while streaming, so this lands the user
+    // at the top of the new output. We don't re-fire on every token (the prior
+    // multi-key effect spawned a new animateScrollToItem coroutine per token).
+    LaunchedEffect(uiState.isGenerating) {
+        if (uiState.isGenerating) {
+            listState.animateScrollToItem(uiState.messages.size)
+        }
     }
 
     Column(

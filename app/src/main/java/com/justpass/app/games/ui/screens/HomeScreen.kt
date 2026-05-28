@@ -53,14 +53,15 @@ import com.justpass.app.games.ui.theme.DisplayFont
 @Composable
 fun HomeScreen(
     onPlay: (Game) -> Unit,
-    onLeaderboard: () -> Unit
+    onLeaderboard: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val prefs = remember { ScorePrefs.getInstance(context) }
     val games = Game.entries
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(BBInk)
     ) {
