@@ -35,6 +35,17 @@
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
+# Keep Response.close so R8 doesn't inline the close path onto the wrong
+# dispatcher (caused NetworkOnMainThreadException in Crashlytics)
+-keep class okhttp3.Response { public void close(); }
+-keep class kotlin.io.CloseableKt { *; }
+
+# Kotlin coroutines — prevent aggressive optimization from eliding
+# withContext dispatcher switches inside suspend functions
+-keep class kotlinx.coroutines.** { *; }
+-keep class kotlin.coroutines.** { *; }
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory { *; }
+-dontwarn kotlinx.coroutines.**
 
 # Error Prone annotations
 -dontwarn com.google.errorprone.annotations.CanIgnoreReturnValue

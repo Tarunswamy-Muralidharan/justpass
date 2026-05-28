@@ -1149,22 +1149,22 @@ class WebViewAuthenticator(private val context: Context) {
      * Fast refresh using cached auth token - no WebView needed.
      * Returns null if token is missing or expired (caller should fall back to WebView).
      */
-    suspend fun fetchAttendanceDirect(rollNumber: String): Result<AttendanceData>? {
-        val token = cachedAuthToken ?: return null
+    suspend fun fetchAttendanceDirect(rollNumber: String): Result<AttendanceData>? = withContext(Dispatchers.IO) {
+        val token = cachedAuthToken ?: return@withContext null
         android.util.Log.d("WebViewAuth", "Fast refresh with cached token")
-        val response = authenticatedGet("${ATTENDANCE_API_BASE}$rollNumber", token) ?: return null
-        return response.use { resp ->
-            val responseCode = resp.code
+        val response = authenticatedGet("${ATTENDANCE_API_BASE}$rollNumber", token) ?: return@withContext null
+        try {
+            val responseCode = response.code
             android.util.Log.d("WebViewAuth", "Fast refresh response: $responseCode")
             when {
                 responseCode == 200 -> {
-                    val jsonData = resp.body?.string() ?: ""
+                    val jsonData = response.body?.string() ?: ""
                     val r = gson.fromJson(jsonData, AttendanceResponse::class.java)
                     Result.success(AttendanceData.fromResponse(r))
                 }
                 responseCode == 401 -> { cachedAuthToken = null; null }
                 responseCode in 500..599 -> {
-                    val errBody = try { resp.body?.string() ?: "" } catch (_: Exception) { "" }
+                    val errBody = try { response.body?.string() ?: "" } catch (_: Exception) { "" }
                     if (errBody.contains("401") || errBody.contains("unauthorized", ignoreCase = true)) {
                         android.util.Log.d("WebViewAuth", "Fast refresh 500 is proxied 401 — token expired")
                         cachedAuthToken = null
@@ -1173,6 +1173,8 @@ class WebViewAuthenticator(private val context: Context) {
                 }
                 else -> Result.failure(Exception("HTTP $responseCode"))
             }
+        } finally {
+            runCatching { response.close() }
         }
     }
 
@@ -1182,24 +1184,24 @@ class WebViewAuthenticator(private val context: Context) {
     /**
      * Fetch CA marks using cached auth token (fast direct HTTP).
      */
-    suspend fun fetchCAMarksDirect(rollNumber: String): Result<List<CourseMarks>>? {
-        val token = cachedAuthToken ?: return null
+    suspend fun fetchCAMarksDirect(rollNumber: String): Result<List<CourseMarks>>? = withContext(Dispatchers.IO) {
+        val token = cachedAuthToken ?: return@withContext null
         android.util.Log.d("WebViewAuth", "Fetching CA marks direct for: $rollNumber")
         val response = authenticatedGet("${CA_MARKS_API_URL}$rollNumber", token)
-            ?: return Result.failure(Exception("Network error fetching CA marks"))
-        return response.use { resp ->
-            val responseCode = resp.code
+            ?: return@withContext Result.failure(Exception("Network error fetching CA marks"))
+        try {
+            val responseCode = response.code
             android.util.Log.d("WebViewAuth", "CA marks direct response: $responseCode")
             when {
                 responseCode == 200 -> {
-                    val jsonData = resp.body?.string() ?: ""
+                    val jsonData = response.body?.string() ?: ""
                     val listType = object : TypeToken<List<CourseMarks>>() {}.type
                     val list: List<CourseMarks> = gson.fromJson(jsonData, listType)
                     Result.success(list)
                 }
                 responseCode == 401 -> { cachedAuthToken = null; null }
                 responseCode in 500..599 -> {
-                    val errBody = try { resp.body?.string() ?: "" } catch (_: Exception) { "" }
+                    val errBody = try { response.body?.string() ?: "" } catch (_: Exception) { "" }
                     if (errBody.contains("401") || errBody.contains("unauthorized", ignoreCase = true)) {
                         cachedAuthToken = null
                         null
@@ -1207,30 +1209,32 @@ class WebViewAuthenticator(private val context: Context) {
                 }
                 else -> Result.failure(Exception("HTTP $responseCode"))
             }
+        } finally {
+            runCatching { response.close() }
         }
     }
 
     /**
      * Fetch absent days details using cached auth token.
      */
-    suspend fun fetchAbsentDays(rollNumber: String): Result<List<AbsentDay>>? {
-        val token = cachedAuthToken ?: return null
+    suspend fun fetchAbsentDays(rollNumber: String): Result<List<AbsentDay>>? = withContext(Dispatchers.IO) {
+        val token = cachedAuthToken ?: return@withContext null
         android.util.Log.d("WebViewAuth", "Fetching absent days for: $rollNumber")
         val response = authenticatedGet("https://laudea.psgitech.ac.in/sis/Attendance/absent/$rollNumber", token)
-            ?: return Result.failure(Exception("Network error fetching absent days"))
-        return response.use { resp ->
-            val responseCode = resp.code
+            ?: return@withContext Result.failure(Exception("Network error fetching absent days"))
+        try {
+            val responseCode = response.code
             android.util.Log.d("WebViewAuth", "Absent days response: $responseCode")
             when {
                 responseCode == 200 -> {
-                    val jsonData = resp.body?.string() ?: ""
+                    val jsonData = response.body?.string() ?: ""
                     val listType = object : TypeToken<List<AbsentDay>>() {}.type
                     val absentDays: List<AbsentDay> = gson.fromJson(jsonData, listType)
                     Result.success(absentDays)
                 }
                 responseCode == 401 -> { cachedAuthToken = null; null }
                 responseCode in 500..599 -> {
-                    val errBody = try { resp.body?.string() ?: "" } catch (_: Exception) { "" }
+                    val errBody = try { response.body?.string() ?: "" } catch (_: Exception) { "" }
                     if (errBody.contains("401") || errBody.contains("unauthorized", ignoreCase = true)) {
                         cachedAuthToken = null
                         null
@@ -1238,6 +1242,8 @@ class WebViewAuthenticator(private val context: Context) {
                 }
                 else -> Result.failure(Exception("HTTP $responseCode"))
             }
+        } finally {
+            runCatching { response.close() }
         }
     }
 
@@ -1245,24 +1251,24 @@ class WebViewAuthenticator(private val context: Context) {
      * Fetch present days using cached auth token (fast direct HTTP).
      * Response format is identical to absent days.
      */
-    suspend fun fetchPresentDays(rollNumber: String): Result<List<AbsentDay>>? {
-        val token = cachedAuthToken ?: return null
+    suspend fun fetchPresentDays(rollNumber: String): Result<List<AbsentDay>>? = withContext(Dispatchers.IO) {
+        val token = cachedAuthToken ?: return@withContext null
         android.util.Log.d("WebViewAuth", "Fetching present days for: $rollNumber")
         val response = authenticatedGet("https://laudea.psgitech.ac.in/sis/Attendance/present/$rollNumber", token)
-            ?: return Result.failure(Exception("Network error fetching present days"))
-        return response.use { resp ->
-            val responseCode = resp.code
+            ?: return@withContext Result.failure(Exception("Network error fetching present days"))
+        try {
+            val responseCode = response.code
             android.util.Log.d("WebViewAuth", "Present days response: $responseCode")
             when {
                 responseCode == 200 -> {
-                    val jsonData = resp.body?.string() ?: ""
+                    val jsonData = response.body?.string() ?: ""
                     val listType = object : TypeToken<List<AbsentDay>>() {}.type
                     val presentDays: List<AbsentDay> = gson.fromJson(jsonData, listType)
                     Result.success(presentDays)
                 }
                 responseCode == 401 -> { cachedAuthToken = null; null }
                 responseCode in 500..599 -> {
-                    val errBody = try { resp.body?.string() ?: "" } catch (_: Exception) { "" }
+                    val errBody = try { response.body?.string() ?: "" } catch (_: Exception) { "" }
                     if (errBody.contains("401") || errBody.contains("unauthorized", ignoreCase = true)) {
                         cachedAuthToken = null
                         null
@@ -1270,30 +1276,32 @@ class WebViewAuthenticator(private val context: Context) {
                 }
                 else -> Result.failure(Exception("HTTP $responseCode"))
             }
+        } finally {
+            runCatching { response.close() }
         }
     }
 
     /**
      * Fetch exemptions using cached auth token (fast direct HTTP).
      */
-    suspend fun fetchExemptionsDirect(rollNumber: String): Result<List<com.justpass.app.data.model.Exemption>>? {
-        val token = cachedAuthToken ?: return null
+    suspend fun fetchExemptionsDirect(rollNumber: String): Result<List<com.justpass.app.data.model.Exemption>>? = withContext(Dispatchers.IO) {
+        val token = cachedAuthToken ?: return@withContext null
         android.util.Log.d("WebViewAuth", "Fetching exemptions for: $rollNumber")
         val response = authenticatedGet("https://laudea.psgitech.ac.in/sis/remote/exemptions/$rollNumber", token)
-            ?: return Result.failure(Exception("Network error fetching exemptions"))
-        return response.use { resp ->
-            val responseCode = resp.code
+            ?: return@withContext Result.failure(Exception("Network error fetching exemptions"))
+        try {
+            val responseCode = response.code
             android.util.Log.d("WebViewAuth", "Exemptions response: $responseCode")
             when {
                 responseCode == 200 -> {
-                    val jsonData = resp.body?.string() ?: ""
+                    val jsonData = response.body?.string() ?: ""
                     val listType = object : TypeToken<List<com.justpass.app.data.model.Exemption>>() {}.type
                     val exemptions: List<com.justpass.app.data.model.Exemption> = gson.fromJson(jsonData, listType)
                     Result.success(exemptions)
                 }
                 responseCode == 401 -> { cachedAuthToken = null; null }
                 responseCode in 500..599 -> {
-                    val errBody = try { resp.body?.string() ?: "" } catch (_: Exception) { "" }
+                    val errBody = try { response.body?.string() ?: "" } catch (_: Exception) { "" }
                     if (errBody.contains("401") || errBody.contains("unauthorized", ignoreCase = true)) {
                         cachedAuthToken = null
                         null
@@ -1301,28 +1309,30 @@ class WebViewAuthenticator(private val context: Context) {
                 }
                 else -> Result.failure(Exception("HTTP $responseCode"))
             }
+        } finally {
+            runCatching { response.close() }
         }
     }
 
     /**
      * Fetch timetable using cached auth token (fast direct HTTP).
      */
-    suspend fun fetchTimetableDirect(configId: String, rollNumber: String): Result<TimetableResponse>? {
-        val token = cachedAuthToken ?: return null
+    suspend fun fetchTimetableDirect(configId: String, rollNumber: String): Result<TimetableResponse>? = withContext(Dispatchers.IO) {
+        val token = cachedAuthToken ?: return@withContext null
         android.util.Log.d("WebViewAuth", "Fetching timetable for: $rollNumber with config: $configId")
         val response = authenticatedGet("${TIMETABLE_API_BASE}$configId/$rollNumber", token)
-            ?: return Result.failure(Exception("Network error fetching timetable"))
-        return response.use { resp ->
-            val responseCode = resp.code
+            ?: return@withContext Result.failure(Exception("Network error fetching timetable"))
+        try {
+            val responseCode = response.code
             android.util.Log.d("WebViewAuth", "Timetable response: $responseCode")
             when {
                 responseCode == 200 -> {
-                    val jsonData = resp.body?.string() ?: ""
+                    val jsonData = response.body?.string() ?: ""
                     Result.success(gson.fromJson(jsonData, TimetableResponse::class.java))
                 }
                 responseCode == 401 -> { cachedAuthToken = null; null }
                 responseCode in 500..599 -> {
-                    val errBody = try { resp.body?.string() ?: "" } catch (_: Exception) { "" }
+                    val errBody = try { response.body?.string() ?: "" } catch (_: Exception) { "" }
                     if (errBody.contains("401") || errBody.contains("unauthorized", ignoreCase = true)) {
                         cachedAuthToken = null
                         null
@@ -1330,6 +1340,8 @@ class WebViewAuthenticator(private val context: Context) {
                 }
                 else -> Result.failure(Exception("HTTP $responseCode"))
             }
+        } finally {
+            runCatching { response.close() }
         }
     }
 
@@ -1337,18 +1349,18 @@ class WebViewAuthenticator(private val context: Context) {
      * Fetch exam results/grades using cached auth token.
      * API: GET /sis/remote/all/results?rollNo={rollNumber}
      */
-    suspend fun fetchResultDirect(rollNumber: String): kotlin.Result<String>? {
-        val token = cachedAuthToken ?: return null
+    suspend fun fetchResultDirect(rollNumber: String): kotlin.Result<String>? = withContext(Dispatchers.IO) {
+        val token = cachedAuthToken ?: return@withContext null
         val endpoint = "https://laudea.psgitech.ac.in/sis/remote/all/results?rollNo=${java.net.URLEncoder.encode(rollNumber, "UTF-8")}"
         android.util.Log.d("WebViewAuth", "Fetching results for: $rollNumber")
         val response = authenticatedGet(endpoint, token)
-            ?: return kotlin.Result.failure(Exception("Network error fetching results"))
-        return response.use { resp ->
-            val responseCode = resp.code
+            ?: return@withContext kotlin.Result.failure(Exception("Network error fetching results"))
+        try {
+            val responseCode = response.code
             android.util.Log.d("WebViewAuth", "Results response: $responseCode")
             when {
                 responseCode == 200 -> {
-                    val data = resp.body?.string() ?: ""
+                    val data = response.body?.string() ?: ""
                     android.util.Log.d("WebViewAuth", "Results data length: ${data.length}")
                     kotlin.Result.success(data)
                 }
@@ -1356,6 +1368,8 @@ class WebViewAuthenticator(private val context: Context) {
                 responseCode in 500..599 -> kotlin.Result.failure(ServerDownException(responseCode))
                 else -> kotlin.Result.failure(Exception("HTTP $responseCode"))
             }
+        } finally {
+            runCatching { response.close() }
         }
     }
 
@@ -1406,18 +1420,20 @@ class WebViewAuthenticator(private val context: Context) {
         android.util.Log.d("WebViewAuth", "Fetching student nodeId for: $rollNumber")
         val response = authenticatedGet("https://laudea.psgitech.ac.in/sis/students/$rollNumber", token)
             ?: return@withContext null
-        response.use { resp ->
-            if (resp.code == 200) {
-                val json = resp.body?.string() ?: return@use null
+        try {
+            if (response.code == 200) {
+                val json = response.body?.string() ?: return@withContext null
                 val map = gson.fromJson(json, Map::class.java)
                 val nodeId = map["nodeId"]?.toString()
                 android.util.Log.d("WebViewAuth", "Student nodeId: $nodeId")
                 nodeId
             } else {
-                android.util.Log.e("WebViewAuth", "Student profile fetch failed: HTTP ${resp.code}")
-                if (resp.code == 401) cachedAuthToken = null
+                android.util.Log.e("WebViewAuth", "Student profile fetch failed: HTTP ${response.code}")
+                if (response.code == 401) cachedAuthToken = null
                 null
             }
+        } finally {
+            runCatching { response.close() }
         }
     }
 
@@ -1732,7 +1748,7 @@ class WebViewAuthenticator(private val context: Context) {
                     studentResp?.close()
                     return@withContext null
                 }
-                val studentJson = studentResp.use { it.body?.string() ?: "" }
+                val studentJson = try { studentResp.body?.string() ?: "" } finally { runCatching { studentResp.close() } }
                 val displayPicture = try {
                     org.json.JSONObject(studentJson).optJSONObject("displayPicture")
                 } catch (_: Exception) { null }
