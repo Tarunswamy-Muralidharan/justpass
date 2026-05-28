@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.justpass.app.data.model.UploadIntent
 import com.justpass.app.ui.components.GlassCardShape
 import com.justpass.app.ui.components.GlassCardShapeSmall
@@ -49,7 +50,7 @@ fun QPaperUploadScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val state by viewModel.uploadState.collectAsState()
+    val state by viewModel.uploadState.collectAsStateWithLifecycle()
 
     LaunchedEffect(intent.subjectCode, intent.category, intent.examYear) {
         viewModel.checkAlreadyContributed(intent)
@@ -315,7 +316,7 @@ fun QPaperThankYouScreen(
     onPickGap: (UploadIntent) -> Unit,
     onDone: () -> Unit,
 ) {
-    val state by viewModel.uploadState.collectAsState()
+    val state by viewModel.uploadState.collectAsStateWithLifecycle()
     val gaps = state.gapsForFollowUp
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {

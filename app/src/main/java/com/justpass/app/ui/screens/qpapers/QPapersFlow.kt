@@ -112,7 +112,7 @@ fun QPapersFlow(
                                 subjectCode = route.subjectCode,
                                 subjectName = route.subjectName,
                                 semester = route.semester,
-                                regulation = viewModel.userRegulation.name,
+                                regulation = viewModel.effectiveRegulation.name,
                                 category = category,
                                 examYear = examYear,
                             )

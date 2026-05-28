@@ -1585,17 +1585,21 @@ private fun FriendsDialog(
     onDismiss: () -> Unit
 ) {
     var pendingRemoval by remember { mutableStateOf<ChessProfile?>(null) }
-    val onlineIds = onlinePlayers.map { it.id }.toSet()
     // CF Worker tags presence with Firebase UID; chess_profiles keys by
     // p_${rollHash}. id-set lookup never matches across the two ID-spaces, so
     // also match by displayName as fallback. See ChessRepositoryV2.emitOnlinePlayers.
-    val onlineNames = onlinePlayers.map { it.displayName }.filter { it.isNotBlank() }.toSet()
+    val onlineIds = remember(onlinePlayers) { onlinePlayers.map { it.id }.toSet() }
+    val onlineNames = remember(onlinePlayers) {
+        onlinePlayers.map { it.displayName }.filter { it.isNotBlank() }.toSet()
+    }
     fun ChessProfile.isOnlineNow(): Boolean =
         id in onlineIds || (visibleName.isNotBlank() && visibleName in onlineNames)
-    val onlineCount = friends.count { it.isOnlineNow() }
-    val sortedFriends = friends.sortedWith(
-        compareByDescending<ChessProfile> { it.isOnlineNow() }.thenByDescending { it.rating }
-    )
+    val sortedFriends = remember(friends, onlineIds, onlineNames) {
+        friends.sortedWith(
+            compareByDescending<ChessProfile> { it.isOnlineNow() }.thenByDescending { it.rating }
+        )
+    }
+    val onlineCount = remember(sortedFriends) { sortedFriends.count { it.isOnlineNow() } }
 
     AlertDialog(
         onDismissRequest = onDismiss,

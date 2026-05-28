@@ -23,10 +23,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.justpass.app.data.model.CurriculumSubject
 import com.justpass.app.data.model.Department
 import com.justpass.app.data.model.PaperCategory
 import com.justpass.app.data.model.QPaper
+import com.justpass.app.data.model.Regulation
 import com.justpass.app.data.model.detectDepartment
 import com.justpass.app.data.model.getCurriculum
 import com.justpass.app.ui.components.GlassCardShape
@@ -91,11 +93,13 @@ fun QPaperDepartmentScreen(
     onBack: () -> Unit,
 ) {
     val myDept = viewModel.userDepartment
+    val browseReg by viewModel.browseRegulation.collectAsStateWithLifecycle()
+    val effective = browseReg ?: viewModel.userRegulation
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         QPapersHeader(
             title = "Previous Year Papers",
-            subtitle = "Tap your department",
+            subtitle = if (isAdmin) "Admin · ${effective.displayName}" else "Tap your department",
             onBack = onBack,
             trailing = if (isAdmin) ({
                 IconButton(onClick = onOpenAdminQueue) {
@@ -106,6 +110,14 @@ fun QPaperDepartmentScreen(
                 }
             }) else null,
         )
+
+        if (isAdmin) {
+            RegulationSwitcher(
+                selected = effective,
+                onChange = { viewModel.setBrowseRegulation(it) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -119,6 +131,34 @@ fun QPaperDepartmentScreen(
                     onClick = { onPickDepartment(dept.shortName) },
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun RegulationSwitcher(
+    selected: Regulation,
+    onChange: (Regulation) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Regulation.entries.forEach { reg ->
+            val isSelected = reg == selected
+            androidx.compose.material3.FilterChip(
+                selected = isSelected,
+                onClick = { onChange(reg) },
+                label = {
+                    Text(
+                        reg.name,
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                },
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
@@ -190,7 +230,7 @@ fun QPaperSemesterListScreen(
     onPickSemester: (Int) -> Unit,
     onBack: () -> Unit,
 ) {
-    val regulation = viewModel.userRegulation
+    val regulation = viewModel.effectiveRegulation
     val semesters = remember(department, regulation) {
         val dept = detectDepartment(department)
         if (dept == null) emptyList<Int>()
@@ -260,7 +300,7 @@ fun QPaperSubjectListScreen(
     onPickSubject: (code: String, name: String) -> Unit,
     onBack: () -> Unit,
 ) {
-    val regulation = viewModel.userRegulation
+    val regulation = viewModel.effectiveRegulation
     val subjects = remember(department, semester, regulation) {
         val dept = detectDepartment(department)
         if (dept == null) emptyList<CurriculumSubject>()
@@ -337,8 +377,8 @@ fun QPaperCategoryScreen(
     onContribute: (PaperCategory, examYear: Int) -> Unit,
     onBack: () -> Unit,
 ) {
-    val state by viewModel.categoryState.collectAsState()
-    val regulation = viewModel.userRegulation.name
+    val state by viewModel.categoryState.collectAsStateWithLifecycle()
+    val regulation = viewModel.effectiveRegulation.name
 
     LaunchedEffect(route.subjectCode) {
         viewModel.loadCategoryDetail(route.department, route.subjectCode, regulation)
