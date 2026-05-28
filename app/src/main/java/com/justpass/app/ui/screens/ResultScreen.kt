@@ -42,7 +42,9 @@ private val TabShape = RoundedCornerShape(12.dp)
 fun ResultScreen(
     cardState: LiquidState,
     viewModel: ResultViewModel = viewModel(),
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onQPapersClick: () -> Unit = {},
+    qpapersVisible: Boolean = false,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isDark = isSystemInDarkTheme()
@@ -220,6 +222,23 @@ fun ResultScreen(
                         // Subject cards
                         items(filteredGrades, key = { "${it.courseCode}_${it.semester}_${it.attempt}" }) { entry ->
                             GradeCard(entry, isDark)
+                        }
+                        // Contextual nudge after the user has seen their result —
+                        // "got the sem paper? Help juniors". Banner kept dismissable
+                        // (per session) via remember-state in the banner composable.
+                        if (qpapersVisible) {
+                            item(key = "qpapers_banner") {
+                                var bannerDismissed by remember { mutableStateOf(false) }
+                                if (!bannerDismissed) {
+                                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(top = 8.dp))
+                                    com.justpass.app.ui.components.ContributeBanner(
+                                        title = "Got the sem paper for these subjects?",
+                                        subtitle = "Contribute it anonymously — juniors will thank you.",
+                                        onClick = onQPapersClick,
+                                        onDismiss = { bannerDismissed = true },
+                                    )
+                                }
+                            }
                         }
                     }
                 }

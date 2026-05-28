@@ -120,7 +120,9 @@ fun DashboardScreen(
     onChessClick: () -> Unit = {},
     onHumanBenchmarkClick: () -> Unit = {},
     onLiteRtClick: () -> Unit = {},
-    onProfileClick: () -> Unit = {}
+    onProfileClick: () -> Unit = {},
+    onQPapersClick: () -> Unit = {},
+    qpapersVisible: Boolean = false,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val haptic = LocalHapticFeedback.current
@@ -1397,6 +1399,15 @@ fun DashboardScreen(
 
         DashboardTile("Syllabus", "R2021 subject-wise syllabus", Icons.Default.MenuBook, Color(0xFF7C4DFF),
             Modifier.fillMaxWidth()) { Analytics.logTileClicked("syllabus"); onSyllabusClick() }
+
+        if (qpapersVisible) {
+            Spacer(modifier = Modifier.height(8.dp))
+            DashboardTile(
+                "Prev Year Papers", "Browse & contribute exam papers",
+                Icons.Default.MenuBook, Color(0xFF26C6DA),
+                Modifier.fillMaxWidth(),
+            ) { Analytics.logTileClicked("qpapers"); onQPapersClick() }
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 

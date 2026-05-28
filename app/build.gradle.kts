@@ -38,6 +38,20 @@ android {
             "String", "SUPABASE_ANON_KEY",
             "\"${localProps.getProperty("SUPABASE_ANON_KEY", "")}\""
         )
+
+        // Cloudinary credentials for the QPapers feature. Both come from
+        // local.properties (gitignored) so the cloud name + preset name
+        // aren't baked into the public repo. Falling back to empty strings
+        // means QPaperRepository can detect missing config and disable
+        // the feature gracefully rather than crashing.
+        buildConfigField(
+            "String", "CLOUDINARY_CLOUD_NAME",
+            "\"${localProps.getProperty("CLOUDINARY_CLOUD_NAME", "")}\""
+        )
+        buildConfigField(
+            "String", "CLOUDINARY_UPLOAD_PRESET",
+            "\"${localProps.getProperty("CLOUDINARY_UPLOAD_PRESET", "")}\""
+        )
     }
 
     buildFeatures {

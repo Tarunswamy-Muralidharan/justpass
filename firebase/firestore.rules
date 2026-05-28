@@ -1,0 +1,120 @@
+// Firestore Security Rules for JustPass — QPapers collections
+//
+// This file documents the rules to be applied in Firebase Console.
+// Deploy via: Firebase Console → Firestore → Rules tab → paste below
+// (or via `firebase deploy --only firestore:rules` if Firebase CLI is set up).
+//
+// IMPORTANT: This file is QPapers-only. Existing rules for chess_challenges,
+// admin_roles, admin_uids, tournaments, bug_reports, etc. must be kept.
+// Append the rules below to your existing ruleset.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── existing rules (chess, admin, etc.) go here ────────────────────
+
+    // ─── QPapers: public-readable metadata, NO contributor info ────────
+    //
+    // Reads:
+    //   - Anyone authenticated can read approved papers.
+    //   - Pending / rejected papers are admin-only.
+    //
+    // Writes:
+    //   - Create: any authenticated user, must set status='pending', and
+    //     must include the required schema fields.
+    //   - Update: admin-only (status transitions, approvedAt, approvedBy).
+    //     View count increments are also allowed for any auth user.
+    //   - Delete: admin-only.
+    match /qpapers/{paperId} {
+      allow read: if isAuthed() && (
+        resource.data.status == 'approved' ||
+        isAdmin()
+      );
+
+      allow create: if isAuthed()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasAll([
+          'department', 'subjectCode', 'subjectName', 'category',
+          'examYear', 'semester', 'regulation',
+          'cloudinaryUrl', 'cloudinaryPublicId',
+          'status', 'contributedAt', 'viewCount'
+        ])
+        && request.resource.data.category in ['ca1', 'ca2', 'sem']
+        && request.resource.data.examYear is int
+        && request.resource.data.examYear >= 2020
+        && request.resource.data.examYear <= 2030
+        && request.resource.data.semester is int
+        && request.resource.data.semester >= 1
+        && request.resource.data.semester <= 8
+        && request.resource.data.regulation in ['R2021', 'R2025']
+        && request.resource.data.viewCount == 0
+        && request.resource.data.cloudinaryUrl is string
+        && request.resource.data.cloudinaryPublicId is string;
+
+      // Admins can mutate status + approval fields.
+      // Any authed user can increment viewCount (atomic delta).
+      allow update: if isAuthed() && (
+        (isAdmin() && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly([
+            'status', 'approvedAt', 'approvedBy', 'viewCount'
+          ])) ||
+        (request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly(['viewCount'])
+          && request.resource.data.viewCount == resource.data.viewCount + 1)
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // ─── QPapers contributors: private mapping of paper → uploader ────
+    //
+    // This collection is the ONLY place contributor identity is stored.
+    // qpapers/{paperId} above carries no contributor fields, ensuring
+    // no one but the contributor themselves and admins can ever link
+    // a paper to a person.
+    //
+    // Reads:
+    //   - Self-read by uid match (lets a contributor see their own list
+    //     and check "have I already contributed this?").
+    //   - Admin reads for the approval queue.
+    //
+    // Writes:
+    //   - Create: only by the contributor themselves, paperId must
+    //     match an existing qpapers doc.
+    //   - Update: never (immutable record).
+    //   - Delete: admin only.
+    match /qpapers_contributors/{paperId} {
+      allow read: if isAuthed() && (
+        resource.data.uid == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow create: if isAuthed()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'paperId', 'uid', 'displayName', 'rollNumber',
+          'submittedAt',
+          'subjectCode', 'category', 'examYear', 'regulation'
+        ])
+        && request.resource.data.paperId == paperId
+        && exists(/databases/$(database)/documents/qpapers/$(paperId));
+
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // ─── helpers ──────────────────────────────────────────────────────
+    function isAuthed() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isAdmin() {
+      // Reuses the existing admin_uids/{firebaseUid} collection
+      // (see AdminRolesRepository.kt — Firebase UIDs mirror the
+      // p_xxxx player IDs in admin_roles/).
+      return isAuthed() &&
+        exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid));
+    }
+  }
+}
