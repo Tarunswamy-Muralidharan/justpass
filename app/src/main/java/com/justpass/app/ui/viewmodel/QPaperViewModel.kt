@@ -71,6 +71,21 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
         raw?.let { detectDepartment(it) }
     }
 
+    // Admin-only regulation override. When non-null the browse screens
+    // (semester list, subject list, category detail) use this instead of
+    // the user's own regulation, so an R2021 admin can still see and
+    // verify R2025 papers and vice-versa.
+    private val _browseRegulation = MutableStateFlow<Regulation?>(null)
+    val browseRegulation: StateFlow<Regulation?> = _browseRegulation.asStateFlow()
+
+    /** Effective regulation for browse: admin override OR user's own. */
+    val effectiveRegulation: Regulation
+        get() = _browseRegulation.value ?: userRegulation
+
+    fun setBrowseRegulation(reg: Regulation) {
+        _browseRegulation.value = reg
+    }
+
     val isBatchEligible: Boolean
         get() = securePrefs.batchYear >= 2025
 
@@ -150,15 +165,21 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
             ?: return emptyList()
         val curr = getCurriculum(dept, regulation)
         val subjects = curr[justUploaded.semester] ?: return emptyList()
-        val mine = repo.listMyContributions().associateBy {
-            Triple(it.subjectCode, it.category, it.examYear)
-        }
+        // Include the just-uploaded slot in `mine` even if Firestore's
+        // post-write read hasn't propagated yet — otherwise the gap list
+        // re-suggests the slot we just filled.
+        val justUploadedKey = Triple(
+            justUploaded.subjectCode, justUploaded.category.key, justUploaded.examYear
+        )
+        val mine: Set<Triple<String, String, Int>> = repo.listMyContributions()
+            .map { Triple(it.subjectCode, it.category, it.examYear) }
+            .toMutableSet()
+            .apply { add(justUploadedKey) }
         val gaps = mutableListOf<UploadIntent>()
         for (subj in subjects.take(8)) {
             for (cat in PaperCategory.all) {
                 val key = Triple(subj.code, cat.key, justUploaded.examYear)
-                if (key == Triple(justUploaded.subjectCode, justUploaded.category.key, justUploaded.examYear)) continue
-                if (mine.containsKey(key)) continue
+                if (key in mine) continue
                 gaps.add(
                     UploadIntent(
                         department = justUploaded.department,

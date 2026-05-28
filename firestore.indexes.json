@@ -31,6 +31,44 @@
         { "fieldPath": "reporterPlayerId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "qpapers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "department", "order": "ASCENDING" },
+        { "fieldPath": "subjectCode", "order": "ASCENDING" },
+        { "fieldPath": "regulation", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "examYear", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "qpapers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "contributedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "qpapers_contributors",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "subjectCode", "order": "ASCENDING" },
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "examYear", "order": "ASCENDING" },
+        { "fieldPath": "regulation", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "qpapers_contributors",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

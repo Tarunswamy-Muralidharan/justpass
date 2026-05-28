@@ -34,6 +34,13 @@
       },
       "valueType": "BOOLEAN",
       "description": "Cloudflare Durable Objects chess lobby. Worker rehydrates the players map from state.getWebSockets() on wake (fixed 2026-05-05). Flip false for instant rollback to Firestore."
+    },
+    "qpapers_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN",
+      "description": "Master switch for the Previous Year Question Papers tile + flow. Gated to 2025+ batches client-side; admins always see the tile. Flip false for instant kill-switch (hides tile + blocks browse/upload)."
     }
   }
 }

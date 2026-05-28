@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.justpass.app.data.model.QPaper
 import com.justpass.app.data.model.QPaperContributor
 import com.justpass.app.ui.components.GlassCardShape
@@ -44,7 +45,7 @@ fun QPaperAdminScreen(
     onOpenViewer: (QPaper) -> Unit,
     onBack: () -> Unit,
 ) {
-    val state by viewModel.adminState.collectAsState()
+    val state by viewModel.adminState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // PDF picker for the replace-and-approve flow. The currently selected
