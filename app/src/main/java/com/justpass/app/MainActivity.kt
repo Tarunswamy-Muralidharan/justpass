@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -134,6 +135,9 @@ class MainActivity : ComponentActivity() {
         if (prefs.timetableConfigId == "65d6ee42722e1e6d3ed430b0") {
             prefs.timetableConfigId = null
         }
+        // Bump engagement counters for the in-app rating gate (first-launch
+        // timestamp + open count). Cheap, always runs.
+        com.justpass.app.data.review.InAppReviewManager.recordAppOpen(prefs)
         AttendanceRefreshWorker.schedulePeriodicRefresh(this)
         CircularNotificationWorker.schedule(this)
         HolidayNotificationWorker.schedule(this)
@@ -467,6 +471,17 @@ fun AttendanceApp() {
         if (!powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
             showBatteryDialog = true
         }
+    }
+
+    // In-app rating prompt — fires once per install after the user has been
+    // around for a few days + several opens. Internal gate no-ops if not yet
+    // eligible. Delay 3 s so update/maintenance/battery dialogs win the slot.
+    LaunchedEffect(currentScreen) {
+        if (currentScreen != Screen.Dashboard) return@LaunchedEffect
+        if (securePrefs.ratingAsked) return@LaunchedEffect
+        kotlinx.coroutines.delay(3000)
+        val act = context as? Activity ?: return@LaunchedEffect
+        com.justpass.app.data.review.InAppReviewManager.maybeShow(act)
     }
 
     if (showBatteryDialog) {

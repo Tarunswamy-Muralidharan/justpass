@@ -137,6 +137,24 @@ class SecurePreferences(context: Context) {
         get() = regularPrefs.getString(KEY_DISMISSED_ANNOUNCEMENT, null)
         set(value) = regularPrefs.edit().putString(KEY_DISMISSED_ANNOUNCEMENT, value).apply()
 
+    // ── In-app rating gate ────────────────────────────────────────────────
+    // We surface the Play In-App Review flow once per install after the
+    // user has had a chance to form an opinion (a few days + a few opens).
+    // ratingAsked flips true the moment we launch the flow — Google's API
+    // does not tell us whether the dialog was actually shown (quota), so
+    // the only safe assumption is "we've used our shot."
+    var firstLaunchMillis: Long
+        get() = regularPrefs.getLong(KEY_FIRST_LAUNCH_MILLIS, 0L)
+        set(value) = regularPrefs.edit().putLong(KEY_FIRST_LAUNCH_MILLIS, value).apply()
+
+    var appOpenCount: Int
+        get() = regularPrefs.getInt(KEY_APP_OPEN_COUNT, 0)
+        set(value) = regularPrefs.edit().putInt(KEY_APP_OPEN_COUNT, value).apply()
+
+    var ratingAsked: Boolean
+        get() = regularPrefs.getBoolean(KEY_RATING_ASKED, false)
+        set(value) = regularPrefs.edit().putBoolean(KEY_RATING_ASKED, value).apply()
+
     var chessBoardTheme: String
         get() = regularPrefs.getString(KEY_CHESS_BOARD_THEME, "CHESS_COM") ?: "CHESS_COM"
         set(value) = regularPrefs.edit().putString(KEY_CHESS_BOARD_THEME, value).apply()
@@ -367,6 +385,9 @@ class SecurePreferences(context: Context) {
         private const val KEY_CLASS_COMPARE_UNLOCKED = "class_compare_unlocked"
         private const val KEY_TARGET_CGPA = "target_cgpa"
         private const val KEY_DISMISSED_ANNOUNCEMENT = "dismissed_announcement_id"
+        private const val KEY_FIRST_LAUNCH_MILLIS = "first_launch_millis"
+        private const val KEY_APP_OPEN_COUNT = "app_open_count"
+        private const val KEY_RATING_ASKED = "rating_asked"
 
         @Volatile
         private var instance: SecurePreferences? = null
