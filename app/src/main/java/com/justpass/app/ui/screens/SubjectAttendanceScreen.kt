@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.SubjectAttendance
 import com.justpass.app.ui.components.GlassCardShapeSmall
@@ -37,7 +38,7 @@ fun SubjectAttendanceScreen(
     onBack: () -> Unit,
     onSubjectClick: (courseCode: String, courseTitle: String) -> Unit = { _, _ -> }
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         // Header
@@ -100,7 +101,7 @@ fun SubjectAttendanceScreen(
                         ),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        items(uiState.subjects) { subject ->
+                        items(uiState.subjects, key = { it.courseCode }) { subject ->
                             SubjectCard(
                                 subject = subject,
                                 onClick = { onSubjectClick(subject.courseCode, subject.courseTitle) }

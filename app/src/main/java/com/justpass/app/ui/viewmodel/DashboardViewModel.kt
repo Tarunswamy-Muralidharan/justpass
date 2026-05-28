@@ -1,6 +1,7 @@
 package com.justpass.app.ui.viewmodel
 
 import android.app.Application
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.justpass.app.data.local.SecurePreferences
@@ -37,6 +38,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+@Immutable
 data class Announcement(
     val id: String = "",
     val title: String = "",
@@ -44,6 +46,7 @@ data class Announcement(
     val active: Boolean = false
 )
 
+@Immutable
 data class DashboardUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,

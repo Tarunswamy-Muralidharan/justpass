@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.*
 import com.justpass.app.ui.components.GlassCardShape
@@ -66,9 +67,9 @@ fun CgpaCalculatorScreen(
     cardState: io.github.fletchmckee.liquid.LiquidState? = null,
     viewModel: CgpaViewModel = viewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val resultViewModel: ResultViewModel = viewModel()
-    val resultState by resultViewModel.uiState.collectAsState()
+    val resultState by resultViewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         if (uiState.semesterGrades.isEmpty()) {

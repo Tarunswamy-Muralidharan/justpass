@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.BugReport
 import com.justpass.app.ui.components.GlassListCard
@@ -38,7 +39,7 @@ fun BugReportInboxScreen(
     onBack: () -> Unit,
     viewModel: BugReportViewModel = viewModel()
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
 
     LaunchedEffect(state.isAdmin) {
@@ -75,7 +76,7 @@ fun BugReportInboxScreen(
             contentPadding = PaddingValues(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(state.reports) { r ->
+            items(state.reports, key = { it.id }) { r ->
                 ReportCard(
                     r = r,
                     onOpenImage = {

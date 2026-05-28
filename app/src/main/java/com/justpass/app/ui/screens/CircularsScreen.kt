@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.Circular
 import com.justpass.app.ui.components.GlassCardShape
@@ -49,8 +50,8 @@ fun CircularsScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val uiState by viewModel.uiState.collectAsState()
-    val pdfState by viewModel.pdfState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val pdfState by viewModel.pdfState.collectAsStateWithLifecycle()
     val isDark = isSystemInDarkTheme()
 
     // Mark the newest circular as seen so the background worker doesn't re-notify
@@ -246,14 +247,18 @@ private fun PdfViewerScreen(
     pdfState: com.justpass.app.ui.viewmodel.PdfViewerState,
     onBack: () -> Unit
 ) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    // No `by` delegate — keep State references so the graphicsLayer lambda
+    // below reads them during the draw phase. The parameter form
+    // (.graphicsLayer(scaleX = scale, ...)) reads State at composition time,
+    // which recomposed the whole LazyColumn on every pinch / pan frame.
+    val scale = remember { mutableFloatStateOf(1f) }
+    val offset = remember { mutableStateOf(Offset.Zero) }
 
     val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        scale = (scale * zoomChange).coerceIn(0.5f, 5f)
-        offset = Offset(
-            x = offset.x + panChange.x,
-            y = offset.y + panChange.y
+        scale.floatValue = (scale.floatValue * zoomChange).coerceIn(0.5f, 5f)
+        offset.value = Offset(
+            x = offset.value.x + panChange.x,
+            y = offset.value.y + panChange.y
         )
     }
 
@@ -282,8 +287,8 @@ private fun PdfViewerScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                if (scale != 1f) {
-                    TextButton(onClick = { scale = 1f; offset = Offset.Zero }) {
+                if (scale.floatValue != 1f) {
+                    TextButton(onClick = { scale.floatValue = 1f; offset.value = Offset.Zero }) {
                         Text("Reset", fontSize = 12.sp)
                     }
                 }
@@ -320,12 +325,12 @@ private fun PdfViewerScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .transformable(state = transformState)
-                            .graphicsLayer(
-                                scaleX = scale,
-                                scaleY = scale,
-                                translationX = offset.x,
-                                translationY = offset.y
-                            ),
+                            .graphicsLayer {
+                                scaleX = scale.floatValue
+                                scaleY = scale.floatValue
+                                translationX = offset.value.x
+                                translationY = offset.value.y
+                            },
                         contentPadding = PaddingValues(
                             start = 8.dp, end = 8.dp,
                             top = 8.dp, bottom = 160.dp

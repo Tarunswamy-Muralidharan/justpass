@@ -514,7 +514,7 @@ fun ProfileScreen(
                         title = { Text("Pick a weather scene") },
                         text = {
                             androidx.compose.foundation.lazy.LazyColumn {
-                                items(com.justpass.app.ui.components.WeatherScene.entries.toList()) { scene ->
+                                items(com.justpass.app.ui.components.WeatherScene.entries.toList(), key = { it.name }) { scene ->
                                     val selected = scene == weatherScene
                                     Row(
                                         modifier = Modifier

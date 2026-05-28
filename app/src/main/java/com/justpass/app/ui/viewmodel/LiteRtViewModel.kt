@@ -1,6 +1,7 @@
 package com.justpass.app.ui.viewmodel
 
 import android.app.Application
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.justpass.app.data.local.SecurePreferences
@@ -36,6 +37,7 @@ enum class LiteRtState {
     NOT_DOWNLOADED, DOWNLOADING, LOADING, READY, ERROR
 }
 
+@Immutable
 data class LiteRtUiState(
     val state: LiteRtState = LiteRtState.NOT_DOWNLOADED,
     val models: List<LiteRtModelOption> = emptyList(),

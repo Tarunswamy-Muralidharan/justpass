@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.Exemption
 import com.justpass.app.ui.components.GlassCardShapeSmall
@@ -34,7 +35,7 @@ fun ExemptionsScreen(
     viewModel: ExemptionsViewModel = viewModel(),
     onBack: () -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         // Header
@@ -90,7 +91,7 @@ fun ExemptionsScreen(
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 160.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(sorted) { exemption -> ExemptionCard(exemption) }
+                        items(sorted, key = { it.id }) { exemption -> ExemptionCard(exemption) }
                     }
                 }
             }

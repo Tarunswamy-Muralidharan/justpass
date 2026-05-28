@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.BugReport
 import com.justpass.app.ui.components.GlassListCard
@@ -49,7 +50,7 @@ fun BugReportScreen(
     onBack: () -> Unit,
     viewModel: BugReportViewModel = viewModel()
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
 
     val pickImage = rememberLauncherForActivityResult(
@@ -241,7 +242,7 @@ private fun MyReportsTab(reports: List<BugReport>, onSendReply: (String, String)
         contentPadding = PaddingValues(vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(reports) { r -> MyReportCard(r, onSend = { msg -> onSendReply(r.id, msg) }) }
+        items(reports, key = { it.id }) { r -> MyReportCard(r, onSend = { msg -> onSendReply(r.id, msg) }) }
     }
 }
 

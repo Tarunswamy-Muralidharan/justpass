@@ -2,12 +2,14 @@ package com.justpass.app.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import com.justpass.app.data.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
 
+@Immutable
 data class CgpaUiState(
     val department: Department = Department.CSE,
     val regulation: Regulation = Regulation.R2021,

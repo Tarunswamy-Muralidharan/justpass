@@ -1,6 +1,7 @@
 package com.justpass.app.ui.viewmodel
 
 import android.app.Application
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.justpass.app.data.model.Exemption
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+@Immutable
 data class SubjectAttendanceUiState(
     val isLoading: Boolean = false,
     val subjects: List<SubjectAttendance> = emptyList(),

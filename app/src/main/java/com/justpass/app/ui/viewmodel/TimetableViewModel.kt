@@ -1,6 +1,7 @@
 package com.justpass.app.ui.viewmodel
 
 import android.app.Application
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.justpass.app.data.local.SecurePreferences
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
+@Immutable
 data class TimetableUiState(
     val isLoading: Boolean = false,
     val days: List<DayTimetable> = emptyList(),

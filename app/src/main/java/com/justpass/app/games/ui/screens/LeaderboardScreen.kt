@@ -75,6 +75,7 @@ private fun rankColor(rank: Int, accent: Color): Color = when (rank) {
 @Composable
 fun LeaderboardScreen(
     onBack: () -> Unit,
+    modifier: Modifier = Modifier,
     initialGame: Game? = null
 ) {
     val context = LocalContext.current

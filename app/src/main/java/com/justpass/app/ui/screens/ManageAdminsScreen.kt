@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.TournamentAdmins
 import com.justpass.app.data.repository.AdminRolesRepository
@@ -31,7 +32,7 @@ fun ManageAdminsScreen(
     onBack: () -> Unit,
     viewModel: AdminRolesViewModel = viewModel()
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     var pendingRemoval by remember { mutableStateOf<AdminRolesRepository.AdminEntry?>(null) }
 
     Scaffold(
@@ -104,10 +105,10 @@ fun ManageAdminsScreen(
             )
 
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(TournamentAdmins.HARDCODED_PLAYER_IDS.toList()) { pid ->
+                items(TournamentAdmins.HARDCODED_PLAYER_IDS.toList(), key = { it }) { pid ->
                     BootstrapAdminCard(playerId = pid, isMe = pid == state.myPlayerId)
                 }
-                items(state.admins) { entry ->
+                items(state.admins, key = { it.playerId }) { entry ->
                     DynamicAdminCard(
                         entry = entry,
                         isMe = entry.playerId == state.myPlayerId,

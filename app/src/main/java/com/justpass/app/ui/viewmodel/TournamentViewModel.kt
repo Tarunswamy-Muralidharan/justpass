@@ -2,6 +2,7 @@ package com.justpass.app.ui.viewmodel
 
 import android.app.Application
 import android.app.Activity
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.PhoneAuthCredential
@@ -23,6 +24,7 @@ import kotlinx.coroutines.withContext
 
 enum class OtpStep { IDLE, SENDING, OTP_SENT, VERIFYING, VERIFIED, FAILED, SUBMITTING, SUBMITTED }
 
+@Immutable
 data class TournamentUiState(
     val isAdmin: Boolean = false,
     val myName: String = "",

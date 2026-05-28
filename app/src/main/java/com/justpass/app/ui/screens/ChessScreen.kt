@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.BoardTheme
 import com.justpass.app.data.model.ChessProfile
@@ -70,7 +71,7 @@ fun ChessScreen(
     onCreateTournament: () -> Unit = {},
     viewModel: ChessViewModel = viewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // In-app game WebView state — rememberSaveable so rotation / config change
@@ -933,7 +934,7 @@ private fun MatchHistoryDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
-                    items(history) { match ->
+                    items(history, key = { it.lichessGameId }) { match ->
                         val resultColor = when (match.result) {
                             "win" -> Color(0xFF00E676)
                             "loss" -> Color(0xFFFF5252)
@@ -1624,7 +1625,7 @@ private fun FriendsDialog(
                     fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
-                    items(sortedFriends) { friend ->
+                    items(sortedFriends, key = { it.id }) { friend ->
                         val isOnline = friend.isOnlineNow()
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),

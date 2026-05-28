@@ -1,6 +1,7 @@
 package com.justpass.app.ui.viewmodel
 
 import android.app.Application
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.justpass.app.data.local.SecurePreferences
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
+@Immutable
 data class AdminRolesUiState(
     val isAdmin: Boolean = false,
     val myPlayerId: String = "",

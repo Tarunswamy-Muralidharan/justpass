@@ -1,5 +1,6 @@
 package com.justpass.app.ui.viewmodel
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.justpass.app.data.model.CalendarEvent
@@ -17,6 +18,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 
+@Immutable
 data class CalendarUiState(
     val isLoading: Boolean = false,
     val events: List<CalendarEvent> = emptyList(),

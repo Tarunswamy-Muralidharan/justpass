@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.justpass.app.data.model.Circular
@@ -19,12 +20,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+@Immutable
 data class CircularsUiState(
     val isLoading: Boolean = false,
     val circulars: List<Circular> = emptyList(),
     val errorMessage: String? = null
 )
 
+@Immutable
 data class PdfViewerState(
     val isLoading: Boolean = false,
     val circularDetail: CircularDetail? = null,
