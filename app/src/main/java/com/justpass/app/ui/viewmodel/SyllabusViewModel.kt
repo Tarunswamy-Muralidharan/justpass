@@ -7,7 +7,6 @@ import com.justpass.app.data.model.Department
 import com.justpass.app.data.model.Regulation
 import com.justpass.app.data.model.SyllabusSubject
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,12 +47,21 @@ class SyllabusViewModel(application: Application) : AndroidViewModel(application
                         .open("syllabus_r2021.json")
                         .bufferedReader().use { it.readText() }
 
-                    val type = object : TypeToken<Map<String, DeptWrapper>>() {}.type
-                    val data: Map<String, DeptWrapper> = Gson().fromJson(json, type)
+                    // Parse top-level as JsonObject so R8 cannot break generic
+                    // type erasure on an anonymous TypeToken (caused
+                    // "Failed to load syllabus: null" on Play Store 3.0.4 —
+                    // private nested DeptWrapper got stripped by R8 even
+                    // though proguard had a matching -keep rule).
+                    val root = com.google.gson.JsonParser.parseString(json).asJsonObject
 
                     // JSON key: "CSE" for R2021, "CSE_R2025" for R2025
                     val key = if (regulation == Regulation.R2025) "${department.name}_R2025" else department.name
-                    data[key]?.subjects ?: emptyList()
+                    val deptObj = root.getAsJsonObject(key) ?: return@withContext emptyList()
+                    val subjectsArr = deptObj.getAsJsonArray("subjects") ?: return@withContext emptyList()
+                    val gson = Gson()
+                    subjectsArr.mapNotNull { el ->
+                        try { gson.fromJson(el, SyllabusSubject::class.java) } catch (_: Exception) { null }
+                    }
                 }
 
                 allSubjects = subjects
@@ -62,12 +70,13 @@ class SyllabusViewModel(application: Application) : AndroidViewModel(application
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     subjects = subjects,
-                    semesters = semesters
+                    semesters = semesters,
+                    errorMessage = if (subjects.isEmpty()) "No syllabus found for your department/regulation" else null
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    errorMessage = "Failed to load syllabus: ${e.message}"
+                    errorMessage = "Failed to load syllabus: ${e.javaClass.simpleName}: ${e.message ?: "no detail"}"
                 )
             }
         }
@@ -102,6 +111,4 @@ class SyllabusViewModel(application: Application) : AndroidViewModel(application
 
         return filtered.sortedWith(compareBy({ it.semester }, { it.code }))
     }
-
-    private data class DeptWrapper(val subjects: List<SyllabusSubject>)
 }
