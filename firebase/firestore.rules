@@ -52,12 +52,15 @@ service cloud.firestore {
         && request.resource.data.cloudinaryUrl is string
         && request.resource.data.cloudinaryPublicId is string;
 
-      // Admins can mutate status + approval fields.
+      // Admins can mutate status + approval fields, plus replace the
+      // underlying Cloudinary asset (cloudinaryUrl + cloudinaryPublicId +
+      // replacedAt) when fixing a bad upload before publishing.
       // Any authed user can increment viewCount (atomic delta).
       allow update: if isAuthed() && (
         (isAdmin() && request.resource.data.diff(resource.data)
           .affectedKeys().hasOnly([
-            'status', 'approvedAt', 'approvedBy', 'viewCount'
+            'status', 'approvedAt', 'approvedBy', 'viewCount',
+            'cloudinaryUrl', 'cloudinaryPublicId', 'replacedAt'
           ])) ||
         (request.resource.data.diff(resource.data)
           .affectedKeys().hasOnly(['viewCount'])

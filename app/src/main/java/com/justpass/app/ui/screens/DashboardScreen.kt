@@ -1369,6 +1369,15 @@ fun DashboardScreen(
             Spacer(modifier = Modifier.height(12.dp))
         }
 
+        if (qpapersVisible) {
+            DashboardTile(
+                "Prev Year Papers", "Browse & contribute exam papers",
+                Icons.Default.MenuBook, Color(0xFF26C6DA),
+                Modifier.fillMaxWidth(),
+            ) { Analytics.logTileClicked("qpapers"); onQPapersClick() }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
         // Result + Calendar tiles
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1399,15 +1408,6 @@ fun DashboardScreen(
 
         DashboardTile("Syllabus", "R2021 subject-wise syllabus", Icons.Default.MenuBook, Color(0xFF7C4DFF),
             Modifier.fillMaxWidth()) { Analytics.logTileClicked("syllabus"); onSyllabusClick() }
-
-        if (qpapersVisible) {
-            Spacer(modifier = Modifier.height(8.dp))
-            DashboardTile(
-                "Prev Year Papers", "Browse & contribute exam papers",
-                Icons.Default.MenuBook, Color(0xFF26C6DA),
-                Modifier.fillMaxWidth(),
-            ) { Analytics.logTileClicked("qpapers"); onQPapersClick() }
-        }
 
         Spacer(modifier = Modifier.height(16.dp))
 

@@ -1,5 +1,8 @@
 package com.justpass.app.ui.screens.qpapers
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -9,12 +12,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,6 +45,31 @@ fun QPaperAdminScreen(
     onBack: () -> Unit,
 ) {
     val state by viewModel.adminState.collectAsState()
+    val context = LocalContext.current
+
+    // PDF picker for the replace-and-approve flow. The currently selected
+    // paper is the target — the VM binds to adminState.selectedPaper, so
+    // the launcher just needs the bytes.
+    val replacePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        // Read everything in memory. Cloudinary preset enforces 10 MB max
+        // server-side; we soft-cap here so an oversize file fails fast
+        // instead of after a long upload.
+        val bytes = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        }.getOrNull()
+        if (bytes == null) {
+            Toast.makeText(context, "Couldn't read file", Toast.LENGTH_SHORT).show()
+            return@rememberLauncherForActivityResult
+        }
+        if (bytes.size > 10 * 1024 * 1024) {
+            Toast.makeText(context, "PDF too large (max 10 MB)", Toast.LENGTH_SHORT).show()
+            return@rememberLauncherForActivityResult
+        }
+        viewModel.replaceAndApproveSelected(bytes)
+    }
 
     LaunchedEffect(Unit) {
         viewModel.loadPending()
@@ -86,15 +116,24 @@ fun QPaperAdminScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(state.pending, key = { it.id }) { paper ->
+                    val isSelected = state.selectedPaper?.id == paper.id
                     PendingPaperCard(
                         paper = paper,
-                        contributor = if (state.selectedPaper?.id == paper.id) state.selectedContributor else null,
-                        isExpanded = state.selectedPaper?.id == paper.id,
+                        contributor = if (isSelected) state.selectedContributor else null,
+                        isExpanded = isSelected,
+                        isReplacing = isSelected && state.isReplacing,
                         onExpand = {
-                            if (state.selectedPaper?.id == paper.id) viewModel.clearSelection()
+                            if (isSelected) viewModel.clearSelection()
                             else viewModel.openPaperForReview(paper)
                         },
                         onPreview = { onOpenViewer(paper) },
+                        onReplace = {
+                            // Ensure this paper is the VM's selected target
+                            // (Replace can be tapped from a non-expanded row
+                            // via the expanded one only; defensively re-set).
+                            if (!isSelected) viewModel.openPaperForReview(paper)
+                            replacePicker.launch("application/pdf")
+                        },
                         onApprove = viewModel::approveSelected,
                         onReject = viewModel::rejectSelected,
                     )
@@ -109,8 +148,10 @@ private fun PendingPaperCard(
     paper: QPaper,
     contributor: QPaperContributor?,
     isExpanded: Boolean,
+    isReplacing: Boolean,
     onExpand: () -> Unit,
     onPreview: () -> Unit,
+    onReplace: () -> Unit,
     onApprove: () -> Unit,
     onReject: () -> Unit,
 ) {
@@ -195,38 +236,75 @@ private fun PendingPaperCard(
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        OutlinedButton(
-                            onClick = onPreview,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
+                    if (isReplacing) {
+                        // While the new PDF is uploading + Firestore is being
+                        // written, hide the action buttons to prevent double-
+                        // taps and show progress. clearSelection() on success
+                        // will collapse this row entirely.
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Icons.Default.Visibility, null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Preview", fontSize = 13.sp)
+                            RoseFourLoader(modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                "Replacing PDF…",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                        Button(
-                            onClick = onReject,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
-                            shape = RoundedCornerShape(10.dp),
+                    } else {
+                        // Row 1: read-only actions
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp), tint = Color.White)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Reject", color = Color.White, fontSize = 13.sp)
+                            OutlinedButton(
+                                onClick = onPreview,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                            ) {
+                                Icon(Icons.Default.Visibility, null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Preview", fontSize = 13.sp)
+                            }
+                            OutlinedButton(
+                                onClick = onReplace,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                            ) {
+                                Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Replace", fontSize = 13.sp)
+                            }
                         }
-                        Button(
-                            onClick = onApprove,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
-                            shape = RoundedCornerShape(10.dp),
+                        Spacer(modifier = Modifier.height(8.dp))
+                        // Row 2: terminal decisions
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp), tint = Color.Black)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Approve", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Button(
+                                onClick = onReject,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
+                                shape = RoundedCornerShape(10.dp),
+                            ) {
+                                Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp), tint = Color.White)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Reject", color = Color.White, fontSize = 13.sp)
+                            }
+                            Button(
+                                onClick = onApprove,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                                shape = RoundedCornerShape(10.dp),
+                            ) {
+                                Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp), tint = Color.Black)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Approve", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
                 }

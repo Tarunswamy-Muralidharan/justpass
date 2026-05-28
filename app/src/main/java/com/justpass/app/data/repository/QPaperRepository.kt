@@ -81,7 +81,9 @@ class QPaperRepository private constructor(private val context: Context) {
      * "Already contributed — thanks!" message.
      */
     suspend fun findMyContributionForSlot(intent: UploadIntent): QPaperContributor? {
-        val uid = auth.currentUser?.uid ?: return null
+        val uid = auth.currentUser?.uid
+            ?: runCatching { auth.signInAnonymously().await().user?.uid }.getOrNull()
+            ?: return null
         return try {
             val snap = contributorsCol
                 .whereEqualTo("uid", uid)
@@ -140,6 +142,7 @@ class QPaperRepository private constructor(private val context: Context) {
         intent: UploadIntent,
     ): KResult<QPaper> {
         val uid = auth.currentUser?.uid
+            ?: runCatching { auth.signInAnonymously().await().user?.uid }.getOrNull()
             ?: return KResult.failure(IllegalStateException("Not signed in"))
         val displayName = securePrefs.displayName.orEmpty()
         val rollNumber = securePrefs.rollNumber.orEmpty()
@@ -271,6 +274,53 @@ class QPaperRepository private constructor(private val context: Context) {
             KResult.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "approve err: ${e.message}", e)
+            KResult.failure(e)
+        }
+    }
+
+    /**
+     * Admin: replace the underlying Cloudinary PDF and approve in one shot.
+     *
+     * Used when the contributor's file was almost-right but needed a tweak
+     * (rotated page, cover sheet, redacted name, etc.) — the admin edits
+     * the PDF externally, picks the fixed file, and we swap the asset.
+     *
+     * Implementation notes:
+     *   - Cloudinary unsigned presets can't reliably overwrite an existing
+     *     public_id (depends on preset config we don't fully control), so
+     *     we always upload as a NEW asset. The Firestore doc swaps to the
+     *     new URL + publicId; the old Cloudinary file is orphaned and the
+     *     admin can clean it up from the Cloudinary dashboard later.
+     *   - Status flips to "approved" in the same write so we don't need a
+     *     separate Approve tap. Sets approvedBy/approvedAt + replacedAt so
+     *     audit logs show that this paper went through an admin edit.
+     *   - The contributor doc is left untouched — the contributor is still
+     *     credited for the original submission. Replacing the bytes doesn't
+     *     change who contributed.
+     */
+    suspend fun replaceAndApprove(paperId: String, bytes: ByteArray): KResult<Unit> {
+        val uid = auth.currentUser?.uid
+            ?: return KResult.failure(IllegalStateException("Not signed in"))
+
+        val upload = uploader.uploadPdf(bytes).getOrElse {
+            return KResult.failure(it)
+        }
+
+        val now = System.currentTimeMillis()
+        return try {
+            papersCol.document(paperId).update(
+                mapOf(
+                    "cloudinaryUrl" to upload.secureUrl,
+                    "cloudinaryPublicId" to upload.publicId,
+                    "status" to "approved",
+                    "approvedAt" to now,
+                    "approvedBy" to uid,
+                    "replacedAt" to now,
+                )
+            ).await()
+            KResult.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "replaceAndApprove err: ${e.message}", e)
             KResult.failure(e)
         }
     }
