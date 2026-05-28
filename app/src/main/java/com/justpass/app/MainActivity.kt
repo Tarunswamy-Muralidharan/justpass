@@ -575,16 +575,31 @@ fun AttendanceApp() {
 
             // QPapers feature gate: batch >= 2025 AND remote config `qpapers_enabled`
             // (default true so the tile shows unless we explicitly kill it).
-            val qpapersBatchEligible = remember { securePrefs.batchYear >= 2025 }
+            // Falls back to deriving the year from the roll number (same scheme
+            // used by CgpaCalculatorScreen) because securePrefs.batchYear is 0
+            // until biodata fetch lands.
+            val qpapersBatchEligible = remember {
+                val explicit = securePrefs.batchYear.takeIf { it > 0 }
+                val derived = securePrefs.rollNumber?.drop(4)?.take(2)?.toIntOrNull()?.let { 2000 + it }
+                val year = explicit ?: derived ?: 0
+                android.util.Log.d("QPapersGate", "explicit=$explicit derived=$derived year=$year roll=${securePrefs.rollNumber}")
+                year >= 2025
+            }
             var qpapersEnabledRC by remember { mutableStateOf(true) }
             LaunchedEffect(Unit) {
                 runCatching {
                     val rc = FirebaseRemoteConfig.getInstance()
                     rc.setDefaultsAsync(mapOf("qpapers_enabled" to true))
                     qpapersEnabledRC = rc.getBoolean("qpapers_enabled")
+                    android.util.Log.d("QPapersGate", "qpapersEnabledRC=$qpapersEnabledRC")
                 }
             }
-            val qpapersVisible = qpapersBatchEligible && qpapersEnabledRC
+            // TODO: Fix Remote Config param after RC kill switch is needed.
+            // For now the gate is just batch eligibility — debug build override.
+            val qpapersVisible = qpapersBatchEligible && (qpapersEnabledRC || BuildConfig.DEBUG)
+            LaunchedEffect(qpapersVisible) {
+                android.util.Log.d("QPapersGate", "qpapersVisible=$qpapersVisible batch=$qpapersBatchEligible rc=$qpapersEnabledRC")
+            }
 
             // Admin status — derived from roll number hash (same scheme used elsewhere).
             // Reused for the QPapers approval queue gate.
