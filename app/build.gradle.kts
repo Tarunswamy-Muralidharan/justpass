@@ -113,6 +113,18 @@ android {
     }
 }
 
+// Compose compiler diagnostic reports. Gated by `-Pcompose.metrics=true` so
+// dev/CI builds stay fast; opt-in run:
+//   ./gradlew :app:assembleRelease -Pcompose.metrics=true
+// Outputs land in app/build/compose_compiler/ — `*-classes.txt` shows
+// stability inference, `*-composables.txt` shows skippable%/restartable%.
+if (project.findProperty("compose.metrics") == "true") {
+    composeCompiler {
+        reportsDestination = layout.buildDirectory.dir("compose_compiler")
+        metricsDestination = layout.buildDirectory.dir("compose_compiler")
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
