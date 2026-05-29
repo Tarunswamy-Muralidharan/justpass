@@ -1,16 +1,21 @@
 package com.justpass.app.ui.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.FirebaseAuth
 import com.justpass.app.data.analytics.Analytics
+import com.justpass.app.data.repository.AdminRolesRepository
 import com.justpass.app.data.repository.AttendanceRepository
 import com.justpass.app.data.repository.Result
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 @Immutable
 data class LoginUiState(
@@ -63,6 +68,23 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                     // AdConfig.init ran during Activity.onCreate before login,
                     // so re-check here on fresh installs.
                     com.justpass.app.ui.components.AdConfig.refreshOwnerDemo(getApplication())
+                    // Admin self-register. MainActivity.onCreate runs this
+                    // block only when the roll is already persisted — on a
+                    // fresh install + first login that's false, so the
+                    // admin's new Firebase UID never gets written to
+                    // admin_uids until the next launch, leaving the admin
+                    // queue Firestore-rules-blocked. Re-run here so the
+                    // same session unlocks admin reads/writes.
+                    viewModelScope.launch(Dispatchers.IO) {
+                        runCatching {
+                            val auth = FirebaseAuth.getInstance()
+                            if (auth.currentUser == null) {
+                                auth.signInAnonymously().await()
+                            }
+                            val pid = "p_${kotlin.math.abs(currentState.rollNumber.hashCode()).toString(16)}"
+                            AdminRolesRepository().registerSelfUidIfAdmin(pid)
+                        }.onFailure { Log.w("LoginVM", "admin self-register err: ${it.message}") }
+                    }
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         isLoggedIn = true,

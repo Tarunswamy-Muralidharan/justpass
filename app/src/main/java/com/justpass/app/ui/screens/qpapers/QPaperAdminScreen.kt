@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,6 +44,7 @@ fun QPaperAdminScreen(
     cardState: LiquidState,
     viewModel: QPaperViewModel,
     onOpenViewer: (QPaper) -> Unit,
+    onOpenHistory: () -> Unit,
     onBack: () -> Unit,
 ) {
     val state by viewModel.adminState.collectAsStateWithLifecycle()
@@ -81,6 +83,15 @@ fun QPaperAdminScreen(
             title = "Approval Queue",
             subtitle = "${state.pending.size} pending",
             onBack = onBack,
+            trailing = {
+                IconButton(onClick = onOpenHistory) {
+                    Icon(
+                        Icons.Default.History,
+                        contentDescription = "History",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            },
         )
 
         when {

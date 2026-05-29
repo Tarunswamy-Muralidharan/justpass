@@ -32,6 +32,7 @@ sealed class QPaperRoute {
     data class Upload(val intent: UploadIntent) : QPaperRoute()
     data object ThankYou : QPaperRoute()
     data object AdminQueue : QPaperRoute()
+    data object AdminHistory : QPaperRoute()
 }
 
 @Composable
@@ -159,6 +160,14 @@ fun QPapersFlow(
                 cardState = cardState,
                 viewModel = viewModel,
                 onOpenViewer = { paper -> push(QPaperRoute.Viewer(paper)) },
+                onOpenHistory = { push(QPaperRoute.AdminHistory) },
+                onBack = { pop() },
+            )
+
+            QPaperRoute.AdminHistory -> QPaperHistoryScreen(
+                cardState = cardState,
+                viewModel = viewModel,
+                onOpenViewer = { paper -> push(QPaperRoute.Viewer(paper)) },
                 onBack = { pop() },
             )
         }
@@ -184,6 +193,7 @@ private val QPaperRouteStackSaver = androidx.compose.runtime.saveable.listSaver<
                 is QPaperRoute.SubjectList -> "sub:${r.department}:${r.semester}"
                 is QPaperRoute.CategoryDetail -> "cat:${r.department}:${r.subjectCode}:${r.subjectName}:${r.semester}"
                 QPaperRoute.AdminQueue -> "admin"
+                QPaperRoute.AdminHistory -> "adminhistory"
                 QPaperRoute.ThankYou -> "thank"
                 // Viewer / Upload carry rich objects — collapse to closest ancestor on restore.
                 is QPaperRoute.Viewer, is QPaperRoute.Upload -> null
@@ -201,6 +211,7 @@ private val QPaperRouteStackSaver = androidx.compose.runtime.saveable.listSaver<
                     "sub" -> QPaperRoute.SubjectList(parts[1], parts[2].toInt())
                     "cat" -> QPaperRoute.CategoryDetail(parts[1], parts[2], parts[3], parts[4].toInt())
                     "admin" -> QPaperRoute.AdminQueue
+                    "adminhistory" -> QPaperRoute.AdminHistory
                     "thank" -> QPaperRoute.ThankYou
                     else -> QPaperRoute.DepartmentList
                 }
