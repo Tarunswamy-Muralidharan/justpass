@@ -248,6 +248,43 @@ class QPaperRepository private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Admin history — every paper the admin has already acted on, newest
+     * first by approvedAt (reject() reuses the approvedAt field as a
+     * "processed at" timestamp, so the same key sorts both branches).
+     *
+     * Two parallel queries instead of `whereIn(status, ["approved",
+     * "rejected"])` to avoid the extra composite index. Merge + sort in
+     * memory, cap at [limit] entries — typical processed volume is small
+     * enough that this is cheap.
+     */
+    suspend fun listProcessed(limit: Long = 100): List<QPaper> {
+        return try {
+            val approvedTask = papersCol
+                .whereEqualTo("status", "approved")
+                .orderBy("approvedAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get().await()
+            val rejectedTask = papersCol
+                .whereEqualTo("status", "rejected")
+                .orderBy("approvedAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get().await()
+            val approved = approvedTask.documents.mapNotNull { d ->
+                d.toObject(QPaper::class.java)?.copy(id = d.id)
+            }
+            val rejected = rejectedTask.documents.mapNotNull { d ->
+                d.toObject(QPaper::class.java)?.copy(id = d.id)
+            }
+            (approved + rejected)
+                .sortedByDescending { it.approvedAt ?: 0L }
+                .take(limit.toInt())
+        } catch (e: Exception) {
+            Log.e(TAG, "listProcessed err: ${e.message}", e)
+            emptyList()
+        }
+    }
+
     /** Admin: get contributor identity for verification UI. */
     suspend fun getContributor(paperId: String): QPaperContributor? {
         return try {

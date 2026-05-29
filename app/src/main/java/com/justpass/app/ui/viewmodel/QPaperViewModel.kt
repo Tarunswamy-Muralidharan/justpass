@@ -48,6 +48,13 @@ data class QPaperAdminState(
     val errorMessage: String? = null,
 )
 
+@Immutable
+data class QPaperHistoryState(
+    val isLoading: Boolean = false,
+    val processed: List<QPaper> = emptyList(),
+    val errorMessage: String? = null,
+)
+
 class QPaperViewModel(application: Application) : AndroidViewModel(application) {
     private val repo = QPaperRepository.getInstance(application)
     private val securePrefs = SecurePreferences.getInstance(application)
@@ -61,6 +68,9 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _adminState = MutableStateFlow(QPaperAdminState())
     val adminState: StateFlow<QPaperAdminState> = _adminState.asStateFlow()
+
+    private val _historyState = MutableStateFlow(QPaperHistoryState())
+    val historyState: StateFlow<QPaperHistoryState> = _historyState.asStateFlow()
 
     val userRegulation: Regulation by lazy {
         getRegulationForBatch(securePrefs.batchYear)
@@ -206,6 +216,18 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
             _adminState.value = _adminState.value.copy(
                 isLoading = false,
                 pending = pending,
+            )
+        }
+    }
+
+    /** Admin history: approved + rejected papers, newest first. */
+    fun loadHistory() {
+        viewModelScope.launch {
+            _historyState.value = _historyState.value.copy(isLoading = true, errorMessage = null)
+            val processed = repo.listProcessed()
+            _historyState.value = _historyState.value.copy(
+                isLoading = false,
+                processed = processed,
             )
         }
     }
