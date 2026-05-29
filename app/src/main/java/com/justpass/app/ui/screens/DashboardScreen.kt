@@ -50,6 +50,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -1118,6 +1119,65 @@ fun DashboardScreen(
                                 }
                             }
 
+                            // Big gated CTA — always visible. Interstitial ad, then reveal per-subject impact.
+                            if (!showSubjectImpact) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                // Breathing pulse + glow to signal it's tappable.
+                                val ctaPulse = rememberInfiniteTransition(label = "ctaPulse")
+                                val ctaScale by ctaPulse.animateFloat(
+                                    initialValue = 1f, targetValue = 1.035f,
+                                    animationSpec = infiniteRepeatable(
+                                        tween(900, easing = LinearEasing), RepeatMode.Reverse),
+                                    label = "ctaScale"
+                                )
+                                val ctaGlow by ctaPulse.animateFloat(
+                                    initialValue = 0.35f, targetValue = 0.8f,
+                                    animationSpec = infiniteRepeatable(
+                                        tween(900, easing = LinearEasing), RepeatMode.Reverse),
+                                    label = "ctaGlow"
+                                )
+                                val arrowShift by ctaPulse.animateFloat(
+                                    initialValue = 0f, targetValue = 4f,
+                                    animationSpec = infiniteRepeatable(
+                                        tween(600, easing = LinearEasing), RepeatMode.Reverse),
+                                    label = "ctaArrow"
+                                )
+                                Button(
+                                    onClick = {
+                                        val activity = context as? Activity
+                                        if (activity != null) {
+                                            com.justpass.app.ui.components.InterstitialAdManager.show(activity) {
+                                                showSubjectImpact = true
+                                            }
+                                        } else {
+                                            showSubjectImpact = true
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
+                                        .graphicsLayer { scaleX = ctaScale; scaleY = ctaScale }
+                                        .shadow(
+                                            elevation = (14 * ctaGlow).dp,
+                                            shape = RoundedCornerShape(14.dp),
+                                            ambientColor = Color(0xFFFF9800),
+                                            spotColor = Color(0xFFFF9800)
+                                        ),
+                                    shape = RoundedCornerShape(14.dp),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                                ) {
+                                    Icon(Icons.Default.Speed, contentDescription = null,
+                                        tint = Color.White, modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Check out subject-wise attendance", fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold, color = Color.White,
+                                        textAlign = TextAlign.Center, lineHeight = 18.sp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("›", fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        modifier = Modifier.graphicsLayer { translationX = arrowShift })
+                                }
+                            }
+
                             // ── Results (shared by both modes) ──
                             if (effectiveDays > 0) {
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -1192,32 +1252,7 @@ fun DashboardScreen(
                                         computeSubjectCascade(effectiveMissedDays, uiState.bunkSubjects, it)
                                     } ?: emptyList()
                                 }
-                                Spacer(modifier = Modifier.height(12.dp))
-                                // Big gated CTA — interstitial ad, then reveal per-subject impact.
-                                if (!showSubjectImpact) {
-                                    Button(
-                                        onClick = {
-                                            val activity = context as? Activity
-                                            if (activity != null) {
-                                                com.justpass.app.ui.components.InterstitialAdManager.show(activity) {
-                                                    showSubjectImpact = true
-                                                }
-                                            } else {
-                                                showSubjectImpact = true
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                                        shape = RoundedCornerShape(14.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
-                                    ) {
-                                        Icon(Icons.Default.Speed, contentDescription = null,
-                                            tint = Color.White, modifier = Modifier.size(20.dp))
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Check subject-wise impact", fontSize = 15.sp,
-                                            fontWeight = FontWeight.Bold, color = Color.White)
-                                    }
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                }
+                                Spacer(modifier = Modifier.height(10.dp))
                                 if (showSubjectImpact) {
                                     when {
                                         uiState.bunkImpactLoading && cascade.isEmpty() -> {
