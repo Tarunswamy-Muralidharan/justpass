@@ -33,6 +33,7 @@ sealed class QPaperRoute {
     data object ThankYou : QPaperRoute()
     data object AdminQueue : QPaperRoute()
     data object AdminHistory : QPaperRoute()
+    data object Reupload : QPaperRoute()
 }
 
 @Composable
@@ -126,7 +127,25 @@ fun QPapersFlow(
             is QPaperRoute.Viewer -> QPaperViewerScreen(
                 paper = route.paper,
                 viewModel = viewModel,
+                isAdmin = isAdmin,
+                onReuploadElsewhere = {
+                    viewModel.startReupload(route.paper)
+                    push(QPaperRoute.Reupload)
+                },
                 onBack = { pop() },
+            )
+
+            QPaperRoute.Reupload -> QPaperReuploadScreen(
+                cardState = cardState,
+                viewModel = viewModel,
+                onDone = {
+                    // Collapse back to history / browse.
+                    while (stack.size > 1 && stack.last() !is QPaperRoute.AdminHistory) {
+                        stack.removeAt(stack.lastIndex)
+                    }
+                    version++
+                },
+                onBack = { viewModel.clearReupload(); pop() },
             )
 
             is QPaperRoute.Upload -> QPaperUploadScreen(
@@ -194,6 +213,7 @@ private val QPaperRouteStackSaver = androidx.compose.runtime.saveable.listSaver<
                 is QPaperRoute.CategoryDetail -> "cat:${r.department}:${r.subjectCode}:${r.subjectName}:${r.semester}"
                 QPaperRoute.AdminQueue -> "admin"
                 QPaperRoute.AdminHistory -> "adminhistory"
+                QPaperRoute.Reupload -> "reupload"
                 QPaperRoute.ThankYou -> "thank"
                 // Viewer / Upload carry rich objects — collapse to closest ancestor on restore.
                 is QPaperRoute.Viewer, is QPaperRoute.Upload -> null
@@ -212,6 +232,7 @@ private val QPaperRouteStackSaver = androidx.compose.runtime.saveable.listSaver<
                     "cat" -> QPaperRoute.CategoryDetail(parts[1], parts[2], parts[3], parts[4].toInt())
                     "admin" -> QPaperRoute.AdminQueue
                     "adminhistory" -> QPaperRoute.AdminHistory
+                    "reupload" -> QPaperRoute.Reupload
                     "thank" -> QPaperRoute.ThankYou
                     else -> QPaperRoute.DepartmentList
                 }
