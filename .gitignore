@@ -27,6 +27,10 @@ keystore.properties
 *.aab
 nul
 
+# JVM crash logs (Gradle daemon dies leave these in repo root)
+hs_err_pid*.log
+replay_pid*.log
+
 # Cloudflare Worker
 chess-lobby/node_modules/
 chess-lobby/.wrangler/

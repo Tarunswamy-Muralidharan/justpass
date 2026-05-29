@@ -56,6 +56,8 @@ import java.io.File
 fun QPaperViewerScreen(
     paper: QPaper,
     viewModel: QPaperViewModel,
+    isAdmin: Boolean = false,
+    onReuploadElsewhere: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -142,6 +144,11 @@ fun QPaperViewerScreen(
                     scale.floatValue = 1f
                     offset.value = Offset.Zero
                 }) { Text("Reset", color = Color.White, fontSize = 12.sp) }
+            }
+            if (isAdmin) {
+                TextButton(onClick = onReuploadElsewhere) {
+                    Text("Re-upload", color = Color(0xFF7C4DFF), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
 
