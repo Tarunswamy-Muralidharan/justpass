@@ -250,24 +250,25 @@ class QPaperRepository private constructor(private val context: Context) {
 
     /**
      * Admin history — every paper the admin has already acted on, newest
-     * first by approvedAt (reject() reuses the approvedAt field as a
-     * "processed at" timestamp, so the same key sorts both branches).
+     * first.
+     *
+     * Sorting happens in memory (not via Firestore `orderBy`) because legacy
+     * docs whose status was flipped directly in the Firestore Console don't
+     * have an `approvedAt` field, and `orderBy("approvedAt")` would silently
+     * drop them from the result set. Falls back to `contributedAt` when the
+     * processed timestamp is missing so old docs still show up at the bottom.
      *
      * Two parallel queries instead of `whereIn(status, ["approved",
-     * "rejected"])` to avoid the extra composite index. Merge + sort in
-     * memory, cap at [limit] entries — typical processed volume is small
-     * enough that this is cheap.
+     * "rejected"])` to avoid an extra composite index.
      */
     suspend fun listProcessed(limit: Long = 100): List<QPaper> {
         return try {
             val approvedTask = papersCol
                 .whereEqualTo("status", "approved")
-                .orderBy("approvedAt", Query.Direction.DESCENDING)
                 .limit(limit)
                 .get().await()
             val rejectedTask = papersCol
                 .whereEqualTo("status", "rejected")
-                .orderBy("approvedAt", Query.Direction.DESCENDING)
                 .limit(limit)
                 .get().await()
             val approved = approvedTask.documents.mapNotNull { d ->
@@ -277,7 +278,7 @@ class QPaperRepository private constructor(private val context: Context) {
                 d.toObject(QPaper::class.java)?.copy(id = d.id)
             }
             (approved + rejected)
-                .sortedByDescending { it.approvedAt ?: 0L }
+                .sortedByDescending { it.approvedAt ?: it.contributedAt }
                 .take(limit.toInt())
         } catch (e: Exception) {
             Log.e(TAG, "listProcessed err: ${e.message}", e)
@@ -358,6 +359,51 @@ class QPaperRepository private constructor(private val context: Context) {
             KResult.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "replaceAndApprove err: ${e.message}", e)
+            KResult.failure(e)
+        }
+    }
+
+    /**
+     * Admin direct upload — bypasses the pending queue. Used by the
+     * "Re-upload elsewhere" flow where the admin is moving (or cloning) an
+     * already-verified paper to a different slot. Status is "approved" from
+     * the start so it's immediately browseable by students.
+     *
+     * Contributor doc is intentionally NOT written here — the original
+     * contributor still owns the source paper; this is an admin action,
+     * not a new student contribution.
+     */
+    suspend fun uploadApproved(bytes: ByteArray, intent: UploadIntent): KResult<QPaper> {
+        val uid = auth.currentUser?.uid
+            ?: runCatching { auth.signInAnonymously().await().user?.uid }.getOrNull()
+            ?: return KResult.failure(IllegalStateException("Not signed in"))
+
+        val upload = uploader.uploadPdf(bytes).getOrElse {
+            return KResult.failure(it)
+        }
+
+        val now = System.currentTimeMillis()
+        val paperRef = papersCol.document()
+        val paper = QPaper(
+            department = intent.department,
+            subjectCode = intent.subjectCode,
+            subjectName = intent.subjectName,
+            category = intent.category.key,
+            examYear = intent.examYear,
+            semester = intent.semester,
+            regulation = intent.regulation,
+            cloudinaryUrl = upload.secureUrl,
+            cloudinaryPublicId = upload.publicId,
+            status = "approved",
+            contributedAt = now,
+            approvedAt = now,
+            approvedBy = uid,
+        )
+        return try {
+            paperRef.set(paper).await()
+            KResult.success(paper.copy(id = paperRef.id))
+        } catch (e: Exception) {
+            Log.e(TAG, "uploadApproved err: ${e.message}", e)
             KResult.failure(e)
         }
     }
