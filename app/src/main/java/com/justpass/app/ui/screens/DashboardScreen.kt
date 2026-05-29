@@ -82,6 +82,8 @@ import com.justpass.app.ui.components.LiquidGlassCard
 import com.justpass.app.ui.components.registerAsSplashTarget
 import com.justpass.app.ui.viewmodel.DashboardViewModel
 import com.justpass.app.data.model.TargetCgpaResult
+import com.justpass.app.data.model.computeSubjectCascade
+import com.justpass.app.ui.components.RoseFourLoader
 import io.github.fletchmckee.liquid.LiquidState
 import com.justpass.app.data.analytics.Analytics
 import kotlinx.coroutines.launch
@@ -879,6 +881,10 @@ fun DashboardScreen(
                 var pickerMode by remember { mutableIntStateOf(0) } // 0 = slider, 1 = calendar
                 val selectedDates = remember { mutableStateListOf<java.time.LocalDate>() }
                 var calendarMonth by remember { mutableStateOf(java.time.YearMonth.now()) }
+                var showSubjectImpact by remember { mutableStateOf(false) }
+
+                // Lazy-load per-subject data the first time the popup opens.
+                LaunchedEffect(Unit) { viewModel.loadBunkImpactData() }
 
                 // Calculate values based on mode
                 val effectiveDays: Int
@@ -1176,6 +1182,93 @@ fun DashboardScreen(
                                             val hrs = viewModel.getHoursForDate(date)
                                             Text("• ${date.dayOfMonth} ${date.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)} ($dayName) — $hrs hrs",
                                                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                        }
+                                    }
+                                }
+
+                                // ── Per-subject impact (cascade) ──
+                                val cascade = remember(effectiveMissedDays, uiState.bunkSubjects, uiState.bunkTimetable) {
+                                    uiState.bunkTimetable?.let {
+                                        computeSubjectCascade(effectiveMissedDays, uiState.bunkSubjects, it)
+                                    } ?: emptyList()
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable { showSubjectImpact = !showSubjectImpact }
+                                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("See subject impact", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary)
+                                    Text(if (showSubjectImpact) "▲" else "▼", fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                                if (showSubjectImpact) {
+                                    when {
+                                        uiState.bunkImpactLoading && cascade.isEmpty() -> {
+                                            Box(modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                                contentAlignment = Alignment.Center) {
+                                                RoseFourLoader(modifier = Modifier.size(32.dp))
+                                            }
+                                        }
+                                        uiState.bunkTimetable == null -> {
+                                            Text("Open Subject Attendance once to enable per-subject impact.",
+                                                fontSize = 12.sp, textAlign = TextAlign.Center,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                modifier = Modifier.fillMaxWidth().padding(8.dp))
+                                        }
+                                        cascade.isEmpty() -> {
+                                            Text("No classes scheduled on the selected day(s).",
+                                                fontSize = 12.sp, textAlign = TextAlign.Center,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                modifier = Modifier.fillMaxWidth().padding(8.dp))
+                                        }
+                                        else -> {
+                                            Column(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                cascade.forEach { impact ->
+                                                    val belowTarget = impact.projectedPercentage < attendanceTarget
+                                                    val rowColor = if (belowTarget) Color(0xFFFF5252) else Color(0xFF00E676)
+                                                    Column(
+                                                        modifier = Modifier.fillMaxWidth()
+                                                            .clip(RoundedCornerShape(10.dp))
+                                                            .background(rowColor.copy(alpha = 0.10f))
+                                                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(impact.courseCode, fontSize = 13.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = MaterialTheme.colorScheme.onSurface,
+                                                                modifier = Modifier.weight(1f), maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis)
+                                                            Text("-${impact.periodsMissed} period${if (impact.periodsMissed > 1) "s" else ""}",
+                                                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                        }
+                                                        Text(impact.courseTitle, fontSize = 11.sp,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("${String.format("%.1f", impact.currentPercentage)}%",
+                                                                fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                                            Text("  →  ", fontSize = 13.sp,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                            Text("${String.format("%.1f", impact.projectedPercentage)}%",
+                                                                fontSize = 16.sp, fontWeight = FontWeight.Bold, color = rowColor)
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }

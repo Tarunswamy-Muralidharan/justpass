@@ -5,10 +5,14 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.justpass.app.data.local.SecurePreferences
+import com.justpass.app.data.model.AbsentDay
 import com.justpass.app.data.model.AttendanceData
 import com.justpass.app.data.model.CalendarEventType
 import com.justpass.app.data.model.CourseMarks
 import com.justpass.app.data.model.DayTimetable
+import com.justpass.app.data.model.Exemption
+import com.justpass.app.data.model.SubjectAttendance
+import com.justpass.app.data.model.calculateSubjectAttendance
 import com.justpass.app.data.model.GradeEntry
 import com.justpass.app.data.model.RegistrationResponse
 import com.justpass.app.data.model.TargetCgpaResult
@@ -27,6 +31,8 @@ import com.justpass.app.data.repository.Result
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -63,7 +69,11 @@ data class DashboardUiState(
     val calculatorCgpa: Double? = null,
     val hasGpaData: Boolean = false,
     // Remote announcement from Firebase Remote Config
-    val announcement: Announcement? = null
+    val announcement: Announcement? = null,
+    // Bunkometer per-subject impact (lazy-loaded when the popup opens)
+    val bunkSubjects: List<SubjectAttendance> = emptyList(),
+    val bunkTimetable: TimetableResponse? = null,
+    val bunkImpactLoading: Boolean = false
 )
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -351,6 +361,89 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             else -> 0
         }
         return state.sessionsPerDay.getOrElse(dayIndex) { 6 }
+    }
+
+    // Guards the one-shot silent refresh behind the Bunkometer subject-impact view.
+    @Volatile private var bunkImpactRefreshed = false
+
+    private fun emptyTimetable() = TimetableResponse(
+        noOfSessions = 0, noOfDays = 0, timeTable = emptyList(),
+        academicYear = "", academicSemester = "", sessionTimings = emptyMap()
+    )
+
+    /**
+     * Lazy-load the per-subject data the Bunkometer cascade needs. Renders instantly
+     * from cache, then fires a single silent background refresh. On flaky network /
+     * LAUDEA downtime the cached cascade stays put — no error, no spinner-of-death.
+     */
+    fun loadBunkImpactData() {
+        // 1) Instant paint from whatever's cached on disk.
+        val present = repository.cachedPresentDays
+        val absent = repository.cachedAbsentDays
+        val cachedTt = try {
+            securePrefs.cachedTimetableJson?.let { gson.fromJson(it, TimetableResponse::class.java) }
+        } catch (_: Exception) { null }
+
+        if (present != null && absent != null && _uiState.value.bunkSubjects.isEmpty()) {
+            val subjects = calculateSubjectAttendance(
+                presentDays = present,
+                absentDays = absent,
+                exemptions = emptyList(),
+                timetableResponse = cachedTt ?: emptyTimetable()
+            )
+            _uiState.value = _uiState.value.copy(bunkSubjects = subjects, bunkTimetable = cachedTt)
+        } else if (cachedTt != null && _uiState.value.bunkTimetable == null) {
+            _uiState.value = _uiState.value.copy(bunkTimetable = cachedTt)
+        }
+
+        // 2) One silent refresh per session.
+        if (bunkImpactRefreshed) return
+        bunkImpactRefreshed = true
+
+        viewModelScope.launch {
+            if (_uiState.value.bunkSubjects.isEmpty() || _uiState.value.bunkTimetable == null) {
+                _uiState.value = _uiState.value.copy(bunkImpactLoading = true)
+            }
+
+            val presentResult: Result<List<AbsentDay>>
+            val absentResult: Result<List<AbsentDay>>
+            val exemptionResult: Result<List<Exemption>>
+            val timetableResult: Result<TimetableResponse>
+            coroutineScope {
+                val p = async { repository.fetchPresentDays() }
+                val a = async { repository.fetchAbsentDays() }
+                val e = async { repository.fetchExemptions() }
+                val t = async { repository.fetchTimetable() }
+                presentResult = p.await()
+                absentResult = a.await()
+                exemptionResult = e.await()
+                timetableResult = t.await()
+            }
+
+            val timetable = if (timetableResult is Result.Success) timetableResult.data else _uiState.value.bunkTimetable
+            if (timetableResult is Result.Success) {
+                try { securePrefs.cachedTimetableJson = gson.toJson(timetableResult.data) } catch (_: Exception) {}
+            }
+
+            if (presentResult is Result.Success && absentResult is Result.Success) {
+                val hasExemptions = repository.getCachedAttendance().exemptionCount > 0
+                val exemptions = if (hasExemptions && exemptionResult is Result.Success) exemptionResult.data else emptyList()
+                val subjects = calculateSubjectAttendance(
+                    presentDays = presentResult.data,
+                    absentDays = absentResult.data,
+                    exemptions = exemptions,
+                    timetableResponse = timetable ?: emptyTimetable()
+                )
+                _uiState.value = _uiState.value.copy(
+                    bunkSubjects = subjects,
+                    bunkTimetable = timetable,
+                    bunkImpactLoading = false
+                )
+            } else {
+                // Network failed — keep whatever cache we have, just drop the spinner.
+                _uiState.value = _uiState.value.copy(bunkImpactLoading = false)
+            }
+        }
     }
 
     /** Calculate total hours for a set of individually selected dates */

@@ -2,6 +2,7 @@ package com.justpass.app.ui.screens
 
 import com.justpass.app.ui.components.AdBanner
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,9 +22,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.justpass.app.data.local.SecurePreferences
 import com.justpass.app.data.model.AbsentDay
 import com.justpass.app.data.model.AbsentSession
 import com.justpass.app.data.model.Exemption
+import com.justpass.app.data.model.SubjectAttendance
 import com.justpass.app.data.model.TimetableResponse
 import com.justpass.app.data.model.toDayTimetables
 import com.justpass.app.data.repository.AttendanceRepository
@@ -46,6 +50,7 @@ data class DayEntry(
     val type: String         // "Present", "Absent", "Exemption"
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubjectDetailScreen(
     cardState: LiquidState,
@@ -55,6 +60,8 @@ fun SubjectDetailScreen(
 ) {
     val context = LocalContext.current
     val repository = remember { AttendanceRepository.getInstance(context) }
+    val securePrefs = remember { SecurePreferences.getInstance(context) }
+    val gson = remember { com.google.gson.Gson() }
     val scope = rememberCoroutineScope()
 
     var isLoading by remember { mutableStateOf(true) }
@@ -62,6 +69,13 @@ fun SubjectDetailScreen(
     var presentEntries by remember { mutableStateOf<List<DayEntry>>(emptyList()) }
     var absentEntries by remember { mutableStateOf<List<DayEntry>>(emptyList()) }
     var exemptionEntries by remember { mutableStateOf<List<DayEntry>>(emptyList()) }
+    var timetable by remember {
+        mutableStateOf(
+            try { securePrefs.cachedTimetableJson?.let { gson.fromJson(it, TimetableResponse::class.java) } }
+            catch (_: Exception) { null }
+        )
+    }
+    var showBunkometer by remember { mutableStateOf(false) }
 
     val inputFormat = remember { SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") } }
     val displayFormat = remember { SimpleDateFormat("EEE, MMM d", Locale.US) }
@@ -102,6 +116,10 @@ fun SubjectDetailScreen(
         // Fetch exemptions and timetable in background (updates UI when ready)
         val exemptionResult = repository.fetchExemptions()
         val timetableResult = repository.fetchTimetable()
+        if (timetableResult is Result.Success) {
+            timetable = timetableResult.data
+            try { securePrefs.cachedTimetableJson = gson.toJson(timetableResult.data) } catch (_: Exception) {}
+        }
 
         // Only include exemptions if overall attendance has exemptions, and filter to current semester
         val cachedAttendance = repository.getCachedAttendance()
@@ -231,6 +249,23 @@ fun SubjectDetailScreen(
             }
         }
 
+        // Bunkometer entry pill
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFFFF9800).copy(alpha = if (isDark) 0.14f else 0.10f))
+                .clickable(enabled = totalCount > 0) { showBunkometer = true }
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Speed, contentDescription = null, tint = Color(0xFFFF9800),
+                modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Bunkometer — how many can I skip?", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+            Text("›", fontSize = 18.sp, color = Color(0xFFFF9800))
+        }
+
         AdBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), screenName = "SubjectDetail")
 
         // Warning card if below 80%
@@ -327,6 +362,24 @@ fun SubjectDetailScreen(
                 }
             }
         }
+    }
+
+    // ── Mode B: single-subject Bunkometer sheet ──
+    if (showBunkometer && totalCount > 0) {
+        SubjectBunkometerSheet(
+            subject = SubjectAttendance(
+                courseCode = courseCode,
+                courseTitle = courseTitle,
+                presentCount = presentCount,
+                absentCount = absentCount,
+                exemptionCount = exemptionCount,
+                totalCount = totalCount,
+                attendancePercentage = percentage
+            ),
+            timetable = timetable,
+            attendanceTarget = securePrefs.attendanceTarget.toDouble(),
+            onDismiss = { showBunkometer = false }
+        )
     }
 }
 
