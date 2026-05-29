@@ -59,6 +59,10 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                     val displayName = token?.let { Analytics.extractNameFromToken(it) }
                     Analytics.setUser(currentState.rollNumber, displayName)
                     Analytics.logLogin(currentState.rollNumber, displayName)
+                    // Owner-demo ads only kick in once the roll is persisted.
+                    // AdConfig.init ran during Activity.onCreate before login,
+                    // so re-check here on fresh installs.
+                    com.justpass.app.ui.components.AdConfig.refreshOwnerDemo(getApplication())
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         isLoggedIn = true,
