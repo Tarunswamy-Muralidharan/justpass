@@ -1192,19 +1192,31 @@ fun DashboardScreen(
                                         computeSubjectCascade(effectiveMissedDays, uiState.bunkSubjects, it)
                                     } ?: emptyList()
                                 }
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .clickable { showSubjectImpact = !showSubjectImpact }
-                                        .padding(vertical = 8.dp, horizontal = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("See subject impact", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary)
-                                    Text(if (showSubjectImpact) "▲" else "▼", fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                // Big gated CTA — interstitial ad, then reveal per-subject impact.
+                                if (!showSubjectImpact) {
+                                    Button(
+                                        onClick = {
+                                            val activity = context as? Activity
+                                            if (activity != null) {
+                                                com.justpass.app.ui.components.InterstitialAdManager.show(activity) {
+                                                    showSubjectImpact = true
+                                                }
+                                            } else {
+                                                showSubjectImpact = true
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                                    ) {
+                                        Icon(Icons.Default.Speed, contentDescription = null,
+                                            tint = Color.White, modifier = Modifier.size(20.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Check subject-wise impact", fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
                                 }
                                 if (showSubjectImpact) {
                                     when {
