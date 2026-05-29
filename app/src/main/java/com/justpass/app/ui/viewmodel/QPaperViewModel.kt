@@ -55,6 +55,39 @@ data class QPaperHistoryState(
     val errorMessage: String? = null,
 )
 
+@Immutable
+data class QPaperReuploadState(
+    val sourcePaper: QPaper? = null,
+    val isPreparing: Boolean = false,
+    val bytes: ByteArray? = null,
+    val isSubmitting: Boolean = false,
+    val uploadedPaper: QPaper? = null,
+    val errorMessage: String? = null,
+) {
+    // Custom equals to compare arrays by content rather than identity, so
+    // recomposes don't keep firing while the same bytes are cached.
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is QPaperReuploadState) return false
+        return sourcePaper == other.sourcePaper &&
+            isPreparing == other.isPreparing &&
+            bytes?.contentEquals(other.bytes) == other.bytes?.contentEquals(bytes ?: byteArrayOf()) &&
+            isSubmitting == other.isSubmitting &&
+            uploadedPaper == other.uploadedPaper &&
+            errorMessage == other.errorMessage
+    }
+
+    override fun hashCode(): Int {
+        var result = sourcePaper?.hashCode() ?: 0
+        result = 31 * result + isPreparing.hashCode()
+        result = 31 * result + (bytes?.contentHashCode() ?: 0)
+        result = 31 * result + isSubmitting.hashCode()
+        result = 31 * result + (uploadedPaper?.hashCode() ?: 0)
+        result = 31 * result + (errorMessage?.hashCode() ?: 0)
+        return result
+    }
+}
+
 class QPaperViewModel(application: Application) : AndroidViewModel(application) {
     private val repo = QPaperRepository.getInstance(application)
     private val securePrefs = SecurePreferences.getInstance(application)
@@ -71,6 +104,9 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _historyState = MutableStateFlow(QPaperHistoryState())
     val historyState: StateFlow<QPaperHistoryState> = _historyState.asStateFlow()
+
+    private val _reuploadState = MutableStateFlow(QPaperReuploadState())
+    val reuploadState: StateFlow<QPaperReuploadState> = _reuploadState.asStateFlow()
 
     val userRegulation: Regulation by lazy {
         getRegulationForBatch(securePrefs.batchYear)
@@ -300,6 +336,58 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
         }
+    }
+
+    // ─── Re-upload elsewhere (admin) ────────────────────────────────────
+
+    /**
+     * Begin a re-upload session for [paper]. Downloads its bytes into the
+     * VM so the destination picker can submit without re-hitting Cloudinary.
+     */
+    fun startReupload(paper: QPaper) {
+        _reuploadState.value = QPaperReuploadState(
+            sourcePaper = paper,
+            isPreparing = true,
+        )
+        viewModelScope.launch {
+            val res = repo.downloadPdfBytes(paper)
+            _reuploadState.value = _reuploadState.value.copy(
+                isPreparing = false,
+                bytes = res.getOrNull(),
+                errorMessage = if (res.isFailure) {
+                    res.exceptionOrNull()?.message ?: "Failed to fetch source PDF"
+                } else null,
+            )
+        }
+    }
+
+    /**
+     * Push cached bytes to a new (subject, semester, category, year) slot
+     * and write Firestore with status = "approved" so it's immediately
+     * browseable. No contributor doc is written — credit stays with the
+     * original uploader of [sourcePaper].
+     */
+    fun submitReupload(intent: UploadIntent) {
+        val bytes = _reuploadState.value.bytes ?: return
+        _reuploadState.value = _reuploadState.value.copy(isSubmitting = true, errorMessage = null)
+        viewModelScope.launch {
+            val res = repo.uploadApproved(bytes, intent)
+            if (res.isSuccess) {
+                _reuploadState.value = _reuploadState.value.copy(
+                    isSubmitting = false,
+                    uploadedPaper = res.getOrNull(),
+                )
+            } else {
+                _reuploadState.value = _reuploadState.value.copy(
+                    isSubmitting = false,
+                    errorMessage = res.exceptionOrNull()?.message ?: "Re-upload failed",
+                )
+            }
+        }
+    }
+
+    fun clearReupload() {
+        _reuploadState.value = QPaperReuploadState()
     }
 
     // ─── PDF download (for viewer) ─────────────────────────────────────

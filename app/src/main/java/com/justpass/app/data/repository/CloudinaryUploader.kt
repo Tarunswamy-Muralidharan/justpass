@@ -106,15 +106,24 @@ class CloudinaryUploader {
      */
     suspend fun downloadPdf(secureUrl: String): KResult<ByteArray> =
         withContext(Dispatchers.IO) {
+            Log.d(TAG, "downloadPdf url='$secureUrl'")
+            if (secureUrl.isBlank()) {
+                Log.e(TAG, "downloadPdf: blank URL — Firestore doc has no cloudinaryUrl")
+                return@withContext KResult.failure(
+                    RuntimeException("Cloudinary URL is empty")
+                )
+            }
             val request = Request.Builder().url(secureUrl).get().build()
             try {
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
+                        Log.e(TAG, "downloadPdf failed code=${response.code} url=$secureUrl")
                         return@withContext KResult.failure(
                             RuntimeException("Cloudinary download failed: ${response.code}")
                         )
                     }
                     val bytes = response.body?.bytes() ?: byteArrayOf()
+                    Log.d(TAG, "downloadPdf success bytes=${bytes.size}")
                     KResult.success(bytes)
                 }
             } catch (e: Exception) {
