@@ -1,17 +1,25 @@
 package com.justpass.app.data.repository
 
+import android.content.ContentValues
 import android.content.Context
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.justpass.app.data.local.SecurePreferences
+import com.justpass.app.data.model.DeclineKind
 import com.justpass.app.data.model.PaperCategory
 import com.justpass.app.data.model.QPaper
 import com.justpass.app.data.model.QPaperContributor
 import com.justpass.app.data.model.UploadIntent
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import java.io.File
 import kotlin.Result as KResult
 
 /**
@@ -122,6 +130,69 @@ class QPaperRepository private constructor(private val context: Context) {
     /** Stream PDF bytes from Cloudinary. Never written to disk. */
     suspend fun downloadPdfBytes(paper: QPaper): KResult<ByteArray> {
         return uploader.downloadPdf(paper.cloudinaryUrl)
+    }
+
+    /**
+     * Admin-only: save a paper's PDF to the public Downloads folder so the
+     * admin can open it in any reader and examine (or edit) it before
+     * deciding. This deliberately bypasses the app's usual never-persist
+     * rule — it's gated to the admin review flow only.
+     *
+     * Returns a human-readable destination path for a confirmation toast.
+     */
+    suspend fun downloadToDownloads(paper: QPaper): KResult<String> {
+        val bytes = uploader.downloadPdf(paper.cloudinaryUrl).getOrElse {
+            return KResult.failure(it)
+        }
+        return withContext(Dispatchers.IO) {
+            try {
+                val safeName = buildString {
+                    append(paper.subjectCode.ifBlank { "paper" })
+                    append("_").append(paper.categoryEnum.label)
+                    append("_").append(paper.examYear)
+                    append(".pdf")
+                }.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                val subDir = "JustPass QPapers"
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val resolver = context.contentResolver
+                    val values = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, safeName)
+                        put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                        put(
+                            MediaStore.Downloads.RELATIVE_PATH,
+                            Environment.DIRECTORY_DOWNLOADS + "/" + subDir,
+                        )
+                        put(MediaStore.Downloads.IS_PENDING, 1)
+                    }
+                    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                        ?: return@withContext KResult.failure(
+                            IllegalStateException("Couldn't create file in Downloads"),
+                        )
+                    resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                        ?: return@withContext KResult.failure(
+                            IllegalStateException("Couldn't open output stream"),
+                        )
+                    values.clear()
+                    values.put(MediaStore.Downloads.IS_PENDING, 0)
+                    resolver.update(uri, values, null, null)
+                    KResult.success("Download/$subDir/$safeName")
+                } else {
+                    @Suppress("DEPRECATION")
+                    val dir = File(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                        subDir,
+                    )
+                    if (!dir.exists()) dir.mkdirs()
+                    val outFile = File(dir, safeName)
+                    outFile.writeBytes(bytes)
+                    KResult.success("Download/$subDir/$safeName")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "downloadToDownloads err: ${e.message}", e)
+                KResult.failure(e)
+            }
+        }
     }
 
     // ─────────────────────── contribute ────────────────────────────────
@@ -312,6 +383,101 @@ class QPaperRepository private constructor(private val context: Context) {
             KResult.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "approve err: ${e.message}", e)
+            KResult.failure(e)
+        }
+    }
+
+    /**
+     * Approve-and-place: re-home the SAME pending doc into the admin-chosen
+     * slot (department/subject/category/year) and flip it to "approved" in
+     * one write, so the paper goes live exactly where it belongs and the
+     * queue clears — no orphan/duplicate doc, contributor keeps their credit.
+     *
+     * If [editedBytes] is non-null the admin edited the PDF after downloading
+     * it; we upload the new asset and swap cloudinaryUrl/publicId too.
+     *
+     * The contributor doc is mirrored with decision="approved" (best-effort)
+     * so "My Contributions" reflects the outcome.
+     */
+    suspend fun approveIntoSlot(
+        paperId: String,
+        intent: UploadIntent,
+        editedBytes: ByteArray? = null,
+    ): KResult<Unit> {
+        val uid = auth.currentUser?.uid
+            ?: return KResult.failure(IllegalStateException("Not signed in"))
+        val now = System.currentTimeMillis()
+
+        val swap: Pair<String, String>? = if (editedBytes != null) {
+            val up = uploader.uploadPdf(editedBytes).getOrElse { return KResult.failure(it) }
+            up.secureUrl to up.publicId
+        } else null
+
+        return try {
+            val updates = mutableMapOf<String, Any?>(
+                "department" to intent.department,
+                "subjectCode" to intent.subjectCode,
+                "subjectName" to intent.subjectName,
+                "semester" to intent.semester,
+                "regulation" to intent.regulation,
+                "category" to intent.category.key,
+                "examYear" to intent.examYear,
+                "status" to "approved",
+                "approvedAt" to now,
+                "approvedBy" to uid,
+            )
+            swap?.let {
+                updates["cloudinaryUrl"] = it.first
+                updates["cloudinaryPublicId"] = it.second
+                updates["replacedAt"] = now
+            }
+            papersCol.document(paperId).update(updates).await()
+            // Mirror onto the contributor-readable doc (best-effort).
+            runCatching {
+                contributorsCol.document(paperId)
+                    .update(mapOf("decision" to "approved", "decidedAt" to now))
+                    .await()
+            }
+            KResult.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "approveIntoSlot err: ${e.message}", e)
+            KResult.failure(e)
+        }
+    }
+
+    /**
+     * Decline a pending paper with a reason. Writes status="rejected" plus
+     * the decline kind + human-readable reason on the qpapers doc (admin-
+     * readable), and mirrors decision="declined" + reason onto the
+     * contributor doc so the uploader sees the feedback in "My Contributions".
+     */
+    suspend fun decline(paperId: String, kind: DeclineKind, reason: String): KResult<Unit> {
+        val uid = auth.currentUser?.uid
+            ?: return KResult.failure(IllegalStateException("Not signed in"))
+        val now = System.currentTimeMillis()
+        return try {
+            papersCol.document(paperId).update(
+                mapOf(
+                    "status" to "rejected",
+                    "approvedAt" to now,
+                    "approvedBy" to uid,
+                    "declineKind" to kind.key,
+                    "declineReason" to reason,
+                )
+            ).await()
+            runCatching {
+                contributorsCol.document(paperId).update(
+                    mapOf(
+                        "decision" to "declined",
+                        "declineKind" to kind.key,
+                        "declineReason" to reason,
+                        "decidedAt" to now,
+                    )
+                ).await()
+            }
+            KResult.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "decline err: ${e.message}", e)
             KResult.failure(e)
         }
     }

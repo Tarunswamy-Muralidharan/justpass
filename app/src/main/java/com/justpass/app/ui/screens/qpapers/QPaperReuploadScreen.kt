@@ -1,5 +1,8 @@
 package com.justpass.app.ui.screens.qpapers
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,11 +12,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,6 +33,7 @@ import com.justpass.app.ui.components.GlassCardShape
 import com.justpass.app.ui.components.GlassListCard
 import com.justpass.app.ui.components.RoseFourLoader
 import com.justpass.app.ui.viewmodel.QPaperViewModel
+import com.justpass.app.ui.viewmodel.ReuploadMode
 import io.github.fletchmckee.liquid.LiquidState
 import java.util.Calendar
 
@@ -40,11 +47,38 @@ fun QPaperReuploadScreen(
     val state by viewModel.reuploadState.collectAsStateWithLifecycle()
     val regulation = viewModel.effectiveRegulation
     val currentYear = remember { Calendar.getInstance().get(Calendar.YEAR) }
+    val context = LocalContext.current
+    val isPlace = state.mode == ReuploadMode.PLACE
 
-    var department by remember { mutableStateOf<Department?>(viewModel.userDepartment) }
+    // PLACE-mode optional file picker: swap in an edited PDF before publishing.
+    val editedPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val bytes = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        }.getOrNull()
+        if (bytes == null) {
+            Toast.makeText(context, "Couldn't read file", Toast.LENGTH_SHORT).show()
+        } else if (bytes.size > 10 * 1024 * 1024) {
+            Toast.makeText(context, "PDF too large (max 10 MB)", Toast.LENGTH_SHORT).show()
+        } else {
+            viewModel.setEditedBytes(bytes)
+            Toast.makeText(context, "Edited PDF attached", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Pre-fill with the contributor's chosen department so the admin only
+    // adjusts if they picked the wrong slot; fall back to the admin's dept.
+    var department by remember {
+        mutableStateOf<Department?>(
+            Department.entries.firstOrNull { it.name == state.sourcePaper?.department }
+                ?: viewModel.userDepartment
+        )
+    }
     var semester by remember { mutableIntStateOf(state.sourcePaper?.semester ?: 1) }
-    var subjectCode by remember { mutableStateOf("") }
-    var subjectName by remember { mutableStateOf("") }
+    var subjectCode by remember { mutableStateOf(state.sourcePaper?.subjectCode ?: "") }
+    var subjectName by remember { mutableStateOf(state.sourcePaper?.subjectName ?: "") }
     var category by remember { mutableStateOf(state.sourcePaper?.categoryEnum ?: PaperCategory.CA1) }
     var examYear by remember { mutableIntStateOf(state.sourcePaper?.examYear ?: currentYear) }
 
@@ -63,14 +97,18 @@ fun QPaperReuploadScreen(
             .verticalScroll(rememberScrollState()),
     ) {
         QPapersHeader(
-            title = "Re-upload Elsewhere",
-            subtitle = state.sourcePaper?.let { "From ${it.subjectCode} · ${it.categoryEnum.label} · ${it.examYear}" }
-                ?: "Pick new destination",
+            title = if (isPlace) "Approve & Place" else "Re-upload Elsewhere",
+            subtitle = state.sourcePaper?.let {
+                if (isPlace) "Publishing ${it.subjectCode} · ${it.categoryEnum.label} · ${it.examYear} to the right slot"
+                else "From ${it.subjectCode} · ${it.categoryEnum.label} · ${it.examYear}"
+            } ?: "Pick destination",
             onBack = onBack,
         )
 
         when {
-            state.isPreparing -> Box(
+            // CLONE pre-fetches the source bytes; PLACE re-homes the same doc
+            // so it skips straight to the form.
+            !isPlace && state.isPreparing -> Box(
                 modifier = Modifier.fillMaxWidth().padding(48.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -84,7 +122,7 @@ fun QPaperReuploadScreen(
                     )
                 }
             }
-            state.bytes == null && !state.isPreparing -> Box(
+            !isPlace && state.bytes == null -> Box(
                 modifier = Modifier.fillMaxWidth().padding(32.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -125,6 +163,25 @@ fun QPaperReuploadScreen(
                         YearPicker(year = examYear, currentYear = currentYear) { examYear = it }
                     }
 
+                    // PLACE only: optionally publish an edited PDF instead of
+                    // the contributor's original file.
+                    if (isPlace) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedButton(
+                            onClick = { editedPicker.launch("application/pdf") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                            Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                if (state.editedBytes != null) "Edited PDF attached — tap to change"
+                                else "Publish original · or attach an edited PDF",
+                                fontSize = 13.sp,
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
 
                     state.errorMessage?.let {
@@ -163,9 +220,12 @@ fun QPaperReuploadScreen(
                         if (state.isSubmitting) {
                             RoseFourLoader(modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Submitting…", fontWeight = FontWeight.SemiBold)
+                            Text(if (isPlace) "Publishing…" else "Submitting…", fontWeight = FontWeight.SemiBold)
                         } else {
-                            Text("Re-upload as Approved", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (isPlace) "Approve & Publish" else "Re-upload as Approved",
+                                fontWeight = FontWeight.SemiBold,
+                            )
                         }
                     }
                     Spacer(modifier = Modifier.height(160.dp))
