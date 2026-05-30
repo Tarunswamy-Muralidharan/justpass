@@ -59,7 +59,6 @@ fun SubjectBunkometerSheet(
     attendanceTarget: Double,
     onDismiss: () -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val selectedDates = remember { mutableStateListOf<LocalDate>() }
     var sliderPeriods by remember { mutableFloatStateOf(0f) }
     val scrollState = rememberScrollState()
@@ -86,20 +85,43 @@ fun SubjectBunkometerSheet(
     // Show the scroll hint while there's room below and the user hasn't scrolled yet.
     val showScrollHint = scrollState.value < 24 && scrollState.maxValue > 60
 
-    ModalBottomSheet(
+    // Custom (non-draggable) bottom sheet — a draggable ModalBottomSheet springs/bounces
+    // when content fits and the user tries to scroll. Dialog + scrim avoids that.
+    androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Color(0xFF15202E)
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollFactory provides null) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                        .navigationBarsPadding()
-                        .padding(bottom = 24.dp)
-                        .verticalScroll(scrollState)
-                ) {
+        val maxSheetHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.92f).dp
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Scrim
+            Box(modifier = Modifier.fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.55f))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) { onDismiss() })
+            // Sheet
+            Box(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .heightIn(max = maxSheetHeight)
+                    .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
+                    .background(Color(0xFF15202E))
+            ) {
+                CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollFactory provides null) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .navigationBarsPadding()
+                            .padding(bottom = 24.dp)
+                            .verticalScroll(scrollState)
+                    ) {
+                        // Decorative drag handle
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(width = 36.dp, height = 4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color.White.copy(alpha = 0.25f)))
+                        }
                     GaugeHeader(subject, projection, attendanceTarget, budgetDays, periods, accent)
 
                     Spacer(Modifier.height(10.dp))
@@ -149,7 +171,7 @@ fun SubjectBunkometerSheet(
                                     val isSelected = date in selectedDates
                                     val isDisabled = isPast || subjPeriods == 0
                                     Box(
-                                        modifier = Modifier.weight(1f).aspectRatio(1.3f).padding(2.dp)
+                                        modifier = Modifier.weight(1f).aspectRatio(1f).padding(2.dp)
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(
                                                 when {
@@ -205,6 +227,7 @@ fun SubjectBunkometerSheet(
                                 Text("Clear days", fontSize = 12.sp, color = accent)
                             }
                         }
+                    }
                     }
                 }
 
