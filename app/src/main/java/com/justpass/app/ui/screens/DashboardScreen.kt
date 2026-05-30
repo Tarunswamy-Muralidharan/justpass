@@ -1144,14 +1144,9 @@ fun DashboardScreen(
                                 )
                                 Button(
                                     onClick = {
-                                        val activity = context as? Activity
-                                        if (activity != null) {
-                                            com.justpass.app.ui.components.InterstitialAdManager.show(activity) {
-                                                showSubjectImpact = true
-                                            }
-                                        } else {
-                                            showSubjectImpact = true
-                                        }
+                                        // Close the popup + jump to the Subject Attendance page (no ad here).
+                                        showLeavePopup = false
+                                        onSubjectAttendanceClick()
                                     },
                                     modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
                                         .graphicsLayer { scaleX = ctaScale; scaleY = ctaScale }
