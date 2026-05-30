@@ -20,8 +20,8 @@ object AdConfig {
     // ads_enabled Remote Config flag. Lets the developer preview the ad slots
     // on their own device while the rest of the userbase stays ad-free.
     // Gated to debug builds so a leaked release APK can't impersonate.
-    private val OWNER_DEMO_ROLLS = setOf(
-        "715523244053", // Tarunswamy
+    private val OWNER_DEMO_ROLLS = setOf<String>(
+        // "715523244053", // Tarunswamy — disabled: no demo ads on device for now
     )
 
     // Real (production) AdMob unit IDs.
