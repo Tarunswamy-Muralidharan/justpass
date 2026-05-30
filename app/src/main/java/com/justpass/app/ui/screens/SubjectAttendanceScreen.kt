@@ -19,11 +19,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.local.SecurePreferences
@@ -35,6 +39,7 @@ import com.justpass.app.ui.components.RoseFourLoader
 
 import com.justpass.app.ui.viewmodel.SubjectAttendanceViewModel
 import io.github.fletchmckee.liquid.LiquidState
+import kotlin.math.roundToInt
 
 @Composable
 fun SubjectAttendanceScreen(
@@ -56,6 +61,8 @@ fun SubjectAttendanceScreen(
     }
     // Which subject's leave-planner sheet is open (null = none).
     var bunkSubject by remember { mutableStateOf<SubjectAttendance?>(null) }
+    // Temporary layout toggle: 0 = ring+rail, 1 = big%+gradient, 2 = compact. Pick winner later.
+    var cardStyle by rememberSaveable { mutableIntStateOf(0) }
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         // Header
@@ -85,6 +92,32 @@ fun SubjectAttendanceScreen(
         }
 
         AdBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), screenName = "SubjectAttendance")
+
+        // Temporary layout switcher — try all 3, pick the best.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Layout", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            listOf("Ring", "Bold", "Compact").forEachIndexed { i, label ->
+                val selected = cardStyle == i
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        )
+                        .clickable { cardStyle = i }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(label, fontSize = 11.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
 
         Box(modifier = Modifier.fillMaxSize()) {
             when {
@@ -119,11 +152,13 @@ fun SubjectAttendanceScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(uiState.subjects, key = { it.courseCode }) { subject ->
-                            SubjectCard(
-                                subject = subject,
-                                onClick = { onSubjectClick(subject.courseCode, subject.courseTitle) },
-                                onBunk = { bunkSubject = subject }
-                            )
+                            val onClick = { onSubjectClick(subject.courseCode, subject.courseTitle) }
+                            val onBunk = { bunkSubject = subject }
+                            when (cardStyle) {
+                                0 -> SubjectCardRing(subject, onClick, onBunk)
+                                1 -> SubjectCardBold(subject, onClick, onBunk)
+                                else -> SubjectCardCompact(subject, onClick, onBunk)
+                            }
                         }
                     }
                 }
@@ -142,118 +177,209 @@ fun SubjectAttendanceScreen(
     }
 }
 
-@Composable
-private fun SubjectCard(subject: SubjectAttendance, onClick: () -> Unit = {}, onBunk: () -> Unit = {}) {
-    val isDark = isSystemInDarkTheme()
-    val percentage = subject.attendancePercentage
-    val barColor = when {
-        percentage >= 75 -> Color(0xFF4CAF50)
-        percentage >= 65 -> Color(0xFFFFC107)
-        else -> Color(0xFFF44336)
-    }
-    val tintColor = barColor.copy(alpha = if (isDark) 0.08f else 0.05f)
+// Status color shared by all card styles.
+private fun statusColor(percentage: Double): Color = when {
+    percentage >= 75 -> Color(0xFF4CAF50)
+    percentage >= 65 -> Color(0xFFFFC107)
+    else -> Color(0xFFF44336)
+}
 
+/** Circular progress ring with the % number centered. */
+@Composable
+private fun PercentRing(
+    percentage: Double,
+    color: Color,
+    ringSize: androidx.compose.ui.unit.Dp,
+    stroke: androidx.compose.ui.unit.Dp,
+    fontSize: androidx.compose.ui.unit.TextUnit
+) {
+    val isDark = isSystemInDarkTheme()
+    Box(modifier = Modifier.size(ringSize), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.size(ringSize).drawBehind {
+            val s = stroke.toPx()
+            val sweep = (percentage / 100.0).coerceIn(0.0, 1.0).toFloat() * 360f
+            drawArc(
+                color = if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.08f),
+                startAngle = 0f, sweepAngle = 360f, useCenter = false,
+                style = Stroke(width = s, cap = StrokeCap.Round)
+            )
+            drawArc(
+                color = color, startAngle = -90f, sweepAngle = sweep, useCenter = false,
+                style = Stroke(width = s, cap = StrokeCap.Round)
+            )
+        })
+        Text("${percentage.roundToInt()}", fontSize = fontSize, fontWeight = FontWeight.Black, color = color)
+    }
+}
+
+/** Orange "Plan leave" Bunkometer chip. */
+@Composable
+private fun PlanLeaveChip(onBunk: () -> Unit, isDark: Boolean) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFFFF9800).copy(alpha = if (isDark) 0.16f else 0.12f))
+            .clickable { onBunk() }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Default.Speed, contentDescription = null, tint = Color(0xFFFF9800),
+            modifier = Modifier.size(15.dp))
+        Spacer(modifier = Modifier.width(5.dp))
+        Text("Plan leave", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFFF9800))
+    }
+}
+
+@Composable
+private fun SubjectStatsRow(subject: SubjectAttendance, color: Color, compact: Boolean = false) {
+    val sep = if (compact) " \u00b7 " else null
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (compact) Arrangement.Start else Arrangement.SpaceBetween
+    ) {
+        Text("P:${subject.presentCount}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        sep?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)) }
+        Text("A:${subject.absentCount}", fontSize = 11.sp,
+            color = if (subject.absentCount > 0) color.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant)
+        if (subject.exemptionCount > 0) {
+            sep?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)) }
+            Text("E:${subject.exemptionCount}", fontSize = 11.sp, color = Color(0xFF64B5F6).copy(alpha = 0.85f))
+        }
+        sep?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)) }
+        Text("T:${subject.totalCount}", fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+    }
+}
+
+// \u2500\u2500 Style 0: circular ring + left status rail \u2500\u2500
+@Composable
+private fun SubjectCardRing(subject: SubjectAttendance, onClick: () -> Unit, onBunk: () -> Unit) {
+    val isDark = isSystemInDarkTheme()
+    val color = statusColor(subject.attendancePercentage)
     GlassListCard(
         modifier = Modifier.fillMaxWidth().clickable { onClick() },
-        tintColor = tintColor
+        tintColor = color.copy(alpha = if (isDark) 0.08f else 0.05f)
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
-            // Course code + percentage
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = subject.courseCode,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${String.format("%.1f", subject.attendancePercentage)}%",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = barColor
-                )
-            }
-
-            // Course title
-            Text(
-                text = subject.courseTitle,
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Progress bar
-            val progressShape = RoundedCornerShape(4.dp)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(progressShape)
-                    .drawBehind {
-                        // Background track
-                        drawRect(if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f))
-                        // Filled portion
-                        val fillWidth = size.width * (percentage / 100.0).toFloat().coerceIn(0f, 1f)
-                        drawRect(barColor.copy(alpha = 0.7f), size = size.copy(width = fillWidth))
+        Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            // Left status rail
+            Box(modifier = Modifier.fillMaxHeight().width(5.dp).background(color))
+            Column(modifier = Modifier.weight(1f).padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(subject.courseCode, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(subject.courseTitle, fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // Present / Absent / Exemption / Total stats
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("P: ${subject.presentCount}", fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("A: ${subject.absentCount}", fontSize = 11.sp,
-                    color = if (subject.absentCount > 0) barColor.copy(alpha = 0.8f)
-                            else MaterialTheme.colorScheme.onSurfaceVariant)
-                if (subject.exemptionCount > 0) {
-                    Text("E: ${subject.exemptionCount}", fontSize = 11.sp,
-                        color = Color(0xFF64B5F6).copy(alpha = 0.8f))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    PercentRing(subject.attendancePercentage, color, 54.dp, 5.dp, 16.sp)
                 }
-                Text("Total: ${subject.totalCount}", fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Footer: "Plan leave" Bunkometer chip + tap-for-details hint.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+                Spacer(modifier = Modifier.height(10.dp))
+                SubjectStatsRow(subject, color)
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFFFF9800).copy(alpha = if (isDark) 0.16f else 0.12f))
-                        .clickable { onBunk() }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Speed, contentDescription = null, tint = Color(0xFFFF9800),
-                        modifier = Modifier.size(15.dp))
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text("Plan leave", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFFF9800))
+                    PlanLeaveChip(onBunk, isDark)
+                    Text("Tap for details \u2192", fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
                 }
-                Text(
-                    text = "Tap for details \u2192",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.End
+            }
+        }
+    }
+}
+
+// \u2500\u2500 Style 1: big % box + gradient wash \u2500\u2500
+@Composable
+private fun SubjectCardBold(subject: SubjectAttendance, onClick: () -> Unit, onBunk: () -> Unit) {
+    val isDark = isSystemInDarkTheme()
+    val color = statusColor(subject.attendancePercentage)
+    val pct = subject.attendancePercentage
+    GlassListCard(modifier = Modifier.fillMaxWidth().clickable { onClick() }) {
+        Box(
+            modifier = Modifier.fillMaxWidth().background(
+                Brush.horizontalGradient(
+                    listOf(color.copy(alpha = if (isDark) 0.22f else 0.16f), Color.Transparent)
                 )
+            )
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Big % box
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(color.copy(alpha = if (isDark) 0.20f else 0.14f))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("${String.format("%.1f", pct)}%", fontSize = 24.sp,
+                            fontWeight = FontWeight.Black, color = color)
+                    }
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(subject.courseCode, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(subject.courseTitle, fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(4.dp))
+                                .drawBehind {
+                                    drawRect(if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f))
+                                    val w = size.width * (pct / 100.0).toFloat().coerceIn(0f, 1f)
+                                    drawRect(color.copy(alpha = 0.8f), size = size.copy(width = w))
+                                }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                SubjectStatsRow(subject, color)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PlanLeaveChip(onBunk, isDark)
+                    Text("Tap for details \u2192", fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+                }
+            }
+        }
+    }
+}
+
+// \u2500\u2500 Style 2: compact dense row + small ring \u2500\u2500
+@Composable
+private fun SubjectCardCompact(subject: SubjectAttendance, onClick: () -> Unit, onBunk: () -> Unit) {
+    val isDark = isSystemInDarkTheme()
+    val color = statusColor(subject.attendancePercentage)
+    GlassListCard(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        tintColor = color.copy(alpha = if (isDark) 0.06f else 0.04f)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PercentRing(subject.attendancePercentage, color, 40.dp, 4.dp, 12.sp)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(subject.courseCode, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subject.courseTitle, fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(modifier = Modifier.height(4.dp))
+                SubjectStatsRow(subject, color, compact = true)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                PlanLeaveChip(onBunk, isDark)
+                Text("\u203a", fontSize = 18.sp, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                    modifier = Modifier.align(Alignment.End))
             }
         }
     }
