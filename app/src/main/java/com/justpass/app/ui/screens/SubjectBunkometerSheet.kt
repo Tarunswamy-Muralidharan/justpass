@@ -1,14 +1,11 @@
 package com.justpass.app.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -206,13 +203,18 @@ fun SubjectBunkometerSheet(
                 }
 
                 // ── Pinned scroll affordance ──
-                AnimatedVisibility(
-                    visible = showScrollHint,
-                    enter = fadeIn(), exit = fadeOut(),
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                ) {
-                    ScrollDownHint(accent) {
-                        scope.launch { scrollState.animateScrollTo(scrollState.maxValue) }
+                val hintAlpha by animateFloatAsState(
+                    targetValue = if (showScrollHint) 1f else 0f,
+                    animationSpec = tween(250), label = "hintAlpha"
+                )
+                if (hintAlpha > 0.01f) {
+                    Box(
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                            .graphicsLayer { alpha = hintAlpha }
+                    ) {
+                        ScrollDownHint(accent) {
+                            scope.launch { scrollState.animateScrollTo(scrollState.maxValue) }
+                        }
                     }
                 }
             }
