@@ -863,7 +863,7 @@ fun DashboardScreen(
                     }
                     if (days == 0) {
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text("See how bunking affects your attendance", fontSize = 12.sp,
+                        Text("Bunkometer for subject-wise + full attendance", fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                     }
                     if (days > 0) {

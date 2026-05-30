@@ -1,6 +1,7 @@
 package com.justpass.app.ui.screens
 
 import com.justpass.app.ui.components.AdBanner
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -10,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,13 +19,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.justpass.app.data.local.SecurePreferences
 import com.justpass.app.data.model.SubjectAttendance
+import com.justpass.app.data.model.TimetableResponse
 import com.justpass.app.ui.components.GlassCardShapeSmall
 import com.justpass.app.ui.components.GlassListCard
 import com.justpass.app.ui.components.RoseFourLoader
@@ -39,6 +44,18 @@ fun SubjectAttendanceScreen(
     onSubjectClick: (courseCode: String, courseTitle: String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+    val securePrefs = remember { SecurePreferences.getInstance(context) }
+    val timetable = remember {
+        try {
+            securePrefs.cachedTimetableJson?.let {
+                com.google.gson.Gson().fromJson(it, TimetableResponse::class.java)
+            }
+        } catch (_: Exception) { null }
+    }
+    // Which subject's leave-planner sheet is open (null = none).
+    var bunkSubject by remember { mutableStateOf<SubjectAttendance?>(null) }
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         // Header
@@ -104,7 +121,8 @@ fun SubjectAttendanceScreen(
                         items(uiState.subjects, key = { it.courseCode }) { subject ->
                             SubjectCard(
                                 subject = subject,
-                                onClick = { onSubjectClick(subject.courseCode, subject.courseTitle) }
+                                onClick = { onSubjectClick(subject.courseCode, subject.courseTitle) },
+                                onBunk = { bunkSubject = subject }
                             )
                         }
                     }
@@ -112,10 +130,20 @@ fun SubjectAttendanceScreen(
             }
         }
     }
+
+    // Leave planner for the chosen subject — slider/calendar → projected drop.
+    bunkSubject?.let { subj ->
+        SubjectBunkometerSheet(
+            subject = subj,
+            timetable = timetable,
+            attendanceTarget = securePrefs.attendanceTarget.toDouble(),
+            onDismiss = { bunkSubject = null }
+        )
+    }
 }
 
 @Composable
-private fun SubjectCard(subject: SubjectAttendance, onClick: () -> Unit = {}) {
+private fun SubjectCard(subject: SubjectAttendance, onClick: () -> Unit = {}, onBunk: () -> Unit = {}) {
     val isDark = isSystemInDarkTheme()
     val percentage = subject.attendancePercentage
     val barColor = when {
@@ -198,16 +226,35 @@ private fun SubjectCard(subject: SubjectAttendance, onClick: () -> Unit = {}) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Tap for details hint
-            Text(
-                text = "Tap for details \u2192",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+            // Footer: "Plan leave" Bunkometer chip + tap-for-details hint.
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                textAlign = androidx.compose.ui.text.style.TextAlign.End
-            )
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFFFF9800).copy(alpha = if (isDark) 0.16f else 0.12f))
+                        .clickable { onBunk() }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Speed, contentDescription = null, tint = Color(0xFFFF9800),
+                        modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text("Plan leave", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFFF9800))
+                }
+                Text(
+                    text = "Tap for details \u2192",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End
+                )
+            }
         }
     }
 }
