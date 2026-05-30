@@ -45,7 +45,6 @@ data class QPaperAdminState(
     val pending: List<QPaper> = emptyList(),
     val selectedPaper: QPaper? = null,
     val selectedContributor: QPaperContributor? = null,
-    val isReplacing: Boolean = false,
     val isDownloading: Boolean = false,
     val downloadMessage: String? = null,   // one-shot toast after a download
     val errorMessage: String? = null,
@@ -315,21 +314,6 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
-    fun approveSelected() {
-        val paper = _adminState.value.selectedPaper ?: return
-        viewModelScope.launch {
-            val res = repo.approve(paper.id)
-            if (res.isSuccess) {
-                clearSelection()
-                loadPending()
-            } else {
-                _adminState.value = _adminState.value.copy(
-                    errorMessage = res.exceptionOrNull()?.message ?: "Approve failed",
-                )
-            }
-        }
-    }
-
     /**
      * Decline the selected pending paper with a reason. [kind] picks the
      * canned message; for [DeclineKind.CUSTOM] the admin supplies [message].
@@ -371,28 +355,6 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
     fun consumeDownloadMessage() {
         if (_adminState.value.downloadMessage != null) {
             _adminState.value = _adminState.value.copy(downloadMessage = null)
-        }
-    }
-
-    /**
-     * Admin edit flow: upload a replacement PDF for the selected paper and
-     * approve in one shot. UI calls this with the bytes from a file picker.
-     */
-    fun replaceAndApproveSelected(bytes: ByteArray) {
-        val paper = _adminState.value.selectedPaper ?: return
-        viewModelScope.launch {
-            _adminState.value = _adminState.value.copy(isReplacing = true, errorMessage = null)
-            val res = repo.replaceAndApprove(paper.id, bytes)
-            if (res.isSuccess) {
-                _adminState.value = _adminState.value.copy(isReplacing = false)
-                clearSelection()
-                loadPending()
-            } else {
-                _adminState.value = _adminState.value.copy(
-                    isReplacing = false,
-                    errorMessage = res.exceptionOrNull()?.message ?: "Replace failed",
-                )
-            }
         }
     }
 

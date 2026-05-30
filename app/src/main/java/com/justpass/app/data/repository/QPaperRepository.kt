@@ -369,24 +369,6 @@ class QPaperRepository private constructor(private val context: Context) {
         }
     }
 
-    suspend fun approve(paperId: String): KResult<Unit> {
-        val uid = auth.currentUser?.uid
-            ?: return KResult.failure(IllegalStateException("Not signed in"))
-        return try {
-            papersCol.document(paperId).update(
-                mapOf(
-                    "status" to "approved",
-                    "approvedAt" to System.currentTimeMillis(),
-                    "approvedBy" to uid,
-                )
-            ).await()
-            KResult.success(Unit)
-        } catch (e: Exception) {
-            Log.e(TAG, "approve err: ${e.message}", e)
-            KResult.failure(e)
-        }
-    }
-
     /**
      * Approve-and-place: re-home the SAME pending doc into the admin-chosen
      * slot (department/subject/category/year) and flip it to "approved" in
@@ -483,53 +465,6 @@ class QPaperRepository private constructor(private val context: Context) {
     }
 
     /**
-     * Admin: replace the underlying Cloudinary PDF and approve in one shot.
-     *
-     * Used when the contributor's file was almost-right but needed a tweak
-     * (rotated page, cover sheet, redacted name, etc.) — the admin edits
-     * the PDF externally, picks the fixed file, and we swap the asset.
-     *
-     * Implementation notes:
-     *   - Cloudinary unsigned presets can't reliably overwrite an existing
-     *     public_id (depends on preset config we don't fully control), so
-     *     we always upload as a NEW asset. The Firestore doc swaps to the
-     *     new URL + publicId; the old Cloudinary file is orphaned and the
-     *     admin can clean it up from the Cloudinary dashboard later.
-     *   - Status flips to "approved" in the same write so we don't need a
-     *     separate Approve tap. Sets approvedBy/approvedAt + replacedAt so
-     *     audit logs show that this paper went through an admin edit.
-     *   - The contributor doc is left untouched — the contributor is still
-     *     credited for the original submission. Replacing the bytes doesn't
-     *     change who contributed.
-     */
-    suspend fun replaceAndApprove(paperId: String, bytes: ByteArray): KResult<Unit> {
-        val uid = auth.currentUser?.uid
-            ?: return KResult.failure(IllegalStateException("Not signed in"))
-
-        val upload = uploader.uploadPdf(bytes).getOrElse {
-            return KResult.failure(it)
-        }
-
-        val now = System.currentTimeMillis()
-        return try {
-            papersCol.document(paperId).update(
-                mapOf(
-                    "cloudinaryUrl" to upload.secureUrl,
-                    "cloudinaryPublicId" to upload.publicId,
-                    "status" to "approved",
-                    "approvedAt" to now,
-                    "approvedBy" to uid,
-                    "replacedAt" to now,
-                )
-            ).await()
-            KResult.success(Unit)
-        } catch (e: Exception) {
-            Log.e(TAG, "replaceAndApprove err: ${e.message}", e)
-            KResult.failure(e)
-        }
-    }
-
-    /**
      * Admin direct upload — bypasses the pending queue. Used by the
      * "Re-upload elsewhere" flow where the admin is moving (or cloning) an
      * already-verified paper to a different slot. Status is "approved" from
@@ -570,28 +505,6 @@ class QPaperRepository private constructor(private val context: Context) {
             KResult.success(paper.copy(id = paperRef.id))
         } catch (e: Exception) {
             Log.e(TAG, "uploadApproved err: ${e.message}", e)
-            KResult.failure(e)
-        }
-    }
-
-    suspend fun reject(paperId: String): KResult<Unit> {
-        val uid = auth.currentUser?.uid
-            ?: return KResult.failure(IllegalStateException("Not signed in"))
-        return try {
-            papersCol.document(paperId).update(
-                mapOf(
-                    "status" to "rejected",
-                    "approvedAt" to System.currentTimeMillis(),
-                    "approvedBy" to uid,
-                )
-            ).await()
-            // Note: Cloudinary file is NOT deleted here (would need API
-            // secret). Admin can clean up via the Cloudinary dashboard if
-            // storage starts to fill up. Rejected papers are invisible to
-            // the app regardless.
-            KResult.success(Unit)
-        } catch (e: Exception) {
-            Log.e(TAG, "reject err: ${e.message}", e)
             KResult.failure(e)
         }
     }
