@@ -96,7 +96,7 @@ fun SubjectBunkometerSheet(
                 ) {
                     GaugeHeader(subject, projection, attendanceTarget, budgetDays, periods, accent)
 
-                    Spacer(Modifier.height(18.dp))
+                    Spacer(Modifier.height(10.dp))
 
                     // ── Slider ──
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -143,7 +143,7 @@ fun SubjectBunkometerSheet(
                                     val isSelected = date in selectedDates
                                     val isDisabled = isPast || subjPeriods == 0
                                     Box(
-                                        modifier = Modifier.weight(1f).aspectRatio(1f).padding(2.dp)
+                                        modifier = Modifier.weight(1f).aspectRatio(1.3f).padding(2.dp)
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(
                                                 when {
@@ -245,9 +245,12 @@ private fun ScrollDownHint(accent: Color, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Scroll for days & calendar", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-            Spacer(Modifier.width(6.dp))
-            Text("⌄", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color.Black,
-                modifier = Modifier.graphicsLayer { translationY = dy })
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                androidx.compose.material.icons.Icons.Default.KeyboardArrowDown,
+                contentDescription = null, tint = Color.Black,
+                modifier = Modifier.size(18.dp).graphicsLayer { translationY = dy }
+            )
         }
     }
 }
@@ -303,8 +306,8 @@ private fun BunkGauge(projected: Double, target: Double, color: Color, periods: 
         targetValue = projected.toFloat().coerceIn(0f, 100f),
         animationSpec = tween(450), label = "gaugeSweep"
     )
-    Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.BottomCenter) {
-        Box(modifier = Modifier.fillMaxWidth().height(150.dp).drawBehind {
+    Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.BottomCenter) {
+        Box(modifier = Modifier.fillMaxWidth().height(120.dp).drawBehind {
             val stroke = 22f
             val pad = stroke / 2 + 6f
             val arcSize = androidx.compose.ui.geometry.Size(size.width - pad * 2, (size.height - pad) * 2)
