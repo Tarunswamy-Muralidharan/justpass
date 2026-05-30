@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -90,6 +91,7 @@ fun QPaperDepartmentScreen(
     isAdmin: Boolean,
     onPickDepartment: (String) -> Unit,
     onOpenAdminQueue: () -> Unit,
+    onOpenMyContributions: () -> Unit,
     onBack: () -> Unit,
 ) {
     val myDept = viewModel.userDepartment
@@ -101,14 +103,24 @@ fun QPaperDepartmentScreen(
             title = "Previous Year Papers",
             subtitle = if (isAdmin) "Admin · ${effective.displayName}" else "Tap your department",
             onBack = onBack,
-            trailing = if (isAdmin) ({
-                IconButton(onClick = onOpenAdminQueue) {
-                    Icon(
-                        Icons.Default.AdminPanelSettings, "Admin queue",
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+            trailing = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onOpenMyContributions) {
+                        Icon(
+                            Icons.Default.Inventory2, "My uploads",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    if (isAdmin) {
+                        IconButton(onClick = onOpenAdminQueue) {
+                            Icon(
+                                Icons.Default.AdminPanelSettings, "Admin queue",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
                 }
-            }) else null,
+            },
         )
 
         if (isAdmin) {

@@ -203,15 +203,20 @@ service cloud.firestore {
         && request.resource.data.cloudinaryUrl is string
         && request.resource.data.cloudinaryPublicId is string;
 
-      // Admins can mutate status + approval fields, plus replace the
-      // underlying Cloudinary asset (cloudinaryUrl + cloudinaryPublicId +
-      // replacedAt) when fixing a bad upload before publishing.
+      // Admins can mutate status + approval fields, replace the underlying
+      // Cloudinary asset (cloudinaryUrl + cloudinaryPublicId + replacedAt)
+      // when fixing a bad upload, re-home the paper into the correct slot
+      // (department/subjectCode/.../examYear) during approve-and-place, and
+      // record decline feedback (declineKind + declineReason).
       // Any authed user can increment viewCount (atomic delta).
       allow update: if isAuthed() && (
         (isAdmin() && request.resource.data.diff(resource.data)
           .affectedKeys().hasOnly([
             'status', 'approvedAt', 'approvedBy', 'viewCount',
-            'cloudinaryUrl', 'cloudinaryPublicId', 'replacedAt'
+            'cloudinaryUrl', 'cloudinaryPublicId', 'replacedAt',
+            'department', 'subjectCode', 'subjectName', 'semester',
+            'regulation', 'category', 'examYear',
+            'declineKind', 'declineReason'
           ])) ||
         (request.resource.data.diff(resource.data)
           .affectedKeys().hasOnly(['viewCount'])
@@ -254,7 +259,13 @@ service cloud.firestore {
         && request.resource.data.paperId == paperId
         && exists(/databases/$(database)/documents/qpapers/$(paperId));
 
-      allow update: if false;
+      // Admin-only update, restricted to the decision fields. Lets an admin
+      // mirror the approve/decline outcome (+ reason) onto the one doc the
+      // contributor can read, powering the "My Contributions" status view.
+      // The immutable identity fields (uid, roll, name, slot) can never change.
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['decision', 'declineKind', 'declineReason', 'decidedAt']);
       allow delete: if isAdmin();
     }
 

@@ -34,6 +34,7 @@ sealed class QPaperRoute {
     data object AdminQueue : QPaperRoute()
     data object AdminHistory : QPaperRoute()
     data object Reupload : QPaperRoute()
+    data object MyContributions : QPaperRoute()
 }
 
 @Composable
@@ -77,6 +78,7 @@ fun QPapersFlow(
                 isAdmin = isAdmin,
                 onPickDepartment = { dept -> push(QPaperRoute.SemesterList(dept)) },
                 onOpenAdminQueue = { push(QPaperRoute.AdminQueue) },
+                onOpenMyContributions = { push(QPaperRoute.MyContributions) },
                 onBack = { pop() },
             )
 
@@ -139,8 +141,13 @@ fun QPapersFlow(
                 cardState = cardState,
                 viewModel = viewModel,
                 onDone = {
-                    // Collapse back to history / browse.
-                    while (stack.size > 1 && stack.last() !is QPaperRoute.AdminHistory) {
+                    // Collapse back to the queue (approve-and-place) or
+                    // history / browse (re-upload-elsewhere), whichever is
+                    // the nearest ancestor still on the stack.
+                    while (stack.size > 1 &&
+                        stack.last() !is QPaperRoute.AdminQueue &&
+                        stack.last() !is QPaperRoute.AdminHistory
+                    ) {
                         stack.removeAt(stack.lastIndex)
                     }
                     version++
@@ -179,7 +186,17 @@ fun QPapersFlow(
                 cardState = cardState,
                 viewModel = viewModel,
                 onOpenViewer = { paper -> push(QPaperRoute.Viewer(paper)) },
+                onApproveAndPlace = { paper ->
+                    viewModel.startPlacement(paper)
+                    push(QPaperRoute.Reupload)
+                },
                 onOpenHistory = { push(QPaperRoute.AdminHistory) },
+                onBack = { pop() },
+            )
+
+            QPaperRoute.MyContributions -> QPaperMyContributionsScreen(
+                cardState = cardState,
+                viewModel = viewModel,
                 onBack = { pop() },
             )
 
@@ -214,6 +231,7 @@ private val QPaperRouteStackSaver = androidx.compose.runtime.saveable.listSaver<
                 QPaperRoute.AdminQueue -> "admin"
                 QPaperRoute.AdminHistory -> "adminhistory"
                 QPaperRoute.Reupload -> "reupload"
+                QPaperRoute.MyContributions -> "mycontrib"
                 QPaperRoute.ThankYou -> "thank"
                 // Viewer / Upload carry rich objects — collapse to closest ancestor on restore.
                 is QPaperRoute.Viewer, is QPaperRoute.Upload -> null
@@ -233,6 +251,7 @@ private val QPaperRouteStackSaver = androidx.compose.runtime.saveable.listSaver<
                     "admin" -> QPaperRoute.AdminQueue
                     "adminhistory" -> QPaperRoute.AdminHistory
                     "reupload" -> QPaperRoute.Reupload
+                    "mycontrib" -> QPaperRoute.MyContributions
                     "thank" -> QPaperRoute.ThankYou
                     else -> QPaperRoute.DepartmentList
                 }

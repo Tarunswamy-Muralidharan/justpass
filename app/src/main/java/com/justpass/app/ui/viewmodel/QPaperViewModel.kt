@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.justpass.app.data.local.SecurePreferences
+import com.justpass.app.data.model.DeclineKind
 import com.justpass.app.data.model.Department
 import com.justpass.app.data.model.PaperCategory
 import com.justpass.app.data.model.QPaper
@@ -45,8 +46,25 @@ data class QPaperAdminState(
     val selectedPaper: QPaper? = null,
     val selectedContributor: QPaperContributor? = null,
     val isReplacing: Boolean = false,
+    val isDownloading: Boolean = false,
+    val downloadMessage: String? = null,   // one-shot toast after a download
     val errorMessage: String? = null,
 )
+
+@Immutable
+data class QPaperMyContribState(
+    val isLoading: Boolean = false,
+    val items: List<QPaperContributor> = emptyList(),
+    val errorMessage: String? = null,
+)
+
+/** How a destination-picker session was started. */
+enum class ReuploadMode {
+    /** Clone an already-approved paper into another slot (new doc). */
+    CLONE,
+    /** Approve a pending paper by re-homing the SAME doc into the chosen slot. */
+    PLACE,
+}
 
 @Immutable
 data class QPaperHistoryState(
@@ -58,8 +76,12 @@ data class QPaperHistoryState(
 @Immutable
 data class QPaperReuploadState(
     val sourcePaper: QPaper? = null,
+    val mode: ReuploadMode = ReuploadMode.CLONE,
     val isPreparing: Boolean = false,
     val bytes: ByteArray? = null,
+    // Optional admin-edited replacement chosen during PLACE (download → edit
+    // → publish). Null means publish the contributor's original file as-is.
+    val editedBytes: ByteArray? = null,
     val isSubmitting: Boolean = false,
     val uploadedPaper: QPaper? = null,
     val errorMessage: String? = null,
@@ -70,8 +92,10 @@ data class QPaperReuploadState(
         if (this === other) return true
         if (other !is QPaperReuploadState) return false
         return sourcePaper == other.sourcePaper &&
+            mode == other.mode &&
             isPreparing == other.isPreparing &&
-            bytes?.contentEquals(other.bytes) == other.bytes?.contentEquals(bytes ?: byteArrayOf()) &&
+            (bytes?.contentEquals(other.bytes ?: byteArrayOf()) ?: (other.bytes == null)) &&
+            (editedBytes?.contentEquals(other.editedBytes ?: byteArrayOf()) ?: (other.editedBytes == null)) &&
             isSubmitting == other.isSubmitting &&
             uploadedPaper == other.uploadedPaper &&
             errorMessage == other.errorMessage
@@ -79,8 +103,10 @@ data class QPaperReuploadState(
 
     override fun hashCode(): Int {
         var result = sourcePaper?.hashCode() ?: 0
+        result = 31 * result + mode.hashCode()
         result = 31 * result + isPreparing.hashCode()
         result = 31 * result + (bytes?.contentHashCode() ?: 0)
+        result = 31 * result + (editedBytes?.contentHashCode() ?: 0)
         result = 31 * result + isSubmitting.hashCode()
         result = 31 * result + (uploadedPaper?.hashCode() ?: 0)
         result = 31 * result + (errorMessage?.hashCode() ?: 0)
@@ -107,6 +133,9 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _reuploadState = MutableStateFlow(QPaperReuploadState())
     val reuploadState: StateFlow<QPaperReuploadState> = _reuploadState.asStateFlow()
+
+    private val _myContribState = MutableStateFlow(QPaperMyContribState())
+    val myContribState: StateFlow<QPaperMyContribState> = _myContribState.asStateFlow()
 
     val userRegulation: Regulation by lazy {
         getRegulationForBatch(securePrefs.batchYear)
@@ -301,18 +330,47 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun rejectSelected() {
+    /**
+     * Decline the selected pending paper with a reason. [kind] picks the
+     * canned message; for [DeclineKind.CUSTOM] the admin supplies [message].
+     */
+    fun declineSelected(kind: DeclineKind, message: String) {
         val paper = _adminState.value.selectedPaper ?: return
+        val reason = if (kind == DeclineKind.CUSTOM) message.trim() else kind.contributorMessage
         viewModelScope.launch {
-            val res = repo.reject(paper.id)
+            val res = repo.decline(paper.id, kind, reason)
             if (res.isSuccess) {
                 clearSelection()
                 loadPending()
             } else {
                 _adminState.value = _adminState.value.copy(
-                    errorMessage = res.exceptionOrNull()?.message ?: "Reject failed",
+                    errorMessage = res.exceptionOrNull()?.message ?: "Decline failed",
                 )
             }
+        }
+    }
+
+    /** Admin: save the selected paper's PDF to Downloads to examine/edit. */
+    fun downloadSelectedToDevice() {
+        val paper = _adminState.value.selectedPaper ?: return
+        if (_adminState.value.isDownloading) return
+        viewModelScope.launch {
+            _adminState.value = _adminState.value.copy(isDownloading = true, downloadMessage = null)
+            val res = repo.downloadToDownloads(paper)
+            _adminState.value = _adminState.value.copy(
+                isDownloading = false,
+                downloadMessage = if (res.isSuccess) {
+                    "Saved to ${res.getOrNull()}"
+                } else {
+                    res.exceptionOrNull()?.message ?: "Download failed"
+                },
+            )
+        }
+    }
+
+    fun consumeDownloadMessage() {
+        if (_adminState.value.downloadMessage != null) {
+            _adminState.value = _adminState.value.copy(downloadMessage = null)
         }
     }
 
@@ -347,6 +405,7 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
     fun startReupload(paper: QPaper) {
         _reuploadState.value = QPaperReuploadState(
             sourcePaper = paper,
+            mode = ReuploadMode.CLONE,
             isPreparing = true,
         )
         viewModelScope.launch {
@@ -362,25 +421,64 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
+     * Begin an approve-and-place session for a PENDING paper. Unlike CLONE,
+     * this re-homes the same doc, so we don't need to pre-fetch the source
+     * bytes — the contributor's file is published as-is unless the admin
+     * picks an edited replacement ([setEditedBytes]).
+     */
+    fun startPlacement(paper: QPaper) {
+        _reuploadState.value = QPaperReuploadState(
+            sourcePaper = paper,
+            mode = ReuploadMode.PLACE,
+            isPreparing = false,
+        )
+    }
+
+    /** Admin picked an edited PDF to publish instead of the original. */
+    fun setEditedBytes(bytes: ByteArray) {
+        _reuploadState.value = _reuploadState.value.copy(editedBytes = bytes)
+    }
+
+    /**
      * Push cached bytes to a new (subject, semester, category, year) slot
      * and write Firestore with status = "approved" so it's immediately
      * browseable. No contributor doc is written — credit stays with the
      * original uploader of [sourcePaper].
      */
     fun submitReupload(intent: UploadIntent) {
-        val bytes = _reuploadState.value.bytes ?: return
-        _reuploadState.value = _reuploadState.value.copy(isSubmitting = true, errorMessage = null)
+        val state = _reuploadState.value
+        _reuploadState.value = state.copy(isSubmitting = true, errorMessage = null)
         viewModelScope.launch {
-            val res = repo.uploadApproved(bytes, intent)
+            val res = when (state.mode) {
+                ReuploadMode.PLACE -> {
+                    val paperId = state.sourcePaper?.id
+                    if (paperId.isNullOrBlank()) {
+                        Result.failure(IllegalStateException("Missing source paper"))
+                    } else {
+                        repo.approveIntoSlot(paperId, intent, state.editedBytes)
+                            .map { state.sourcePaper.copy(status = "approved") }
+                    }
+                }
+                ReuploadMode.CLONE -> {
+                    val bytes = state.bytes
+                    if (bytes == null) {
+                        Result.failure(IllegalStateException("Source PDF not loaded"))
+                    } else {
+                        repo.uploadApproved(bytes, intent)
+                    }
+                }
+            }
             if (res.isSuccess) {
                 _reuploadState.value = _reuploadState.value.copy(
                     isSubmitting = false,
                     uploadedPaper = res.getOrNull(),
                 )
+                if (state.mode == ReuploadMode.PLACE) loadPending()
             } else {
                 _reuploadState.value = _reuploadState.value.copy(
                     isSubmitting = false,
-                    errorMessage = res.exceptionOrNull()?.message ?: "Re-upload failed",
+                    errorMessage = res.exceptionOrNull()?.message
+                        ?: if (state.mode == ReuploadMode.PLACE) "Publish failed" else "Re-upload failed",
                 )
             }
         }
@@ -388,6 +486,16 @@ class QPaperViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearReupload() {
         _reuploadState.value = QPaperReuploadState()
+    }
+
+    // ─── My Contributions (contributor-facing) ─────────────────────────
+
+    fun loadMyContributions() {
+        viewModelScope.launch {
+            _myContribState.value = _myContribState.value.copy(isLoading = true, errorMessage = null)
+            val items = repo.listMyContributions()
+            _myContribState.value = QPaperMyContribState(isLoading = false, items = items)
+        }
     }
 
     // ─── PDF download (for viewer) ─────────────────────────────────────

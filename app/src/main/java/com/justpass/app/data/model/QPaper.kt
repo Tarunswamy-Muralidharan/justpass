@@ -30,6 +30,11 @@ data class QPaper(
     val approvedAt: Long? = null,
     val approvedBy: String? = null,     // uid of approving admin
     val viewCount: Int = 0,
+    // Decline feedback (only set when status == "rejected"). declineKind is
+    // one of the DeclineKind keys; declineReason is the human-readable
+    // message shown to the contributor in "My Contributions".
+    val declineKind: String? = null,
+    val declineReason: String? = null,
 ) {
     @get:Exclude
     val categoryEnum: PaperCategory
@@ -60,6 +65,34 @@ enum class PaperCategory(val key: String, val label: String) {
 }
 
 /**
+ * Reasons an admin can decline a contributed paper. Persisted as a stable
+ * lowercase [key] on the doc; [contributorMessage] is the default text the
+ * contributor sees (CUSTOM uses the admin's typed message instead).
+ */
+enum class DeclineKind(val key: String, val adminLabel: String, val contributorMessage: String) {
+    ALREADY_RECEIVED(
+        "already_received",
+        "Thanks — already received",
+        "Thanks for this! Someone already submitted this paper, so we didn't need a second copy. Much appreciated.",
+    ),
+    INVALID(
+        "invalid",
+        "Sorry — paper is invalid",
+        "Sorry, this submission couldn't be used — the file was unclear, incomplete, or not a valid question paper.",
+    ),
+    CUSTOM(
+        "custom",
+        "Custom message…",
+        "",
+    );
+
+    companion object {
+        fun fromKey(key: String?): DeclineKind? =
+            entries.firstOrNull { it.key == key }
+    }
+}
+
+/**
  * Internal contributor record — stored at `qpapers_contributors/{paperId}`.
  * Admin-only via Firestore Rules, plus self-readable so the contributor
  * can list their own contributions in the UI.
@@ -81,7 +114,21 @@ data class QPaperContributor(
     val category: String = "",
     val examYear: Int = 0,
     val regulation: String = "",
-)
+    // Admin decision mirrored here (the only doc the contributor can read)
+    // so "My Contributions" can show the outcome + reason. Written by admin
+    // on approve/decline; null while still pending.
+    val decision: String? = null,        // approved / declined
+    val declineKind: String? = null,
+    val declineReason: String? = null,
+    val decidedAt: Long? = null,
+) {
+    @get:Exclude
+    val isPending: Boolean get() = decision == null
+    @get:Exclude
+    val isApproved: Boolean get() = decision == "approved"
+    @get:Exclude
+    val isDeclined: Boolean get() = decision == "declined"
+}
 
 /**
  * What the user has selected in the upload form before they pick a file.
