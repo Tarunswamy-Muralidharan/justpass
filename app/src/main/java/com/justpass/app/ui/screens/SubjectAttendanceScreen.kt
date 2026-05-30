@@ -58,6 +58,8 @@ fun SubjectAttendanceScreen(
     }
     // Which subject's leave-planner sheet is open (null = none).
     var bunkSubject by remember { mutableStateOf<SubjectAttendance?>(null) }
+    // Warm up the interstitial so it's ready when Plan leave is tapped.
+    LaunchedEffect(Unit) { com.justpass.app.ui.components.InterstitialAdManager.preload(context) }
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         // Header
@@ -124,7 +126,17 @@ fun SubjectAttendanceScreen(
                             SubjectCardBold(
                                 subject = subject,
                                 onClick = { onSubjectClick(subject.courseCode, subject.courseTitle) },
-                                onBunk = { bunkSubject = subject }
+                                onBunk = {
+                                    // Interstitial ad before the leave planner opens.
+                                    val activity = context as? android.app.Activity
+                                    if (activity != null) {
+                                        com.justpass.app.ui.components.InterstitialAdManager.show(activity) {
+                                            bunkSubject = subject
+                                        }
+                                    } else {
+                                        bunkSubject = subject
+                                    }
+                                }
                             )
                         }
                     }
