@@ -1,5 +1,7 @@
 package com.justpass.app.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -12,6 +14,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +26,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -85,7 +91,7 @@ fun SubjectBunkometerSheet(
         sheetState = sheetState,
         containerColor = Color(0xFF15202E)
     ) {
-        CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollConfiguration provides null) {
+        CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollFactory provides null) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.fillMaxWidth()
@@ -247,7 +253,7 @@ private fun ScrollDownHint(accent: Color, onClick: () -> Unit) {
             Text("Scroll for days & calendar", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
             Spacer(Modifier.width(4.dp))
             Icon(
-                androidx.compose.material.icons.Icons.Default.KeyboardArrowDown,
+                Icons.Default.KeyboardArrowDown,
                 contentDescription = null, tint = Color.Black,
                 modifier = Modifier.size(18.dp).graphicsLayer { translationY = dy }
             )
@@ -299,46 +305,90 @@ private fun GaugeHeader(
     }
 }
 
-/** Semicircular speedometer arc that sweeps to the projected %, with a target tick. */
+/**
+ * Full 270° speedometer: ticks, sweeping value arc, target marker + label, and a
+ * needle from a center hub. Animates 0 → projected on open and on every change.
+ */
 @Composable
 private fun BunkGauge(projected: Double, target: Double, color: Color, periods: Int) {
-    val animated by animateFloatAsState(
-        targetValue = projected.toFloat().coerceIn(0f, 100f),
-        animationSpec = tween(450), label = "gaugeSweep"
-    )
-    Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.BottomCenter) {
-        Box(modifier = Modifier.fillMaxWidth().height(120.dp).drawBehind {
-            val stroke = 22f
-            val pad = stroke / 2 + 6f
-            val arcSize = androidx.compose.ui.geometry.Size(size.width - pad * 2, (size.height - pad) * 2)
-            val topLeft = androidx.compose.ui.geometry.Offset(pad, pad)
-            drawArc(
-                color = Color.White.copy(alpha = 0.10f),
-                startAngle = 180f, sweepAngle = 180f, useCenter = false,
-                topLeft = topLeft, size = arcSize, style = Stroke(width = stroke, cap = StrokeCap.Round)
-            )
-            drawArc(
-                color = color, startAngle = 180f, sweepAngle = 180f * (animated / 100f), useCenter = false,
-                topLeft = topLeft, size = arcSize, style = Stroke(width = stroke, cap = StrokeCap.Round)
-            )
-            val tAngle = Math.toRadians((180f + 180f * (target / 100f)).toDouble())
+    val anim = remember { Animatable(0f) }
+    LaunchedEffect(projected) {
+        anim.animateTo(projected.toFloat().coerceIn(0f, 100f),
+            animationSpec = tween(850, easing = FastOutSlowInEasing))
+    }
+    val track = Color.White.copy(alpha = 0.14f)
+    val dimTick = Color.White.copy(alpha = 0.22f)
+    val labelArgb = Color.White.copy(alpha = 0.65f).toArgb()
+
+    Box(modifier = Modifier.fillMaxWidth().height(200.dp)) {
+        Box(modifier = Modifier.fillMaxSize().drawBehind {
+            val start = 135f          // bottom-left
+            val total = 270f          // 90° gap at the bottom
             val cx = size.width / 2f
-            val cy = size.height - pad
-            val rOuter = (size.width - pad * 2) / 2f
-            val r1 = rOuter - stroke
-            val r2 = rOuter + stroke / 2
-            drawLine(
-                color = Color.White.copy(alpha = 0.85f),
-                start = androidx.compose.ui.geometry.Offset((cx + r1 * Math.cos(tAngle)).toFloat(), (cy + r1 * Math.sin(tAngle)).toFloat()),
-                end = androidx.compose.ui.geometry.Offset((cx + r2 * Math.cos(tAngle)).toFloat(), (cy + r2 * Math.sin(tAngle)).toFloat()),
-                strokeWidth = 4f
-            )
+            val cy = size.height * 0.54f
+            val R = minOf(size.width / 2f, cy) - 30f
+            val arcStroke = 11f
+            val frac = (anim.value / 100f).coerceIn(0f, 1f)
+            val valAngle = start + total * frac
+
+            val topLeft = androidx.compose.ui.geometry.Offset(cx - R, cy - R)
+            val box = androidx.compose.ui.geometry.Size(R * 2, R * 2)
+
+            // base + value arcs
+            drawArc(track, start, total, false, topLeft, box, style = Stroke(arcStroke, cap = StrokeCap.Round))
+            drawArc(color, start, total * frac, false, topLeft, box, style = Stroke(arcStroke, cap = StrokeCap.Round))
+
+            // ticks (inside the ring)
+            val ticks = 40
+            for (i in 0..ticks) {
+                val a = start + total * (i / ticks.toFloat())
+                val major = i % 4 == 0
+                val len = if (major) 14f else 7f
+                val rOut = R - arcStroke / 2 - 6f
+                val rIn = rOut - len
+                val rad = Math.toRadians(a.toDouble())
+                val tc = if (i / ticks.toFloat() <= frac) color else dimTick
+                drawLine(tc,
+                    androidx.compose.ui.geometry.Offset((cx + rIn * Math.cos(rad)).toFloat(), (cy + rIn * Math.sin(rad)).toFloat()),
+                    androidx.compose.ui.geometry.Offset((cx + rOut * Math.cos(rad)).toFloat(), (cy + rOut * Math.sin(rad)).toFloat()),
+                    strokeWidth = if (major) 3f else 2f, cap = StrokeCap.Round)
+            }
+
+            // target marker (white) + number label outside
+            val ta = start + total * (target / 100f).toFloat()
+            val tRad = Math.toRadians(ta.toDouble())
+            val tIn = R - arcStroke / 2 - 18f
+            val tOut = R + 5f
+            drawLine(Color.White,
+                androidx.compose.ui.geometry.Offset((cx + tIn * Math.cos(tRad)).toFloat(), (cy + tIn * Math.sin(tRad)).toFloat()),
+                androidx.compose.ui.geometry.Offset((cx + tOut * Math.cos(tRad)).toFloat(), (cy + tOut * Math.sin(tRad)).toFloat()),
+                strokeWidth = 4f, cap = StrokeCap.Round)
+            val lblR = R + 24f
+            val paint = android.graphics.Paint().apply {
+                this.color = labelArgb; textSize = 27f
+                textAlign = android.graphics.Paint.Align.CENTER; isAntiAlias = true
+            }
+            drawContext.canvas.nativeCanvas.drawText("${target.roundToInt()}",
+                (cx + lblR * Math.cos(tRad)).toFloat(), (cy + lblR * Math.sin(tRad)).toFloat() + 9f, paint)
+
+            // needle + hub
+            val nLen = R - arcStroke - 16f
+            val nRad = Math.toRadians(valAngle.toDouble())
+            val tip = androidx.compose.ui.geometry.Offset((cx + nLen * Math.cos(nRad)).toFloat(), (cy + nLen * Math.sin(nRad)).toFloat())
+            val tail = androidx.compose.ui.geometry.Offset((cx - 20f * Math.cos(nRad)).toFloat(), (cy - 20f * Math.sin(nRad)).toFloat())
+            drawLine(color, tail, tip, strokeWidth = 6f, cap = StrokeCap.Round)
+            drawCircle(color, radius = 13f, center = androidx.compose.ui.geometry.Offset(cx, cy))
+            drawCircle(Color(0xFF15202E), radius = 7.5f, center = androidx.compose.ui.geometry.Offset(cx, cy))
+            drawCircle(color, radius = 3.5f, center = androidx.compose.ui.geometry.Offset(cx, cy))
         })
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("${String.format("%.1f", projected)}%", fontSize = 40.sp, fontWeight = FontWeight.Black, color = color)
-            Text(if (periods > 0) "projected after $periods period${if (periods != 1) "s" else ""}" else "no bunks yet",
-                fontSize = 11.sp, color = Color.White.copy(alpha = 0.5f))
-            Text("target ${target.roundToInt()}%", fontSize = 10.sp, color = Color.White.copy(alpha = 0.4f))
+        // Readout in the lower half
+        Column(
+            modifier = Modifier.fillMaxSize().padding(bottom = 12.dp),
+            verticalArrangement = Arrangement.Bottom,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("${String.format("%.1f", anim.value)}%", fontSize = 38.sp, fontWeight = FontWeight.Black, color = color)
+            Text("target ${target.roundToInt()}%", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
         }
     }
 }
