@@ -24,12 +24,14 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -129,6 +131,10 @@ fun ProfileScreen(
     var updateState by remember { mutableStateOf<UpdateCheckState>(UpdateCheckState.Idle) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+
+    // Share-app dialogs
+    var showShareDialog by remember { mutableStateOf(false) }
+    var showIosGuide by remember { mutableStateOf(false) }
 
     // Fetch profile picture + biodata
     LaunchedEffect(rollNumber) {
@@ -249,6 +255,72 @@ fun ProfileScreen(
             dismissButton = if (state is UpdateCheckState.UpdateAvailable) {
                 { TextButton(onClick = { showUpdateDialog = false }) { Text("Later") } }
             } else null,
+            containerColor = Color(0xFF1E2A3A)
+        )
+    }
+
+    // ── Share JustPass: pick platform ──
+    if (showShareDialog) {
+        val playUrl = "https://play.google.com/store/apps/details?id=com.justpass.app"
+        AlertDialog(
+            onDismissRequest = { showShareDialog = false },
+            title = { Text("Share JustPass") },
+            text = { Text("Which device is your friend on?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showShareDialog = false
+                    Analytics.logProfileAction("share_android")
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT,
+                            "Track your attendance with JustPass 🎓\n$playUrl")
+                    }
+                    context.startActivity(Intent.createChooser(send, "Share JustPass"))
+                }) { Text("Android") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showShareDialog = false
+                    showIosGuide = true
+                }) { Text("iPhone / iPad") }
+            },
+            containerColor = Color(0xFF1E2A3A)
+        )
+    }
+
+    // ── iOS install guide + share website link ──
+    if (showIosGuide) {
+        val webUrl = "https://justpass-eta.vercel.app"
+        AlertDialog(
+            onDismissRequest = { showIosGuide = false },
+            title = { Text("Install on iPhone / iPad") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text("JustPass runs as a web app on iOS. Share the link below — open it in Safari, then Add to Home Screen.",
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Image(
+                        painter = painterResource(R.drawable.ios_install_guide),
+                        contentDescription = "How to install JustPass on iOS",
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showIosGuide = false
+                    Analytics.logProfileAction("share_ios")
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT,
+                            "Get JustPass on your iPhone/iPad 🎓\nOpen in Safari, then Share → Add to Home Screen:\n$webUrl")
+                    }
+                    context.startActivity(Intent.createChooser(send, "Share JustPass"))
+                }) { Text("Share link") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showIosGuide = false }) { Text("Close") }
+            },
             containerColor = Color(0xFF1E2A3A)
         )
     }
@@ -412,6 +484,17 @@ fun ProfileScreen(
         // Menu — real liquid glass
         LiquidGlassCard(cardState = cardState, modifier = Modifier.fillMaxWidth()) {
             Column {
+                ListItem(
+                    headlineContent = { Text("Share JustPass") },
+                    supportingContent = { Text("Send to friends on Android or iPhone") },
+                    leadingContent = { Icon(Icons.Default.Share, null) },
+                    modifier = Modifier.clickable {
+                        Analytics.logProfileAction("share_app")
+                        showShareDialog = true
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 ListItem(
                     headlineContent = { Text("Check for Updates") },
                     leadingContent = { Icon(Icons.Default.SystemUpdate, null) },
