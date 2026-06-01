@@ -93,26 +93,6 @@ fun Sparkle(size: Dp = 14.dp, color: Color = Color.White) {
 }
 
 @Composable
-fun Barcode(width: Dp = 130.dp, height: Dp = 26.dp, color: Color = Color.White) {
-    val seed = listOf(3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,3,1,2,2,1,3,1,2,1,1,3,2,1,3,1,1,2)
-    val total = seed.sum().toFloat()
-    Canvas(modifier = Modifier.width(width).height(height)) {
-        val unit = this.size.width / total
-        var x = 0f
-        seed.forEachIndexed { i, w ->
-            if (i % 2 == 0) {
-                drawRect(
-                    color = color,
-                    topLeft = androidx.compose.ui.geometry.Offset(x, 0f),
-                    size = androidx.compose.ui.geometry.Size(w * unit, this.size.height)
-                )
-            }
-            x += w * unit
-        }
-    }
-}
-
-@Composable
 fun CircleIcon(
     size: Dp = 32.dp,
     bg: Color = Color.White.copy(alpha = 0.08f),

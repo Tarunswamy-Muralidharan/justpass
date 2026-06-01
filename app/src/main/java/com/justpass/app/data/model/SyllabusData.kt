@@ -7,7 +7,3 @@ data class SyllabusSubject(
     val credits: String,
     val syllabus: String
 )
-
-data class DepartmentSyllabus(
-    val subjects: List<SyllabusSubject>
-)

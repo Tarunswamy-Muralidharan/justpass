@@ -177,22 +177,6 @@ fun gradePointToLetter(gp: Int): String = when (gp) {
 }
 
 /**
- * Calculate what grades/marks are needed in the current semester to achieve target CGPA.
- *
- * @param targetCgpa Desired cumulative CGPA
- * @param previousGrades All grade entries from past semesters (from Results API)
- * @param currentSemester Current semester number
- * @param currentCAMarks CA marks for current semester subjects (courseCode → Pair(scored, max))
- * @param currentSemSubjects Current semester subjects with credits (courseCode → credits)
- */
-/**
- * Per-subject CA component breakdown for target calculation.
- * @param ca1Scored CA-1 marks scored (null if not entered)
- * @param ca1Max CA-1 max marks
- * @param ca2Scored CA-2 marks scored (null if not entered)
- * @param ca2Max CA-2 max marks
- */
-/**
  * Per-subject CA component breakdown for target calculation.
  * Components vary by course type:
  * - Theory: IAT-1 (test+assignment, scaled to 20) + IAT-2 (test+assignment, scaled to 20) = 40 CA
@@ -210,22 +194,6 @@ data class CaComponentData(
     val ca2TestMax: Double = 65.0,  // IAT-2/component test max (actual, for "min X/65")
     val ca2TestScaled: Double = 60.0 // IAT-2/component test scaled max
 )
-
-fun calculateTargetCgpa(
-    targetCgpa: Double,
-    previousGrades: List<GradeEntry>,
-    currentSemester: Int,
-    currentCAMarks: Map<String, Pair<Double, Double>>,
-    currentSemSubjects: Map<String, Pair<String, Int>>,
-    caComponents: Map<String, CaComponentData> = emptyMap()
-): TargetCgpaResult {
-    val pastGrades = previousGrades.filter { it.semester < currentSemester && it.isPassed() }
-    val prevCredits = pastGrades.sumOf { it.getCreditsValue() }
-    val prevWeightedSum = pastGrades.sumOf { it.gradePoint * it.getCreditsValue() }
-    val prevCgpa = if (prevCredits > 0) prevWeightedSum.toDouble() / prevCredits else 0.0
-    return calculateTargetCgpaFromLocal(targetCgpa, prevCgpa, prevCredits, prevWeightedSum,
-        currentCAMarks, currentSemSubjects, caComponents)
-}
 
 /**
  * Calculate target CGPA using pre-computed previous semester data (from GPA calculator).

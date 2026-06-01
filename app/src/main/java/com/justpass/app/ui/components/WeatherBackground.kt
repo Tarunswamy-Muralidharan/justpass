@@ -22,7 +22,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -86,21 +87,27 @@ enum class WeatherScene(val displayName: String) {
  * to know where rain should bounce. LiquidGlassCard registers itself via
  * [registerAsSplashTarget].
  */
-val LocalSplashZones = compositionLocalOf<SnapshotStateList<Rect>?> { null }
+val LocalSplashZones = compositionLocalOf<SnapshotStateMap<Any, Rect>?> { null }
 
+/**
+ * Register this element as a rain-splash target.
+ *
+ * Each call site owns ONE stable keyed slot in the zone map:
+ *  - its bounds are re-published on every layout pass, so the splash line
+ *    tracks the card as the screen scrolls (no stale duplicates left behind);
+ *  - the slot is removed when the element leaves composition, so splashes
+ *    don't linger on other screens.
+ *
+ * This is why rain only splashes on the home attendance card, and keeps
+ * hitting it correctly while scrolling instead of drifting elsewhere.
+ */
 fun Modifier.registerAsSplashTarget(): Modifier = composed {
-    val zones = LocalSplashZones.current
-    if (zones == null) this
-    else onGloballyPositioned { coords ->
-        val r = coords.boundsInRoot()
-        // Replace any near-duplicate (within 1px) instead of stacking many copies
-        val existingIdx = zones.indexOfFirst {
-            kotlin.math.abs(it.top - r.top) < 1f &&
-                kotlin.math.abs(it.left - r.left) < 1f &&
-                kotlin.math.abs(it.right - r.right) < 1f
-        }
-        if (existingIdx == -1) zones.add(r) else zones[existingIdx] = r
+    val zones = LocalSplashZones.current ?: return@composed this
+    val key = remember { Any() }
+    DisposableEffect(zones, key) {
+        onDispose { zones.remove(key) }
     }
+    onGloballyPositioned { coords -> zones[key] = coords.boundsInRoot() }
 }
 
 /* ---------- public entrypoint ---------- */
@@ -143,8 +150,45 @@ fun WeatherBackgroundLayer(
             }
             return@Crossfade
         }
+        // Night dimming for scenes that have NO day/night variant (RAIN, CLOUDY,
+        // FOG, …). Their skies are fixed light/medium grey, so after sunset they
+        // read as "overcast daylight". Re-checked off the device clock every
+        // minute so it darkens the moment night falls, regardless of fetch state.
+        val context = androidx.compose.ui.platform.LocalContext.current
+        var isNight by remember {
+            mutableStateOf(
+                com.justpass.app.data.repository.WeatherRepository.isNightNow(context)
+            )
+        }
+        LaunchedEffect(Unit) {
+            while (true) {
+                isNight = com.justpass.app.data.repository.WeatherRepository.isNightNow(context)
+                kotlinx.coroutines.delay(60_000L)
+            }
+        }
+
         Box(modifier = Modifier.fillMaxSize()) {
             SceneRenderer(current)
+            // Full-screen night veil over the variant-less scenes. Heavier on the
+            // bright skies (fog/haze/windy/snow), lighter on the already-dark ones
+            // (heavy rain/storm). Scenes that own a night variant, plus the
+            // inherently-dark/transitional ones, get nothing here.
+            val nightDim = if (isNight) when (current) {
+                WeatherScene.FOG,
+                WeatherScene.HAZE,
+                WeatherScene.WINDY,
+                WeatherScene.SNOW -> 0.52f
+                WeatherScene.CLOUDY -> 0.42f
+                WeatherScene.RAIN -> 0.34f
+                WeatherScene.HEAVY_RAIN -> 0.18f
+                WeatherScene.THUNDERSTORM -> 0.12f
+                else -> 0f
+            } else 0f
+            if (nightDim > 0f) {
+                Canvas(Modifier.fillMaxSize()) {
+                    drawRect(Color.Black.copy(alpha = nightDim))
+                }
+            }
             // Readability scrim — darkens lower 75% so tile text contrasts against
             // bright daytime gradients (clear/partly/sunrise/sunset/haze/etc).
             // Strength scales by scene: bright daytime = heavier, dark scenes
@@ -592,7 +636,7 @@ private fun RainCanvas(
         val w = size.width
         val h = size.height
         // Snapshot zone fractions
-        val zoneFracs = zones?.map {
+        val zoneFracs = zones?.values?.map {
             ZoneFrac(it.top / h, it.left / w, it.right / w)
         } ?: emptyList()
         drops.forEach { d ->

@@ -49,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -132,7 +133,7 @@ fun LiquidGlassScaffold(
     // Per-screen splash zone registry — LiquidGlassCard registers its top-edge
     // bounds here via Modifier.registerAsSplashTarget. SplashCanvas reads these
     // to spawn rain splatters only where there's actual glass to bounce off.
-    val splashZones = remember { mutableStateListOf<androidx.compose.ui.geometry.Rect>() }
+    val splashZones = remember { mutableStateMapOf<Any, androidx.compose.ui.geometry.Rect>() }
 
     CompositionLocalProvider(LocalSplashZones provides splashZones) {
         Box(modifier = modifier.fillMaxSize()) {

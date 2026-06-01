@@ -71,6 +71,9 @@ object WeatherRepository {
         else -> scene // CLOUDY, RAIN, SNOW, FOG, THUNDERSTORM… have no time variant
     }
 
+    /** Public: is it night right now (device clock vs stored sunrise/sunset)? */
+    fun isNightNow(context: Context): Boolean = !isDayNow(context)
+
     /** Is it daytime per the device clock vs the stored sunrise/sunset? */
     private fun isDayNow(context: Context): Boolean {
         val prefs = SecurePreferences.getInstance(context)
