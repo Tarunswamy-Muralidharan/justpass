@@ -51,11 +51,15 @@ data class Tournament(
  */
 object TournamentAdmins {
     val HARDCODED_PLAYER_IDS: Set<String> = setOf(
-        "p_678fd629", // stale entry from earlier hash result — kept so any
-                      // legacy admin_roles / admin_uids docs that point here
-                      // still resolve to admin until they're migrated.
-        "p_678fd663"  // Tarunswamy Muralidharan — current bootstrap admin
-                      // (hash of roll 715523244037 with abs(hashCode).toString(16))
+        // Tarunswamy Muralidharan — bootstrap admin. His roll is 715523244053,
+        // and p_${abs("715523244053".hashCode()).toString(16)} == p_678fd629.
+        "p_678fd629"
+        // SECURITY FIX (2026-06-01): removed "p_678fd663". That value is the
+        // hash of roll 715523244037 (RITHEESH C M), NOT Tarunswamy — it was
+        // added under the mistaken belief that 037 was the developer's roll.
+        // Leaving it here granted Ritheesh full admin (approval queue,
+        // contributor identities, admin management, bug inbox). The developer's
+        // real roll is 715523244053 -> p_678fd629 above.
     )
 
     @Volatile private var dynamicPlayerIds: Set<String> = emptySet()
