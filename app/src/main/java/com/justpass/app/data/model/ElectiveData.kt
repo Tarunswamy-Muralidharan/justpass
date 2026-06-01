@@ -12,6 +12,8 @@ fun getProfessionalElectives(department: Department): List<ElectiveCourse> {
         Department.MECH -> mechProfessionalElectives
         Department.CIVIL -> civilProfessionalElectives
         Department.AIDS -> aidsProfessionalElectives
+        // ICE and VLSI are R2025-only branches — no R2021 elective list.
+        Department.ICE, Department.VLSI -> emptyList()
     }
 }
 
@@ -590,6 +592,10 @@ fun getR2025ProfessionalElectives(department: Department): List<ElectiveCourse> 
         Department.MECH -> r2025MechProfessionalElectives
         Department.CIVIL -> r2025CivilProfessionalElectives
         Department.AIDS -> r2025AidsProfessionalElectives
+        // TODO: curate ICE/VLSI R2025 professional-elective lists from the
+        // official syllabi. Until then, no autocomplete suggestions (user
+        // types the elective name manually).
+        Department.ICE, Department.VLSI -> emptyList()
     }
 }
 

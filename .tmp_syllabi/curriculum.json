@@ -1,0 +1,916 @@
+{
+ "ICE": [
+  {
+   "sem": 1,
+   "code": "25MA101",
+   "title": "Calculus and its Applications",
+   "credits": 4.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 1,
+   "code": "25PH104",
+   "title": "Physics for Instrumentation Engineering",
+   "credits": 3.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 1,
+   "code": "25IC101",
+   "title": "Electric Circuits",
+   "credits": 4.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 1,
+   "code": "25IC102",
+   "title": "Electronic Devices and Circuits",
+   "credits": 3.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 1,
+   "code": "25HS101",
+   "title": "English Language Proficiency",
+   "credits": 4.0,
+   "cat": "HS"
+  },
+  {
+   "sem": 1,
+   "code": "25HS102",
+   "title": "Heritage of Tamils",
+   "credits": 1.0,
+   "cat": "HS"
+  },
+  {
+   "sem": 1,
+   "code": "25GE111",
+   "title": "Design Thinking for Innovation",
+   "credits": 1.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 1,
+   "code": "25GE112",
+   "title": "Engineering Graphics",
+   "credits": 2.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 1,
+   "code": "25IC111",
+   "title": "Circuits and Devices Laboratory",
+   "credits": 2.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 2,
+   "code": "25MA201",
+   "title": "Complex Variables and Transforms",
+   "credits": 4.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 2,
+   "code": "25CY203",
+   "title": "Chemistry for Instrumentation Engineering",
+   "credits": 3.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 2,
+   "code": "25IC201",
+   "title": "Digital Electronics",
+   "credits": 4.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 2,
+   "code": "25IC202",
+   "title": "Linear Integrated Circuits",
+   "credits": 3.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 2,
+   "code": "25HS201",
+   "title": "Tamils and Technology",
+   "credits": 1.0,
+   "cat": "HS"
+  },
+  {
+   "sem": 2,
+   "code": "25HS21_",
+   "title": "Language Elective",
+   "credits": 2.0,
+   "cat": "HS"
+  },
+  {
+   "sem": 2,
+   "code": "25IC211",
+   "title": "Analog and Digital Electronics Laboratory",
+   "credits": 2.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 2,
+   "code": "25BS212",
+   "title": "Physics and Chemistry Laboratory",
+   "credits": 2.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 2,
+   "code": "25IC212",
+   "title": "Problem Solving and Python Programming Laboratory",
+   "credits": 1.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 3,
+   "code": "25MA302",
+   "title": "Linear Algebra",
+   "credits": 4.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 3,
+   "code": "25IC301",
+   "title": "Sensors and Transducers",
+   "credits": 4.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 3,
+   "code": "25IC302",
+   "title": "C Programming",
+   "credits": 2.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 3,
+   "code": "25IC303",
+   "title": "Electrical Machines",
+   "credits": 4.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 3,
+   "code": "25HS301",
+   "title": "Project and Finance Management",
+   "credits": 3.0,
+   "cat": "HS"
+  },
+  {
+   "sem": 3,
+   "code": "25IC311",
+   "title": "Sensors and Transducers Laboratory",
+   "credits": 2.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 3,
+   "code": "25IC312",
+   "title": "C Programming Laboratory",
+   "credits": 1.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 3,
+   "code": "25EEC02",
+   "title": "Foundations of Problem Solving",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 4,
+   "code": "25MA403",
+   "title": "Stochastic Processes and Statistical Analysis",
+   "credits": 4.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 4,
+   "code": "25IC401",
+   "title": "Electrical and Electronic Measurements",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 4,
+   "code": "25IC402",
+   "title": "Control Systems",
+   "credits": 4.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 4,
+   "code": "25IC403",
+   "title": "Microprocessors and Microcontrollers",
+   "credits": 4.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 4,
+   "code": "25IC404",
+   "title": "Data Structures and Algorithms",
+   "credits": 4.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 4,
+   "code": "25IC411",
+   "title": "Microprocessors and Microcontrollers Laboratory",
+   "credits": 2.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 4,
+   "code": "25IC412",
+   "title": "Measurement and Control Laboratory",
+   "credits": 2.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 4,
+   "code": "25EEC03",
+   "title": "Problem Solving",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 4,
+   "code": "25ICE01",
+   "title": "Mini Project I",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 5,
+   "code": "25IC501",
+   "title": "Industrial Instrumentation",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25IC502",
+   "title": "Digital Signal Processing",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25IC503",
+   "title": "Digital Control Systems",
+   "credits": 4.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25IC504",
+   "title": "Embedded System Design",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25ICP__",
+   "title": "Professional Elective I",
+   "credits": 3.0,
+   "cat": "PE"
+  },
+  {
+   "sem": 5,
+   "code": "25IC511",
+   "title": "Signal Processing and Digital Control Laboratory",
+   "credits": 1.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25IC512",
+   "title": "Embedded Systems Laboratory",
+   "credits": 1.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25IC513",
+   "title": "Industrial Instrumentation Laboratory",
+   "credits": 2.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25EEC04",
+   "title": "Aptitude skills",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 5,
+   "code": "25ICE02",
+   "title": "Internship I / Community Project 25ICE03",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 6,
+   "code": "25IC601",
+   "title": "Instrumentation System Design",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 6,
+   "code": "25IC602",
+   "title": "Industrial Process Control",
+   "credits": 4.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 6,
+   "code": "25IC603",
+   "title": "Artificial Intelligence for Measurement and Control",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 6,
+   "code": "25ICP__",
+   "title": "Professional Elective II",
+   "credits": 3.0,
+   "cat": "PE"
+  },
+  {
+   "sem": 6,
+   "code": "25__O__",
+   "title": "Open Elective I",
+   "credits": 3.0,
+   "cat": "OE"
+  },
+  {
+   "sem": 6,
+   "code": "25IC611",
+   "title": "Instrumentation System Design Laboratory",
+   "credits": 2.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 6,
+   "code": "25IC612",
+   "title": "Process Control Laboratory",
+   "credits": 2.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 6,
+   "code": "25IC613",
+   "title": "Virtual Instrumentation Laboratory",
+   "credits": 1.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 6,
+   "code": "25EEC05",
+   "title": "Enhancing Problem Solving Ability with Code",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 6,
+   "code": "25ICE04",
+   "title": "Mini Project II",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 7,
+   "code": "25IC701",
+   "title": "Logic and Distributed Control Systems",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 7,
+   "code": "25IC702",
+   "title": "Industrial Internet of Things",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 7,
+   "code": "25ICP__",
+   "title": "Professional Elective III",
+   "credits": 3.0,
+   "cat": "PE"
+  },
+  {
+   "sem": 7,
+   "code": "25ICP__",
+   "title": "Professional Elective IV",
+   "credits": 3.0,
+   "cat": "PE"
+  },
+  {
+   "sem": 7,
+   "code": "25__O__",
+   "title": "Open Elective II",
+   "credits": 3.0,
+   "cat": "OE"
+  },
+  {
+   "sem": 7,
+   "code": "25IC711",
+   "title": "Industrial Automation Laboratory",
+   "credits": 2.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 7,
+   "code": "25IC712",
+   "title": "Industrial Internet of Things Laboratory",
+   "credits": 1.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 7,
+   "code": "25ICE05",
+   "title": "Project Work I",
+   "credits": 2.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 7,
+   "code": "25ICE06",
+   "title": "Internship II",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 8,
+   "code": "25ICP__",
+   "title": "Professional Elective V",
+   "credits": 3.0,
+   "cat": "PE"
+  },
+  {
+   "sem": 8,
+   "code": "25ICP__",
+   "title": "Professional Elective VI",
+   "credits": 3.0,
+   "cat": "PE"
+  },
+  {
+   "sem": 8,
+   "code": "25ICE07",
+   "title": "Project Work II",
+   "credits": 4.0,
+   "cat": "EEC"
+  }
+ ],
+ "VLSI": [
+  {
+   "sem": 1,
+   "code": "25MA101",
+   "title": "Calculus and its Applications",
+   "credits": 4.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 1,
+   "code": "25PH103",
+   "title": "Physics for Electrical Engineering",
+   "credits": 3.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 1,
+   "code": "25CY102",
+   "title": "Chemistry for Electronics Engineering",
+   "credits": 3.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 1,
+   "code": "25EC101",
+   "title": "Problem Solving and C Programming",
+   "credits": 5.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 1,
+   "code": "25HS101",
+   "title": "English Language Proficiency",
+   "credits": 4.0,
+   "cat": "HS"
+  },
+  {
+   "sem": 1,
+   "code": "25HS102",
+   "title": "Heritage of Tamils",
+   "credits": 1.0,
+   "cat": "HS"
+  },
+  {
+   "sem": 1,
+   "code": "25GE111",
+   "title": "Design Thinking for Innovation",
+   "credits": 1.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 1,
+   "code": "25GE112",
+   "title": "Engineering Graphics",
+   "credits": 2.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 1,
+   "code": "25BS112",
+   "title": "Basic Sciences Laboratory",
+   "credits": 2.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 2,
+   "code": "25MA201",
+   "title": "Complex Variables and Transforms",
+   "credits": 4.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 2,
+   "code": "25PH204",
+   "title": "Sensors for Engineering Applications",
+   "credits": 3.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 2,
+   "code": "25EC201",
+   "title": "Electron Devices",
+   "credits": 4.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 2,
+   "code": "25EC202",
+   "title": "Network Analysis",
+   "credits": 4.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 2,
+   "code": "25EC203",
+   "title": "Object Oriented Programming with Python",
+   "credits": 4.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 2,
+   "code": "25HS201",
+   "title": "Tamils and Technology",
+   "credits": 1.0,
+   "cat": "HS"
+  },
+  {
+   "sem": 2,
+   "code": "25HS21_",
+   "title": "Language Elective",
+   "credits": 2.0,
+   "cat": "HS"
+  },
+  {
+   "sem": 2,
+   "code": "25EC211",
+   "title": "Devices and Circuits Laboratory",
+   "credits": 2.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 3,
+   "code": "25MA304",
+   "title": "Matrix Theory and Numerical Methods",
+   "credits": 4.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 3,
+   "code": "25EC301",
+   "title": "Analog Electronics",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 3,
+   "code": "25EC302",
+   "title": "Digital Electronics",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 3,
+   "code": "25EV301",
+   "title": "Microfabrication and Semiconductor Materials",
+   "credits": 4.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 3,
+   "code": "25HS301",
+   "title": "Project and Finance Management",
+   "credits": 3.0,
+   "cat": "HS"
+  },
+  {
+   "sem": 3,
+   "code": "25EC311",
+   "title": "Analog Electronics Laboratory",
+   "credits": 1.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 3,
+   "code": "25EC312",
+   "title": "Digital Electronics Laboratory",
+   "credits": 1.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 3,
+   "code": "25EEC02",
+   "title": "Foundations for Problem Solving",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 4,
+   "code": "25MA404",
+   "title": "Probability and Random Processes",
+   "credits": 4.0,
+   "cat": "BS"
+  },
+  {
+   "sem": 4,
+   "code": "25EC401",
+   "title": "Linear Integrated Circuits",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 4,
+   "code": "25EC402",
+   "title": "Signals and Systems",
+   "credits": 4.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 4,
+   "code": "25EC404",
+   "title": "Data Structures and Algorithms",
+   "credits": 5.0,
+   "cat": "ES"
+  },
+  {
+   "sem": 4,
+   "code": "25EV401",
+   "title": "CMOS VLSI Design",
+   "credits": 4.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 4,
+   "code": "25EC411",
+   "title": "Linear Integrated Circuits Laboratory",
+   "credits": 1.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 4,
+   "code": "25EV411",
+   "title": "FPGA Programming Laboratory",
+   "credits": 2.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 4,
+   "code": "25EVE01",
+   "title": "Mini Project I",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 4,
+   "code": "25EEC03",
+   "title": "Problem Solving",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 5,
+   "code": "25EC503",
+   "title": "Control Systems",
+   "credits": 4.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25EV501",
+   "title": "Computer Organization",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25EV502",
+   "title": "VLSI Design for Testability",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25EV503",
+   "title": "Analog IC Design",
+   "credits": 4.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25EV504",
+   "title": "Silicon Systems Design",
+   "credits": 4.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25EV511",
+   "title": "Analog IC Design Laboratory",
+   "credits": 2.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25EV512",
+   "title": "VLSI Design for Testability Laboratory",
+   "credits": 2.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 5,
+   "code": "25EVE02",
+   "title": "Internship I / 25EVE03 Community Project",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 5,
+   "code": "25EEC04",
+   "title": "Aptitude Skills",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 6,
+   "code": "25EV601",
+   "title": "Nanoscale Electronics",
+   "credits": 4.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 6,
+   "code": "25EV602",
+   "title": "VLSI Physical Design",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 6,
+   "code": "25EV603",
+   "title": "VLSI Verification Methodologies",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 6,
+   "code": "25E__P___",
+   "title": "Professional Elective I",
+   "credits": 3.0,
+   "cat": "PE"
+  },
+  {
+   "sem": 6,
+   "code": "25__O___",
+   "title": "Open Elective I",
+   "credits": 3.0,
+   "cat": "OE"
+  },
+  {
+   "sem": 6,
+   "code": "25EV611",
+   "title": "VLSI Fabrication and Characterization Laboratory",
+   "credits": 2.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 6,
+   "code": "25EV612",
+   "title": "VLSI Verification Laboratory",
+   "credits": 1.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 6,
+   "code": "25EVE04",
+   "title": "Mini Project II",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 6,
+   "code": "25EEC05",
+   "title": "Enhancing Problem Solving Ability with Code",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 7,
+   "code": "25EV701",
+   "title": "Microelectronic Devices and Modeling",
+   "credits": 3.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 7,
+   "code": "25E__P__",
+   "title": "Professional Elective II",
+   "credits": 3.0,
+   "cat": "PE"
+  },
+  {
+   "sem": 7,
+   "code": "25E__P__",
+   "title": "Professional Elective III",
+   "credits": 3.0,
+   "cat": "PE"
+  },
+  {
+   "sem": 7,
+   "code": "25E__P__",
+   "title": "Professional Elective IV",
+   "credits": 3.0,
+   "cat": "PE"
+  },
+  {
+   "sem": 7,
+   "code": "25__O__",
+   "title": "Open Elective II",
+   "credits": 3.0,
+   "cat": "OE"
+  },
+  {
+   "sem": 7,
+   "code": "25EV711",
+   "title": "Microelectronic Devices and Modeling Laboratory",
+   "credits": 1.0,
+   "cat": "PC"
+  },
+  {
+   "sem": 7,
+   "code": "25EVE05",
+   "title": "Project Work I",
+   "credits": 2.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 7,
+   "code": "25EVE06",
+   "title": "Internship II",
+   "credits": 1.0,
+   "cat": "EEC"
+  },
+  {
+   "sem": 8,
+   "code": "25E__P__",
+   "title": "Professional Elective V",
+   "credits": 3.0,
+   "cat": "PE"
+  },
+  {
+   "sem": 8,
+   "code": "25E__P__",
+   "title": "Professional Elective VI",
+   "credits": 3.0,
+   "cat": "PE"
+  },
+  {
+   "sem": 8,
+   "code": "25EVE07",
+   "title": "Project Work II",
+   "credits": 4.0,
+   "cat": "EEC"
+  }
+ ]
+}

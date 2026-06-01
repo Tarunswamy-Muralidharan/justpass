@@ -1,0 +1,3796 @@
+                                                                                                                                                    Third ACM
+
+PSG INSTITUTE OF TECHNOLOGY AND APPLIED RESEARCH
+
+                                 COIMBATORE ­ 641 062
+                   (Autonomous college affiliated to Anna University)
+
+                                 R2025
+              Courses of Study, Scheme of Assessment and
+    Syllabi for First, Second, Third and Fourth Semesters
+
+                                    for
+
+          B.E. INSTRUMENTATION AND CONTROL ENGINEERING
+
+                                                                                                                                  1
+                                                                                  Third ACM
+
+             B.E. INSTRUMENTATION AND CONTROL ENGINEERING
+                          (Minimum No. of credits to be earned: 168)
+
+ S. Course   Course Title                          Hours / Week          Credits  Maximum Marks  CAT
+No. Code
+                                             Lecture Tutorial Practical           CA ESE Total
+
+SEMESTER I
+
+THEORY
+
+1 25MA101 Calculus and its Applications      3        1             0    4 40 60 100 BS
+
+2  25PH104   Physics for Instrumentation     3        0             0    3 40 60 100 BS
+             Engineering
+
+3 25IC101 Electric Circuits                  3        1             0    4 40 60 100 ES
+
+4 25IC102 Electronic Devices and Circuits    3        0             0    3 40 60 100 ES
+
+5 25HS101 English Language Proficiency       3        1             0    4 40 60 100 HS
+
+6  25HS102     / Heritage                    1        0             0    1 40 60 100 HS
+             of Tamils
+
+PRACTICALS
+
+7 25GE111 Design Thinking for Innovation     0        0             2    1 100 0 100 ES
+
+8 25GE112 Engineering Graphics               0        0             4    2 60 40 100 ES
+
+9  25IC111   Circuits and Devices            0        0             4    2 60 40 100 ES
+             Laboratory
+
+MANDATORY COURSES
+
+10 25GEM01 Induction Programme**                -     -             - Grade - - - MC
+
+             Total 29 periods                16       3          10 24 460 440 900
+
+ S. Course   Course Title                          Hours / Week          Credits  Maximum Marks  CAT
+No. Code
+                                             Lecture Tutorial Practical           CA ESE Total
+
+SEMESTER II
+
+THEORY
+
+1 25MA201 Complex Variables and Transforms 3       1             0       4 40 60 100 BS
+
+2  25CY203   Chemistry for Instrumentation   3     0             0       3 40 60 100 BS
+             Engineering
+
+3 25IC201 Digital Electronics                3     1             0       4 40 60 100 ES
+
+4 25IC202 Linear Integrated Circuits         3     0             0       3 40 60 100 ES
+
+5  25HS201     /                             1     0             0       1 40 60 100 HS
+             Tamils and Technology
+
+PRACTICALS
+
+6 25HS21_ Language Elective                  0     0             4       2 60 40 100 HS
+
+7  25IC211   Analog and Digital Electronics  0     0             4       2 60 40 100 ES
+             Laboratory
+
+8 25BS212 Physics and Chemistry Laboratory 0       0             4       2 60 40 100 BS
+
+9  25IC212   Problem Solving and Python      0     0             2       1 60 40 100 ES
+             Programming Laboratory
+
+10 25EEC01 Workplace Communication Skills    0     0             2 Grade 100 - 100 EEC
+
+MANDATORY COURSES
+
+11 25GEM02 Activity Point Programme I*       -     -             - Grade - - - MC
+
+             Total 31 periods                13 2                16      22 540 460 1000
+
+**As per AICTE norms;
+* As per AICTE norms; Grade: Non-Credit Course:
+CAT - Category; BS - Basic Science; HS - Humanities and Social Sciences; ES - Engineering Sciences;
+PC - Professional Core; PE - Professional Elective; OE - Open Elective; EEC - Employability Enhancement
+Course; MC ­ Mandatory Course; CA-Continuous Assessment; FE-Final Exam.
+
+                                                                                                 2
+                                                                                            Third ACM
+
+S. No.  Course   Course Title                              Hours / Week            Credits  Maximum Marks  CAT
+         Code
+                                                       LectureTutorial Practical            CA ESE Total
+
+SEMESTER III
+
+THEORY
+
+1 25MA302 Linear Algebra                               3   1             0         4 40 60 100 BS
+
+2 25IC301 Sensors and Transducers                      4   0             0         4 40 60 100 PC
+
+3 25IC302 C Programming                                2   0             0         2 40 60 100 ES
+
+4 25IC303 Electrical Machines                          4   0             0         4 40 60 100 BS
+
+5 25HS301 Project and Finance Management               3   0             0         3 40 60 100 HS
+
+PRACTICALS
+
+6 25IC311 Sensors and Transducers Laboratory 0             0             4         2 60 40 100 PC
+
+7 25IC312 C Programming Laboratory                     0   0             2         1 60 40 100 ES
+
+8 25EEC02 Foundations of Problem Solving               0   0             2         1 100 0 100 EEC
+
+MANDATORY COURSES
+
+9 25MC0__ Mandatory Course I                           2   0             0 Grade 100 0 100 MC
+
+10 25GEM03 Activity Point Programme II*                -   -             - Grade - - - MC
+
+                 Total 27 periods                      18  1             8         21 520 380 900
+
+ S. Course       Course Title                              Hours / Week            Credits  Maximum Marks  CAT
+No. Code
+                                                       Lecture Tutorial Practical           CA ESE Total
+
+SEMESTER IV
+
+THEORY
+
+1  25MA403       Stochastic Processes and Statistical  3   1             0         4 40 60 100 BS
+                 Analysis
+
+2       25IC401  Electrical and Electronic             3   0             0         3 40 60 100 PC
+                 Measurements
+
+3 25IC402 Control Systems                              3   1             0         4 40 60 100 PC
+
+4       25IC403  Microprocessors and                   4   0             0         4 40 60 100 PC
+                 Microcontrollers
+
+5 25IC404 Data Structures and Algorithms               2   2             0         4 40 60 100 ES
+
+PRACTICALS
+
+6       25IC411  Microprocessors and                   0   0             4         2 60 40 100 PC
+                 Microcontrollers Laboratory
+
+7       25IC412  Measurement and Control               0   0             4         2 60 40 100 PC
+                 Laboratory
+
+8 25EEC03 Problem Solving                              0   0             2         1 100 0 100 EEC
+
+9 25ICE01 Mini Project I                               0   0             2         1 100 0 100 EEC
+
+MANDATORY COURSES
+
+10 25MC0__ Mandatory Course II                         2   0             0 Grade 100 0 100 MC
+
+11 25GEM04 Activity Point Programme III*               -   -             - Grade - - - MC
+
+                 Total 33 periods                      17  4             12        25 620 380 1000
+
+* As per AICTE norms; Grade: Non-Credit Course
+
+CAT - Category; BS - Basic Science; HS - Humanities and Social Sciences; ES - Engineering Sciences;
+PC - Professional Core; PE - Professional Elective; OE - Open Elective; EEC - Employability Enhancement
+Course; MC ­ Mandatory Course; CA-Continuous Assessment; FE-Final Exam.
+
+                                                                                                           3
+                                                                                                Third ACM
+
+ S. Course                                               Hours / Week            Maximum
+No. Code
+              Course Title                                                       Credits Marks  CAT
+SEMESTER V
+THEORY                                               Lecture Tutorial Practical  CA ESE Total
+
+1 25IC501 Industrial Instrumentation                 3   0             0         3 40 60 100 PC
+
+2 25IC502 Digital Signal Processing                  3   0             0         3 40 60 100 PC
+3 25IC503 Digital Control Systems
+                                                     3   1             0         4 40 60 100 PC
+
+4 25IC504 Embedded System Design                     3   0             0         3 40 60 100 PC
+
+5 25ICP__ Professional Elective I                    3   0             0         3 40 60 100 PE
+
+PRACTICALS
+
+6   25IC511   Signal Processing and Digital Control  0   0             2         1 60 40 100 PC
+              Laboratory
+
+7 25IC512 Embedded Systems Laboratory                0   0             2         1 60 40 100 PC
+
+8 25IC513 Industrial Instrumentation Laboratory 0        0             4         2 60 40 100 PC
+
+9 25EEC04 Aptitude skills                            0   0             2         1 100 0 100 EEC
+
+10  25ICE02/  Internship I / Community Project       0   0             0         1 100 0 100 EEC
+    25ICE03
+
+MANDATORY COURSES
+
+11 25GEM05 Activity Point Programme IV*              -   -             - Grade - - - MC
+
+              Total 26 periods                       15  1             10 22 580 420 1000
+
+ S. Course                                               Hours / Week            Maximum
+No. Code
+              Course Title                                                       Credits Marks  CAT
+SEMESTER VI
+THEORY                                               Lecture Tutorial Practical  CA ESE Total
+
+1 25IC601 Instrumentation System Design              3   0             0         3 40 60 100 PC
+
+2 25IC602 Industrial Process Control                 3   1             0         4 40 60 100 PC
+
+3   25IC603   Artificial Intelligence for            3   0             0         3 40 60 100 PC
+              Measurement and Control
+
+4 25ICP__ Professional Elective II                   3   0             0         3 40 60 100 PE
+
+5 25__O__ Open Elective I                            3   0             0         3 40 60 100 OE
+
+PRACTICALS
+
+6   25IC611   Instrumentation System Design          0   0             4         2 60 40 100 PC
+              Laboratory
+
+7 25IC612 Process Control Laboratory                 0   0             4         2 60 40 100 PC
+
+8 25IC613 Virtual Instrumentation Laboratory         0   0             2         1 60 40 100 PC
+
+9   25EEC05   Enhancing Problem Solving Ability      0   0             2         1 100 0 100 EEC
+              with Code
+
+10 25ICE04 Mini Project II                           0   0             2         1 100 0 100 EEC
+
+MANDATORY COURSES
+
+11 25GEM06 Activity Point Programme V*               -   -             - Grade - - - MC
+
+              Total 30 periods                       15  1             14 23 580 420 1000
+
+* As per AICTE norms; Grade: Non-Credit Course
+
+CAT - Category; BS - Basic Science; HS - Humanities and Social Sciences; ES - Engineering Sciences;
+PC - Professional Core; PE - Professional Elective; OE - Open Elective; EEC - Employability Enhancement
+Course; MC ­ Mandatory Course; CA-Continuous Assessment; FE-Final Exam.
+
+                                                                                                 4
+                                                                                         Third ACM
+
+ S. Course            Course Title                  Hours / Week            Credits  Maximum Marks  CAT
+No. Code
+                                                Lecture Tutorial Practical           CA ESE Total
+
+SEMESTER VII
+
+THEORY
+
+1       25IC701  Logic and Distributed Control  3   0             0         3 40 60 100 PC
+                 Systems
+
+2 25IC702 Industrial Internet of Things         3   0             0         3 40 60 100 PC
+
+3 25ICP__ Professional Elective III             3   0             0         3 40 60 100 PE
+
+4 25ICP__ Professional Elective IV              3   0             0         3 40 60 100 PE
+
+5 25__O__ Open Elective II                      3   0             0         3 40 60 100 OE
+
+PRACTICALS
+
+6 25IC711 Industrial Automation Laboratory 0        0             4         2 60 40 100 PC
+
+7       25IC712  Industrial Internet of Things  0   0             2         1 60 40 100 PC
+                 Laboratory
+
+8 25ICE05 Project Work I                        0   0             4         2 100 0 100 EEC
+
+9 25ICE06 Internship II                         0   0             0         1 100 0 100 EEC
+
+                 Total 25 periods               15  0             10        21 520 380 900
+
+S. No.  Course        Course Title                  Hours / Week            Credits  Maximum Marks  CAT
+         Code
+                                                Lecture Tutorial Practical           CA ESE Total
+
+SEMESTER VIII
+THEORY
+
+1 25ICP__ Professional Elective V               3   0             0         3 40 60 100 PE
+
+ 2 25ICP__ Professional Elective VI             3   0             0         3 40 60 100 PE
+PRACTICALS
+
+3 25ICE07 Project Work II                       0   0             8         4 60 40 100 EEC
+
+                 Total 14 periods               6   0             8         10 140 160 300
+
+CAT - Category; BS - Basic Science; HS - Humanities and Social Sciences; ES - Engineering Sciences;
+
+PC - Professional Core; PE - Professional Elective; OE - Open Elective; EEC - Employability Enhancement
+
+Course; MC ­ Mandatory Course
+
+                                       Summary of Credit Distribution
+
+                  BE INSTRUMENTATION AND CONTROL ENGINEERING
+
+S. No.   Course                                 Credits Per Semester                     Total
+        Category
+                  I                II  III      IV  V                  VI   VII VIII Credits
+
+1         HS      5                3   3        0      0               0    0        0   11
+
+2         BS      7                9   8        4      0               0    0        0   28
+
+3         ES      12        10         3        4      0               0    0        0   29
+
+4         PC      0                0   6        15  17                 15   9        0   62
+
+5         PE      0                0   0        0      3               3    6        6   18
+
+6         OE      0                0   0        0      0               3    3        0      6
+
+7       EEC       0                0   1        2      2               2    3        4   14
+
+8       MC        -                -   -        -      -               -    -        -      -
+
+   TOTAL          24        22         21       25  22                 23   21       10  168
+
+CAT - Category; BS - Basic Science; HS - Humanities and Social Sciences; ES - Engineering Sciences;
+PC - Professional Core; PE - Professional Elective; OE - Open Elective; EEC - Employability Enhancement
+Course; MC ­ Mandatory Course.
+
+                                                                                                    5
+                                                                                     Third ACM
+
+                 LIST OF PROFESSIONAL ELECTIVE COURSES: VERTICALS
+
+S. No.      Vertical I             Vertical II        Vertical III    Vertical IV          Vertical V
+   1        Industrial               Applied           Advanced       Diversified          Healthcare
+        Electronics and                                 Control                        Instrumentation
+         System Design         Instrumentation                          25EEP07
+                                                        25ICP17      Digital Image          25ICP28
+             25ICP01                 25ICP09           Advanced                            Biomedical
+        Industrial Electric     Instrumentation      topics in PID     Processing       Instrumentation
+
+              Drives                Standards            control        25ICP23             25ICP29
+                                                        25ICP18      Micro Electro     Medical Imaging
+             25ICP02                 25ICP10           Computer        Mechanical
+2 Process Modelling             Fiber Optics and       Control of                          Equipment
+                             Laser Instrumentation     Processes         systems
+         and Simulation                                                 25EEP35             25ICP30
+                                     25ICP11            25ICP19       VLSI Design        Diagnostic and
+        25ICP03                Nano Science and         Building       Techniques
+                                Instrumentation       Automation                           Therapeutic
+3       System                                                          25ICP24         Instrumentation
+                                     25ICP12            25ICP20        Real Time
+        Identification                Virtual         Hydraulics       Embedded             25ICP31
+                                Instrumentation                          Systems     Bio-Signal Analysis
+4            25ICP04                                       and
+        P and I Diagrams             25ICP13          Pneumatics        25EEP34             25ICP32
+                              Safety Instrumented                    Data Analytics    Biomedical Image
+             25ICP05                                    25ICP21
+5 Graphical System                   Systems         Fault Tolerant     25ICP25            processing
+                                     25ICP14                          Industry 4.0          25ICP33
+              Design         Thermal Power Plant        Control                      Physiological Control
+             25ICP06            Instrumentation         25ICP22         25ICP26              Systems
+6 Soft Computing                                     Robotics and       Machine
+            Techniques               25ICP15          Automation      Learning and          25ICP34
+                             Instrumentation in Oil                  Deep Learning       Biomechanics
+             25ICP07                                   25EEP03
+7 Fault Detection and           and Gas Industry       IoT and its      25ICP27             25ICP35
+                                                      Application     Multi Sensor       Rehabilitation
+             Diagnosis               25ICP16                          Data Fusion       Instrumentation
+                              Instrumentation for      25EEP36
+        25ICP08              Nuclear Power plant         Cyber
+                                                        Security
+8           Automotive
+        Instrumentation and
+
+        Control
+
+        LIST OF PROFESSIONAL ELECTIVE COURSES FOR MINOR DEGREE PROGRAMME
+
+                  S. Course                          Course Title
+                 No. Code
+
+                 1 25ICM01 Test and Measuring Instruments
+
+                 2 25ICM02 Transducer Engineering
+
+                 3 25ICM03 Process Instrumentation
+
+                 4 25ICM04 Introduction to Process Control
+
+                 5 25ICM05 Essentials of Control Engineering
+
+                 6 25ICM06 Fundamentals of Industrial Data Communication
+
+                 7 25ICM07 Analytical Instrumentation Systems
+
+                 8 25ICM08 Instrumentation Practices in Industries
+
+                                                                                                            6
+                         25MA101 CALCULUS AND ITS APPLICATIONS                               Third ACM
+          (Common to CIVIL, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+                                                                                                 3104
+
+DIFFERENTIAL CALCULUS: Functions of two variables, limits and continuity, partial derivatives, chain rule,
+
+extreme values and saddle points, Lagrange multipliers, Taylor's formula for two variables.              (9+3)
+
+INTEGRAL CALCULUS: Double and iterated integrals over rectangles, double integrals over general regions,
+
+Fubini's theorem, area and volume by double integration, reversing the order of integration, double integrals in polar
+
+form.                                                                                                    (9+3)
+
+FIRST ORDER ORDINARY DIFFERENTIAL EQUATIONS: Basic concepts, separable differential equations,
+
+exact differential equations, integrating factors, linear differential equations, modeling - mixing problems, Newton's
+
+law of cooling, decay and growth problems.                                                               (9+3)
+
+SECOND ORDER LINEAR DIFFERENTIAL EQUATIONS: Homogeneous linear equations of second order,
+
+homogeneous linear ODEs with constant coefficients, Euler­Cauchy equations, solution by variation of parameters,
+
+free oscillations mass spring systems, electric circuits.                                                (9+3)
+
+VECTOR CALCULUS: Gradient and directional derivative of a scalar field, divergence and curl of a vector field.
+
+Integration in vector field ­ line integrals, path independence of line integrals, Green's theorem in the plane,
+
+divergence theorem of Gauss and Stokes' theorem.                                                         (9+3)
+
+                                                                                                   Total: L: 45 + T: 15 = 60 periods
+TEXT BOOKS:
+1. J. Hass, C. Heil, and D. W. Maurice, `Thomas Calculus'. Pearson Education, New Delhi, 2018.
+2. Erwin Kreyszig, `Advanced Engineering Mathematics'. Wiley India, New Delhi, 2018.
+
+REFERENCES:
+
+1. H. Anton, I. Bivens, and S. Davis, `Calculus'. John Wiley and Sons, USA, 2016.
+2. C. R. Wylie and L.C. Barrett, `Advanced Engineering Mathematics'. Tata McGraw-Hill, New Delhi, 2019.
+3. D. G. Michael, `Foundations of Applied Mathematics'. Dover Publications, New York, 2013.
+4. Gilbert Strang, `Calculus'. Wellesley Cambridge Press, USA, 2017.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                          Bloom's Level
+                                                                                                    K2
+CO1       Explain the concepts related to Calculus, Differential Equations and Vector               K3
+CO2       Calculus.                                                                                 K4
+CO3       Apply the techniques of Calculus, Differential Equations and Vector Calculus to            -
+CO4       solve engineering problems.
+          Analyze the solutions of engineering problems employing Calculus, Differential
+          Equations and Vector Calculus.
+          Use modern tools to solve engineering problems with the help of Calculus,
+          Differential Equations and Vector Calculus.
+
+COs-POs & PSOs MAPPING
+
+CO        PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8                           PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2       3
+
+CO3              1
+
+CO4                                                  1
+
+       @  3      1                                   1
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                            7
+        25PH104 PHYSICS FOR INSTRUMENTATION ENGINEERING                                                 Third ACM
+
+                                                                                                            3003
+
+MECHANICS: Motion in a straight line, average motion, instantaneous velocity, acceleration and constant
+
+acceleration, motion in two and three dimensions, force and motion. Application of Newton's laws. Free body
+
+diagram. Work, energy and power. Conservation of energy, conservative and non-conservative forces, conservation
+
+of mechanical energy. Gravity                                                                                      (9)
+
+RIGID BODY DYNAMICS AND ROTATIONAL MOTION: systems of particles - centre of mass, momentum.
+
+Kinetic energy of a system. Elastic and inelastic collisions. Rotational motion, Rotational vectors: velocity,
+
+acceleration, torque, angular moment, moment of inertia. ­ determination of moment of inertia for rigid bodies,
+
+rotational energy and rolling motion.                                                                              (9)
+
+ELECTRIC CHARGE, FORCE &FIELD: Electric charge, Coulomb's law, Electric field intensity, electric
+
+dipoles, electric field of a dipole along the axis and equatorial point, Equipotential surfaces. Gauss's law of
+
+electrostatics: Application of Gauss's law to line, plane and spherical symmetry. Field at a conductor surface.
+
+Applications: Microwave cooking, Liquid Crystals, Shielding and Lightning Safety.                                  (9)
+
+ELECTRIC POTENTIAL: Electric potential difference, curved paths and non-uniform fields. Calculating
+
+potential difference: potential of a point charge, zero potential, finding potential differences using superposition.
+
+Potential difference and Electric field, charged conductors. Electrostatic Energy, Capacitors, Energy in the Electric
+
+field. Applications: Corona discharge, pollution control and xerography                                            (9)
+
+ELECTROMAGNETISM: Magnetic force and field, Charged particles in magnetic fields, Magnetic force on a
+
+current. Biot-Savart's law, magnetic force between conductors. Magnetic dipoles, Gauss's law of magnetism.
+
+Ampere's law, electromagnetic induction. Faraday's law, magnetic circuits, self and mutual induction ­ magnetic
+
+field energy density, Maxwell's equations and propagation of electromagnetic waves in isotropic media.             (9)
+
+                                                                                                                      Total L: 45 periods
+TEXT BOOKS:
+1. Richard Wolfson, `Essential University Physics'. Pearson, 2020
+2. Raymond A Serway and John W. Jewett, `Physics for Scientists and Engineers with Modern Physics'. Cengage
+
+     Publishers, USA, 2019.
+
+REFERENCES:
+1. D Halliday, R Resnick and Walker, `Fundamentals of Physics'. John Wiley and Sons, 12th edition, 2021
+
+2. R. K. Gaur and S.L. Gupta, `Engineering Physics'. Dhanpat Rai Publications, 2014
+3. Hugh D Young and Roger A Freedman, `University Physics Addison Wesley'. 15th edition, 2020
+
+COURSE OUTCOMES                                                                                     Bloom's Level
+At the end of the course, students will be able to:                                                        K2
+                                                                                                           K3
+           Explain the principles of mechanics, rotational motion, electric fields, electric               K4
+CO1 potential, and electromagnetism, focusing on their fundamental concepts and                            K5
+
+           applications in engineering systems.
+           Apply mathematical techniques to calculate parameters such as velocity,
+CO2 acceleration, electric field intensity, electric potential, and magnetic flux in
+           engineering contexts.
+           Analyse physical systems involving mechanical motion, electric and magnetic forces,
+CO3 and energy storage using principles of mechanics, electrostatics, and
+           electromagnetism.
+           Prepare a report or presentation on the practical applications of electric and magnetic
+CO4 fields in modern engineering systems, highlighting case studies on electromagnetic
+           devices and power systems.
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2  3
+
+CO3     1
+
+CO4                                    1                                 1                          1
+
+@    3  1                              1                                 1                          1
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                                   8
+                                                                                                        Third ACM
+
+                            25IC101 ELECTRIC CIRCUITS
+
+                                                                                                         3104
+
+BASIC DEFINITIONS AND LAWS: Overview of electrical circuits: currents, voltages, power and energy ­Circuit
+
+elements: active and passive elements ­Independent and dependent sources ­Resistive circuits: Ohm's law and
+
+Kirchoff's laws - Series resistors and voltage division - Parallel resistors and current division ­Series voltage source
+
+and parallel current source ­Y- transformations.                                                         (9+3)
+
+DC CIRCUIT ANALYSIS AND CIRCUIT THEOREMS: Node voltage analysis ­ Mesh current analysis ­Circuit
+
+theorems: Source transformation ­Superposition theorem ­ Thevenin's theorem ­Norton's theorem ­Maximum
+
+power transfer theorem.                                                                                  (9+3)
+
+COMPLETE RESPONSE ANALYSIS: First order circuits ­ Source-Free RC Circuits ­ Source-Free RL Circuits ­
+
+Step Response of RC Circuits ­ Step Response of RL Circuits ­Second order circuits ­Finding Initial and Final
+
+Values ­ Source-Free Series RLC Circuits ­ Source-Free Parallel RLC Circuits ­ Step Response of Series RLC
+
+Circuits - Step Response of Parallel RLC Circuits                                                        (9+3)
+
+AC CIRCUIT ANALYSIS: Single phase circuits ­ Single phase voltages and currents ­Phasor representation ­
+
+RMS value ­ Form factor ­Energy storage elements: Capacitors and inductors ­Phasor relationship for R, L and C ­
+
+Impedance and admittance ­ Analysis of Series RLC, Parallel RLC circuits using analytical and phasor methods ­
+
+Resonance in parallel and series circuits - Bandwidth and Q- factor                                      (9+3)
+
+THREE PHASE CIRCUITS: Three-Phase Voltages and currents ­Balanced Y-Y Connection, Y- Connection,
+
+- Connection, -Y Connection ­ Power in Balanced System ­ Unbalanced Three-Phase Systems ­connected
+
+source and load -  connected source and load ­ Y to circuit ­Power and power factor in three phase.      (9+3)
+
+                                                                                                    Total: L: 45 +T: 15 =60 periods
+
+TEXT BOOKS:
+ 1. Charles K. Alexander and Mathew N. O. Sadiku. `Fundamentals of Electric Circuits'. 7th edition, Tata McGraw
+
+      Hill, 2022.
+ 2. John Bird, `Electrical Circuit Theory and Technology'. 7th edition, Routledge, 2022.
+
+REFERENCES:
+ 1. Richard C. Dorf and James A Svoboda, `Introduction to Electric Circuits'. 9th edition, John Wiley and Sons
+
+      Inc, 2017.
+ 2. K. C. A. Smith and R.E. Alley, `Electrical circuits an Introduction'. Cambridge University Press, 2017.
+ 3. Allan H. Robbins and Wilhelm C. Miller, `Circuit Analysis: Theory and Practice'. 5th edition, Cengage
+
+      publishers, 2013.
+ 4. A. Sudhakar and Shyammohan S. Palli, `Circuits and Network Analysis and Synthesis'. 6th edition, Tata
+
+      McGraw Hill, 2025.
+ COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                            Bloom's Level
+
+CO1 Explain the fundamental concepts of DC/AC electric circuits and network theorems                 K2
+
+CO2     Solve DC/AC electric circuits using network reduction techniques, mesh and nodal             K3
+        methods, and evaluate resonance parameters
+
+CO3     Analyse and obtain the response of DC/AC electric circuits under transient as well as        K4
+        steady-state conditions
+
+CO4     Analyse and compute electrical parameters of DC/AC circuits under various                    -
+        operating conditions, and validate the results using Multisim software
+
+COs-POs & PSOs MAPPING
+
+CO      PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2     3                                                                                                     3
+
+CO3                      2                                                                                    2
+
+CO4                         1                        1               1  1                                     1
+
+     @  3                2  1                        1               1  1                                     3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                                 9
+                                                                                                            Third ACM
+
+                  25IC102 ELECTRONIC DEVICES AND CIRCUITS
+
+                                                                                                            3003
+
+DIODES: Semiconductor materials ­ N type and P type semiconductor ­ PN Junction ­ The Ideal diode ­ Diode
+
+operation ­ Voltage and current characteristics ­ Diode models - Diode testing ­ Zener diode ­ Zener diode
+
+applications ­Types of diodes ­ Diode applications.                                                         (9)
+
+BIPOLAR JUNCT ION TRANSISTOR: Construction ­ operation ­ parameters ­ characteristics ­ configuration ­
+
+biasing ­ types of biasing ­ load line - DC Operating point ­ Transistor as a switch, as an amplifier.      (9)
+
+FIELD EFFECT TRANSISTORS: Junction Field Effect Transistor (JFET) Construction ­ Principle of operation -
+Parameters ­Characteristics ­ Biasing ­ application ­ Metal Oxide Semiconductor Field Effect Semiconductor
+(MOSFET) ­ types ­ Construction ­ Principle of operation - Parameters ­Characteristics ­ Biasing ­ application. (9)
+
+AMPLIFIERS: Amplifier concepts ­ Gain and attenuation ­DC and AC analysis - Impedance matching ­Small
+
+signal amplifiers ­ BJT amplifier configurations ­ Introduction to differential amplifier - Power amplifiers ­Class A,
+
+B, AB and Class C Power amplifiers ­Push-Pull amplifiers.                                                   (9)
+
+OSCILLATORS: Concept of feedback ­ Conditions for oscillations ­Oscillators with RC feedback circuits - Phase
+
+shift oscillator - Wein Bridge oscillator - Oscillators with LC feedback circuits- Colpitts oscillators- UJT relaxation
+
+oscillator                                                                                                  (9)
+
+                                                                                                                      Total L:45 periods
+
+TEXT BOOKS:
+1. Albert P. Malvino, David J. Bates and Patrik E. Hoppe, `Electronic Principles'. McGraw Hill, 9th edition, 2021.
+2. R. L. Boylestad and Nashelsky, `Electronic Devices and Circuit Theory'. Pearson Education India, 11th edition,
+
+   2015.
+
+REFERENCES:
+1. Thomas L. Floyd, `Electronic Devices'. Pearson Education, 10th edition, 2021.
+2. D. A. Bell, `Electronic Devices and Circuits'. Oxford University Press, 5th edition, 2013.
+3. J. Millman, C. Halkias and C. D. Parikh, `Integrated Electronics'. Tata McGraw-Hill, 2nd edition, 2017.
+4. Donald Neamen, `Electronic Devices: Analysis and Design'. McGraw Hill, 3rd Edition, 2006.
+
+COURSE OUTCOMES                                                                                         Bloom's Level
+At the end of the course, students will be able to:                                                            K2
+
+          Explain the structure, characteristics and operation of PN junction devices (Diodes and              K3
+CO1 FETs).                                                                                                     K4
+                                                                                                               K5
+          Compute the performance of various configurations of Diodes and FET based circuits
+CO2 by designing proper biasing schemes in oscillators and amplifiers.
+
+CO3 Analyse the behaviour of devices in amplifier and oscillator configurations.
+CO4 Design electronic circuits using semiconductor devices.
+
+COs-POs & PSOs MAPPING
+
+CO          PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8                         PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2         3                                                                                           1
+
+CO3            3           2                                                                            1   2
+
+CO4                     3  2                                                                            1   2
+
+@           3  3        3  2                                                                            1   2
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                            10
+                                                                                                   Third ACM
+
+                  25HS101 ENGLISH LANGUAGE PROFICIENCY
+
+                  (Common to CIVIL, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+                                                                                                   3104
+
+VOCABULARY: Etymology-Prefixes and suffixes­Synonyms­Antonyms­Guessing meanings from context­Word
+
+formation- Single-word substitutes- Different forms of a word­Phrasal verbs­Collocations.          (9+3)
+
+LISTENING AND SPEAKING: Understanding listening ­ Listening techniques - Introducing oneself and others ­
+
+Seeking and sharing information­ Description-Conversation skills­ Extempore speaking­ Speech practice in varied
+
+formal contexts.                                                                                   (9+3)
+
+GRAMMAR: Wh-questions ­ Yes/no questions­ Parts of speech ­ Articles­ Prepositions­Gerunds­Conjunctions-
+
+Degrees of comparison­ Tenses­ Modal verbs ­ Adverbs - Direct and indirect questions.              (9+3)
+
+READING: Reading strategies: Skimming and scanning, predicting­ Reading comprehension: techniques ­Practice
+
+reading.                                                                                           (9+3)
+
+WRITING: Discourse markers ­ Dialogue writing - Completing sentences ­ Jumbled sentences ­ Paragraph
+
+writing ­Writing compare & contrast paragraphs ­ Letter writing.                                   (9+3)
+
+                                                                                                   Total: L: 45 + T: 15 = 60 Periods
+TEXTBOOKS:
+1. K. N. Shoba and Lourdes Joavani Rayen, `Communicative English'. Cambridge University press, Cambridge,
+
+    2021.
+2. Raymond Murphy, `Intermediate English Grammar'. Cambridge University Press, New Delhi, 2020.
+3. Dr M. Sambaiah, `Technical English an integrated text book'. Wiley India Pvt. Ltd., 2025.
+
+REFERENCES:
+1. Raymond Murphy, `English Grammar in Use'. Cambridge University Press, New Delhi 2020.
+2. N. P. Sudharshana and C. Savitha, `English for Engineers'. Cambridge University Press, New York, 2018.
+3. Helen Naylor with Raymond Murphy, `Essential English Grammar'. Cambridge University Press, New Delhi,
+
+    2019.
+
+COURSE OUTCOMES                                                                                    Bloom's Level
+At the end of the course, students will be able to:                                                       K2
+                                                                                                          K3
+            Demonstrate the ability to recognize and use a wide range of vocabulary and key
+ CO1 grammatical structures accurately, while developing inferential reading skills to
+
+            comprehend, interpret, and analyze written texts across diverse contexts.
+
+CO2       Organize their ideas logically in essay writing, develop paragraphs with clear topic
+          sentences and adapt their letter-writing skills to various real-world scenarios.
+
+CO3       Develop and demonstrate clear and confident speaking skills in formal and informal
+          contexts.
+
+COs-POs & PSOs MAPPING
+
+CO                PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8                   PO9 PO10 PO11 PSO1 PSO2
+
+CO1                                                                 3                           3
+
+     CO2                                                            3                           3
+     CO3
+                                                                    1                           1
+       @
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course  3                           3
+
+                                                                                                   11
+                                                                                          Third ACM
+
+                                  25HS102  
+
+   (Common to CIVIL, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+                                                                                          1001
+
+  :    ­   ­    ­
+
+  ­      ­   
+
+ ­    ­  ,   
+
+  ­  ,    ­  ­ 
+
+    ­        
+
+.                                                                                         (3)
+
+ ­       ­ :    
+
+ ­   ­       ,
+
+ ­    ­   ­   ­  
+
+  ­  ­ , , , ,  ­  
+
+    .                                                                                     (3)
+
+  : , ,  , 
+
+, ,  , , , ,  
+
+.                                                                                         (3)
+
+ :  ,  ­  
+
+     ­     ­ 
+
+  ,  ­     ­  
+
+   ­      .                                                                               (3)
+
+        :  
+
+    ­       ­ 
+
+ ­  ,    ­ ,   ­
+
+   .                                                                                      (3)
+
+                                                                                          Total L: 15 periods
+
+                            25HS102 HERITAGE OF TAMILS
+   (Common to CIVIL, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+                                                                                          1001
+
+LANGUAGE AND LITERATURE: Language Families in India - Dravidian Languages ­ Tamil as a Classical
+
+Language - Classical Literature in Tamil ­ Secular Nature of Sangam Literature ­ Distributive Justice in Sangam
+
+Literature - Management Principles in Thirukural - Tamil Epics and Impact of Buddhism & Jainism in Tamil Land -
+
+Bakthi Literature Azhwars and Nayanmars - Forms of minor Poetry - Development of Modern literature in Tamil -
+
+Contribution of Bharathiyar and Bharathidhasan.                                           (3)
+
+HERITAGE - ROCK ART PAINTINGS TO MODERN ART ­ SCULPTURE: Hero stone to modern sculpture
+
+- Bronze icons - Tribes and their handicrafts - Art of temple car making - Massive Terracotta sculptures, Village
+
+deities, Thiruvalluvar Statue at Kanyakumari, Making of musical instruments - Mridhangam, Parai, Veenai, Yazh
+
+and Nadhaswaram - Role of Temples in Social and Economic Life of Tamils.                  (3)
+
+FOLK AND MARTIAL ARTS: Therukoothu, Karagattam, Villu Pattu, Kaniyan Koothu, Oyillattam, Leather
+
+puppetry, Silambattam, Valari, Tiger dance - Sports and Games of Tamils.                  (3)
+
+THINAI CONCEPT OF TAMILS: Flora and Fauna of Tamils & Aham and Puram Concept from Tholkappiyam
+
+and Sangam Literature - Aram Concept of Tamils - Education and Literacy during Sangam Age - Ancient Cities and
+
+Ports of Sangam Age - Export and Import during Sangam Age - Overseas Conquest of Cholas.  (3)
+
+                                                                                          12
+                                                                                            Third ACM
+
+CONTRIBUTION OF TAMILS TO INDIAN NATIONAL MOVEMENT AND INDIAN CULTURE:
+
+Contribution of Tamils to Indian Freedom Struggle - The Cultural Influence of Tamils over the other parts of India ­
+
+Self-Respect Movement - Role of Siddha Medicine in Indigenous Systems of Medicine ­ Inscriptions &
+
+Manuscripts ­ Print History of Tamil Books.                                                 (3)
+
+                                                                    Total L: 15 periods
+
+TEXT ­ CUM ­ REFERENCE BOOKS
+1. . . ,   -  ,     
+
+    
+
+2.  ., ,  
+3.  -     ,   
+
+4.  -  ,   
+5. Dr. K. K. Pillay, `Social Life of Tamils'. A joint publication of TNTB, ESC and RMRL
+6. Dr. S. Singaravelu, `Social Life of the Tamils ­ The Classical Period'. International Institute of Tamil Studies.
+7. Dr. S. V. Subaramanian and Dr. K. D. Thirunavukkarasu, `Historical Heritage of the Tamils'. International
+
+    Institute of Tamil Studies
+8. Dr. M. Valarmathi, `The Contributions of the Tamils to Indian Culture'. International Institute of Tamil Studies.
+9. `Keeladi ­ Sangam City Civilization on the banks of river Vaigai'. Department of Archaeology, Tamilnadu Text
+
+    Book and Educational Services Corporation, Tamilnadu
+10. Dr. K. K. Pillay, `Studies in the History of India with Special Reference to Tamilnadu'.
+11. `Porunai Civilization'. Department of Archaeology, Tamil Nadu Text Book and Educational Services
+
+    Corporation, Tamilnadu
+12. R. Balakrishnan, `Journey of Civilization Indus to Vaigai'. RMRL, Tamilnadu
+13. V. Priyadharshini, `  (Heritage of Tamils)'. VK publications, Sivakasi.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                         Bloom's Level
+                                                                                                   K2
+CO1  Describe the Dravidian language family, outline the features of Tamil classical               K3
+CO2  literature, and explain the development of Tamil art, sculpture, and temple-related
+     traditions in a historical context.
+     Demonstrate the cultural relevance of Tamil folk and martial arts, apply the concepts
+     of Sangam landscape classification to social contexts, and relate Tamil contributions
+     to India's freedom struggle, cultural legacy, and Siddha medicine.
+
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8                                PO9 PO10 PO11 PSO1 PSO2
+                                                                                          3
+CO1                                                  3                                    3
+                                                                                          3
+CO2                                                  3
+
+@                                                    3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                            13
+                                                                                                                                                                Third ACM
+
+                                    25GE111 DESIGN THINKING FOR INNOVATION
+                      (Common to CIVIL, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+                                                                                                                                     0021
+Foundations of Design Thinking: History & Origins: Roots in Creative Problem Solving: Traces back to mid-20th
+century practices in architecture, engineering, and psychology. Herbert Simon's `Sciences of the Artificial' (1969):
+Introduced design as a way of thinking distinct from scientific inquiry. IDEO and the Rise of Human-Centered
+Design: Popularized design thinking as a repeatable, user-focused innovation process. Stanford school's Influence:
+Helped institutionalize design thinking in education and entrepreneurship.
+
+Variations of Design Thinking Phases: IDEO's 3-Phase Model: Inspiration, Ideation, Implementation A flexible,
+non-linear approach emphasizing creativity and action. Stanford school's 5-Phase Model: Empathize, Define, Ideate,
+Prototype, Test A structured yet iterative framework centered on user empathy. Double Diamond Model (Design
+Council UK): Divides the process into Discover, Define, Develop, and Deliver--highlighting divergent and
+convergent thinking.
+
+Related Concepts & Frameworks: Human-Centered Design (HCD): Focuses on designing solutions that deeply
+resonate with users' needs and contexts. Systems Thinking: Encourages understanding the broader ecosystem and
+interdependencies within a problem space. Agile & Lean UX: Integrates design thinking with iterative development
+and minimal viable experimentation. Service Design: Applies design thinking to orchestrate holistic user
+experiences across touchpoints. Participatory Design: Involves stakeholders directly in the design process to ensure
+relevance and inclusivity.
+
+EMPATHIZE: Apply Human-Centric Design Principles: Focus on designing solutions that prioritize user needs,
+
+experiences, and values throughout the process. Consult Experts: Engage with subject matter experts to gain
+
+foundational knowledge about the problem space. Competitive Analysis: Identify & studying similar products or
+
+services to identify gaps and opportunities. Stakeholder Interviews: Engaging with people who influence or are
+
+affected by the product or service. Conduct Observations: Observe users in their natural environment to understand
+
+behaviors, challenges, and interactions. Engage with Users: Use interviews, conversations, and other methods to
+
+connect with users and hear their stories. Immerse Yourself: Step into the users' context to experience their
+
+environment and challenges firsthand. Create Empathy Maps: Visualize what users say, think, feel, and do to
+
+synthesize insights. Identify User Needs and Pain Points: Extract meaningful patterns and needs from user
+
+interactions and observations. Set Aside Assumptions: Approach the research with an open mind, suspending
+
+personal biases and preconceptions. Document Insights: Capture quotes, observations, and emotional cues to inform
+
+the next stage (Define).                                                                               (6)
+
+DEFINE: Organize Research Findings: Review and structure the data collected during the Empathize stage.
+
+Analyze Observations: Identify patterns, themes, and insights from user interactions and behaviors. Craft a Human-
+
+Centered Problem Statement: Frame the problem from the user's perspective, focusing on their needs--not business
+
+goals. Avoid Business-Centric Framing: Refrain from defining problems based on company objectives alone (e.g.,
+
+market share). Persona Development: Synthesizing research into user personas to guide design decisions. Use
+
+Empathy to Guide Definition: Ensure the problem statement reflects real user challenges and motivations. Develop
+
+Point-of-View Statements: Create concise summaries that capture who the user is, what they need, and why. Prepare
+
+for Ideation: Formulate `How Might We' questions to spark creative thinking in the next phase.         (6)
+
+IDEATE: Review the Problem Statement: Revisit the user-centric problem defined in the previous stage to guide
+
+ideation. Explore Multiple Perspectives: Encourage diverse viewpoints to broaden the range of potential solutions.
+
+Use Ideation Techniques: Apply methods like Brainstorming, Brain writing, SCAMPER, and Worst Possible Idea to
+
+spark creativity. Encourage Free Thinking: Create a judgment-free space to generate as many ideas as possible
+
+without filtering. Expand the Problem Space Push boundaries and explore unconventional or extreme ideas to
+
+uncover hidden opportunities. Refine and Select Ideas: Use evaluation techniques to identify promising concepts
+
+that address user needs effectively. Prepare for Prototyping: Choose ideas that are feasible and impactful to develop
+
+into tangible prototypes in the next stage.                                                            (6)
+
+PROTOTYPE: Build Low-Cost Prototypes: Create simple, scaled-down versions of the product or its features to
+
+explore ideas. Experiment with Solutions: Implement different solutions from the Ideate stage into prototypes for
+
+testing. Test Internally and Externally: Share prototypes with team members, other departments, or a small group of
+
+users. Observe User Interactions: Watch how users engage with the prototypes to uncover usability issues and
+
+insights. Evaluate and Iterate: Accept, refine, or discard prototypes based on user feedback and performance.
+
+Identify Limitations: Discover constraints and challenges in the proposed solutions through hands-on testing. Gain
+
+Deeper User Understanding: Learn how users think, feel, and behave when interacting with the product.  (6)
+
+                                                                                                       14
+                                                                                                   Third ACM
+
+TEST: Conduct Rigorous Testing: Evaluate the complete product using the most promising prototypes. Observe
+
+Real User Interactions: Study how users behave, think, and feel while using the product. Gather Feedback and
+
+Insights: Collect qualitative and quantitative data to assess usability and effectiveness. Identify Remaining Issues:
+
+Detect limitations, pain points, and areas for improvement. Refine and Iterate: Use test results to improve the
+
+product and revisit earlier stages if needed. Redefine Problems if Necessary: Reframe or adjust problem statements
+
+based on new insights. Enhance Understanding of Users: Deepen empathy and knowledge of user needs through
+
+real-world testing.                                                                                (6)
+
+Design Thinking & Customer Centricity: A human-centered approach that blends empathy and innovation to
+
+create solutions that truly resonate with customer needs. Practical Examples of Customer Challenges: Real-world
+
+scenarios where customers face friction, unmet needs, or emotional disconnects in their product or service journey.
+
+Use of Design Thinking to Enhance Customer Experience: Applying iterative problem-solving and user insights to
+
+craft experiences that are intuitive, delightful, and deeply relevant. Parameters of Product Experience: Key
+
+dimensions like usability, accessibility, emotional impact, and consistency that shape how customers perceive and
+
+interact with a product. Alignment of Customer Expectations with Product Design: Ensuring that every design
+
+decision reflects what customers value, expect, and aspire to achieve through the product.
+
+                                                                                                Total P: 30 periods
+
+TEXT BOOKS:
+
+1. T. Brown, `Change by Design'. Harper Business, 2009.
+
+2. J. Liedtka and T. Ogilvie, `Designing for Growth'. Columbia Business School Publishing, 2011.
+
+REFERENCES:
+1. T. Kelley and D. Kelley, `Creative Confidence'. Crown Business, 2013.
+2. Stanford d. School resources: https://dschool.stanford.edu/
+3. https://apphaus.sap.com/toolkit/methods#design-thinking
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                                Bloom's Level
+
+CO1     Apply empathy-driven research to understand user needs.                                           K3
+CO2     Frame actionable problem statements and generate creative ideas.                                  K5
+CO3     Develop and test prototypes to refine innovative solutions to the real-world problems.            K4
+
+COs-POs & PSOs MAPPING
+
+CO      PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1                  3                               3   3          3     3                     3
+
+CO2                     2                            2   2          2     2                     2
+
+CO3                        1                         1   1          1     1                     1
+
+     @               3  2  1                         3   3          3     3                     3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                   15
+                                     25GE112 ENGINEERING GRAPHICS                                      Third ACM
+                                   (Common to EEE, ECE, ICE and EE-VLSI)
+                                                                                                           0042
+
+INTRODUCTION TO ENGINEERING GRAPHICS                                                                                  (4)
+
+1. Introduction to Engineering Graphics.
+
+2. Lettering practice as per BIS.
+
+3. Principles of Dimensioning.
+
+ORTHOGRAPHIC PROJECTIONS                                                                                              (40)
+
+1. Introduction to Orthographic Projections.
+
+2. Drawing multiple views from pictorial views of objects.
+
+3. Projection of points.
+
+4. Projection of straight lines (only First angle projections) inclined to both the principal planes.
+
+5. Projection of planes (polygonal and circular surfaces) inclined to both the principal planes by rotating object
+
+method.
+
+6. Projection of simple solids when the axis is inclined to one of the principal planes and parallel to the other by
+
+rotating object method.
+
+SECTION OF SOLIDS                                                                                                     (8)
+
+1. Section of simple solids in simple vertical position when the cutting plane is inclined to one of the principal
+
+planes and perpendicular to the other and obtaining true shape of section.
+
+ISOMETRIC PROJECTIONS                                                                                                 (8)
+
+1. Isometric projection of simple solids in simple vertical positions.
+
+                                                                                         Total P: 60 periods
+
+TEXT BOOKS:
+
+1. N. D. Bhatt, `Engineering Drawing'. Charotar Publishing House Pvt. Ltd., 55th Edition, 2025.
+
+2. K. C. John, `Engineering Graphics for Degree'. Prentice Hall India Publishers, 2009.
+
+3. K. V. Natarajan, `A Text book of Engineering Graphics'. Dhanalakshmi Publications, 34th Refined Edition, 2021.
+
+REFERENCES:
+1. K. Venugopal and V. Prabhu Raja, `Engineering Graphics'. New Age International Publishers, 17th Edition,
+
+    2024.
+2. `Bureau of Indian Standards'. Engineering Drawing Practices for Schools and Colleges SP 46-2003, BIS, New
+
+    Delhi, 2003.
+
+COURSE OUTCOMES                                                                                        Bloom's Level
+At the end of the course, students will be able to:                                                           K3
+CO1 Apply projection techniques to create basic shapes, solids, and sectioned objects.
+CO2 Use the standards and specifications for engineering drawing.
+
+COs-POs & PSOs MAPPING
+
+CO       PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8                                    PO9 PO10 PO11 PSO1 PSO2
+
+CO1          3
+
+CO2          1
+
+@            3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                       16
+                                                                                            Third ACM
+
+                    25IC111 CIRCUITS AND DEVICES LABORATORY
+
+                                                                                                                                      0042
+LIST OF EXPERIMENTS:
+1. Verification of Maximum Power Transfer theorem.
+2. Sinusoidal steady state analysis of RLC circuit.
+3. Resonance in RLC series circuit.
+4. Transient analysis of RC circuit.
+5. Characteristics of PN Junction Diode and Zener diode.
+6. Design of Half wave rectifier and Bridge rectifier.
+7. Characteristics of Bipolar Junction Transistor.
+8. Design of single stage amplifier using Bipolar Junction Transistor
+9. RC phase shift oscillator using BJT
+10. Junction Field Effect transistor as a switch
+
+                                                                                                                      Total P:60 periods
+REFERENCES:
+1. David A Bell, `Electronic Devices and Circuits Lab Manual'. Oxford University Press, 4th edition, 2006.
+2. Department of Instrumentation and Control Systems Engineering, `Laboratory manual'. PSG Institute of
+
+   Technology and Applied Research, Neelambur, Coimbatore-641062, 2025.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                         Bloom's Level
+                                                                                                   K2
+CO1     Understand the concepts relating to the circuit elements and their operation in DC         K3
+        and AC Circuits                                                                            K4
+
+CO2 Design and implement electronic circuits using semiconductor devices.                          K5
+
+          Analyse the behaviour of electrical and electronic circuits by applying maximum
+CO3 power transfer theorem, examining transient and steady-state responses, and
+
+          designing rectifier, amplifier, and oscillator circuits.
+
+          Evaluate the performance of electrical and electronic circuits by interpreting
+
+CO4 measurements, comparing theoretical and practical results, and assessing the
+          effectiveness of amplifier and oscillator
+
+COs-POs & PSOs MAPPING
+
+CO      PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8                                PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2     3                                                           2      2                3  2
+
+CO3              3                                                  2      2                3  3
+
+CO4                        3                         3              2      2                3  3
+
+     @  3        3      3  3                         3              2      2                3  3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                            25GEM01 INDUCTION PROGRAMME
+                      (Common to CIVIL, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+          All students shall undergo an induction programme at the beginning of the first semester for a duration of
+three weeks as per the guidelines of All India Council for Technical Education (AICTE). A student completing the
+induction programme will be awarded a completed grade in the grade sheet, and only the students who complete the
+induction programme shall be considered as eligible for award of degree subject to satisfying other conditions.
+A student who does not complete the induction programme in the first semester shall redo the same in the
+subsequent semester.
+
+                                                                                                           17
+                                                                                                   Third ACM
+
+                                                     SEMESTER II
+
+                     25MA201 COMPLEX VARIABLES AND TRANSFORMS
+
+                        (Common to CIVIL, EEE, ECE, ICE, MECH and EE-VLSI)
+
+                                                                                                   3104
+
+COMPLEX DIFFERENTIATION: Derivative, analytic function, Cauchy-Riemann equations, Laplace's equation,
+
+linear fractional transformations.                                                                 (9+3)
+
+COMPLEX INTEGRATION: Cauchy's integral theorem, Cauchy's integral formula, derivatives of analytic
+
+functions, Laurent series, singularities and zeros, residue integration method (Residue integration of complex
+
+integrals only).                                                                                   (9+3)
+
+LAPLACE TRANSFORMS: Laplace transform, linearity, first shifting theorem, transforms of derivatives and
+
+integrals, unit step function, second shifting theorem, Dirac's delta function, periodic functions, differentiation and
+
+integration of transforms, solving ODEs with constant coefficients and initial value problems.     (9+3)
+
+FOURIER ANALYSIS: Fourier series ­ arbitrary period, even and odd functions, half range expansions. Fourier
+
+transforms, Fourier cosine and sine transforms.                                                    (9+3)
+
+PARTIAL DIFFERENTIAL EQUATIONS: Basic concepts of PDEs, wave equation, heat equation, steady state
+
+two-dimensional heat problems, solution by Fourier series.                                         (9+3)
+
+                                                                    Total L: 45 + T: 15 = 60 periods
+
+TEXT BOOKS:
+1. Erwin Kreyszig, `Advanced Engineering Mathematics'. Wiley India, New Delhi, 2018.
+2. G. Z. Dennis, `Advanced Engineering Mathematics'. Jones and Bartlett Pvt Ltd, New Delhi, 2017.
+
+REFERENCES:
+1. G. Z. Dennis and D. S. Patrick, `A first course in Complex Analysis with Applications'. Jones and Bartlett Pvt
+
+    Ltd, New Delhi, 2015.
+2. C. R. Wylie and L. C. Barret, `Advanced Engineering Mathematics'. Tata McGraw-Hill, New Delhi, 2019.
+3. Peter V. O Neil, `Advanced Engineering Mathematics'. Cengage, New Delhi, 2018.
+4. G. D. Dean, `Advanced Engineering Mathematics with MATLAB'. CRC Press, USA, 2017.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                             Bloom's Level
+                                                                                                       K2
+CO1  Explain the concepts related to Complex Variables, Laplace Transforms, Fourier                    K3
+     Analysis and Partial Differential Equations.                                                      K4
+                                                                                                        -
+CO2  Apply the techniques of Complex Variables, Laplace Transforms, Fourier Analysis
+     and Partial Differential Equations to solve engineering problems.
+
+CO3  Analyze the solutions of engineering problems employing Complex Variables,
+     Laplace Transforms, Fourier Analysis and Partial Differential Equations.
+
+CO4  Use modern tools to solve engineering problems with the help of Complex
+     Variables, Laplace Transforms, Fourier Analysis and Partial Differential Equations.
+
+COs-POs & PSOs MAPPING
+
+CO                PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8                   PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2               3
+
+CO3                  1
+
+CO4                                                  1
+
+@                 3  1                               1
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                   18
+                                                                                                         Third ACM
+
+                   25CY203 CHEMISTRY FOR INSTRUMENTATION ENGINEERING
+
+                                                                                                              3003
+
+METALS AND ALLOYS: Binary phase diagrams ­Cu/Ni, Pb/Ag alloy ­ interpretation using phase rule, steel ­
+
+Fe-C phase diagram, heat treatment. Aluminium and titanium alloys. Corrosion ­ electrode potentials, chemical and
+
+electrochemical corrosion ­ emf series, galvanic series ­passivation. Forms of corrosion ­ galvanic, differential
+
+aeration, atmospheric corrosion, stress corrosion cracking, fretting, corrosion fatigue, tribo-corrosion. Corrosion rate
+
+­ factors influencing corrosion.                                                                              (9)
+
+CORROSION AND WEAR PROTECTION OF METALS: Electropolishing, electroplating ­ Cu, Ni and Cr,
+
+electroless plating ­ Cu and Ni, anodizing, phosphating, chromating, organic coatings-paints ­ constituents and
+
+functions, powder coating, electrophoretic painting, superhydrophobic and self-healing coatings. Lubricants-
+
+classification, properties, mechanism of lubrication- additives, improvers.                                   (9)
+
+POLYMERS: Polymerisation - chain and condensation polymerization, polymer topologies ­ linear, branched and
+
+crosslinked, degree of polymerisation, polydispersity, average molecular weight. States of aggregation ­ amorphous
+
+and crystalline states ­ influence on properties of polymers ­ thermal properties ­ phase transitions ­ Glass
+
+transition and melting ­ thermal analysis, classification based on thermal behaviour ­ thermoplastics and
+
+thermosetting plastics, mechanical properties ­ stress strain behaviour. Modification of properties of polymers ­
+
+additives- processing, protective and functional additives, composites ­ fillers ­ particulate and fibres ­ carbon,
+
+glass, aramid.                                                                                                (9)
+
+INDUSTRIAL AUTOANALYZERS: Performance requirements of analytical instruments. Instrument calibration
+
+methods ­ calibration curve, standard addition, internal standard methods. Automated chemical analysis ­
+
+segmented flow system and flow injection analysis. Types of analysers ­ colorimeters and spectrophotometers, ICP-
+
+MS, electrochemical analysers- potentiometers, conductivity meters, amperometry. Analysers for water quality
+
+monitoring ­ pH ­ ion-selective electrode, TDS, conductivity, turbidity determination, Sensors for air quality
+
+monitoring ­particulate matter, CO, CO2, VOC., NOx, SOx content determination. Sensors for smart farming­ soil
+
+nutrient content, pH, humidity.                                                                               (9)
+
+POWER SOURCES FOR IIoT DEVICES: Power requirements for wireless devices. Batteries - characteristics.
+
+Primary batteries ­ construction and working of zinc- carbon cells, lithium cells ­ Li-MnO2, Li-FeS2, Li-
+
+SOCl2.Secondary batteries ­ lead-acid, lithium-ion batteries. Supercapacitors ­ EDLC and pseudo capacitors.
+
+Flexible solar cells ­ DSSC and polymer photovoltaics ­ materials ­ conducting polymers and fullerenes.       (9)
+
+                                                                                                                     Total L: 45 periods
+TEXT BOOKS:
+
+1. Shashi Chawla, `A Text Book of Engineering Chemistry'. Dhanpat Rai and Co., New Delhi, 6th Edition, 2022.
+2. S. S. Dara and S. S. Umare, `A Textbook of Engineering Chemistry'. S Chand and Co., 2010.
+
+REFERENCES:
+
+1. Robert W. Messler, Jr, `The Essence of Materials for Engineers'. Jones and Barlett India Pvt. Ltd., 2011.
+
+2. Derek Pletcher and Frank C. Walsh, `Industrial Electrochemistry'. Chapman and Hall, 1993.
+
+3. J. M. G. Cowie and Valeria Arrighi, `Polymers: Chemistry and Physics of Modern Materials'. CRC Press,
+
+     London, 3rd edition, 2016.
+
+4. R. S. Khandpur, `Handbook of Analytical Instruments'. McGraw Hill Education (India) Private Limited, 2015.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                           Bloom's Level
+
+CO1 Learn the basic concepts of engineering materials and instrumentation                     K2
+
+CO2  Utilize metals, alloys, polymers, energy storage devices and analytical instruments      K3
+     for engineering applications
+
+CO3  Analyse the features of materials, methods and select suitable materials and             K4
+     methods for engineering applications
+
+COs-POs & PSOs MAPPING
+
+CO              PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2             3                                                                         3
+
+CO3                                                  11
+
+@               3                                    11                                   3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                              19
+                                                                                              Third ACM
+
+                                       25IC201 DIGITAL ELECTRONICS
+
+                                                                                                  3104
+
+NUMBER SYSTEMS AND BOOLEAN FUNCTIONS: Review of Number Systems, number complements,
+
+Binary arithmetic, Binary codes: weighted and non-weighted codes, alphanumeric codes, Error detection and
+
+correction codes, switching functions, Canonical forms, incompletely specified functions, Simplification of logic
+
+functions through Boolean Algebra, K ­maps and Quine-McClusky method, Implementation of logic functions
+
+using basic logic gates and universal gates.                                                      (9+3)
+
+COMBINATIONAL LOGIC DESIGN: Design of Arithmetic Circuits-Adders / subtractors, carry look-ahead
+
+adder, signed number addition and subtraction, BCD adders, IC adders, Magnitude comparator, Decoders, Encoders,
+
+Multiplexers and Demultiplexers. Implementation of combinational logic function using multiplexers and
+
+demultiplexers - Introduction to HDL.                                                             (9+3)
+
+SEQUENTIAL LOGIC DESIGN: General model of sequential circuits ­ Latch, Flip Flops, Design of
+synchronous sequential circuits­Up-down / Modulus counters, Shift register: Ring counter, Johnson counter, Timing
+diagram. Mealy / Moore models ­ Concept of state, State diagram, State table, Design of sequence detector, State
+reduction procedures using Partitioning and Implication cart. Introduction to Asynchronous Sequential Circuits.
+
+                                                                                                                                       (9+3)
+
+PROGRAMMABLE LOGIC DEVICES AND HDL: Semicustom design - Introduction to Programmable Logic
+
+Devices ­ Read Only Memory, Programmable Array Logic, Programmable Logic Array, Field Programmable Logic
+
+Array, Field Programmable Logic Sequencer, Architecture of Programmable Logic Devices, Implementation of
+
+digital functions using HDL.                                                                      (9+3)
+
+DIGITAL LOGIC FAMILIES: Characteristics of digital ICs ­ Voltage and current ratings, Noise margin,
+
+Propagation delay, Power dissipation, Fan-in, Fan-out. TTL logic family­Totem pole, Open collector and tri state
+
+outputs. MOS transistor switches ­ nMOS Inverter /Logic gates, CMOS Inverter / logic gates, ECL logic families,
+
+Comparison of performance of various logic families, Interfacing TTL and CMOS devices.            (9+3)
+
+                                                                                                    Total: L: 45 +T: 15 = 60 periods
+TEXT BOOKS:
+1. M. Morris Mano and Michael D. Cilette, `Digital Design: With an Introduction to the Verilog HDL, VHDL, and
+
+     System Verilog'. 6th edition, Prentice Hall, 2022.
+2. Donald P Leach, Albert Paul Malvino and Gautam Saha, `Digital Principles and Applications'. 8th edition, Tata
+
+     McGraw Hill, 2019
+
+REFERENCES:
+1. Thomas L Floyd, `Digital Fundamentals'. 11th edition, Prentice Hall, 2021.
+2. Donald D Givone. `Digital Principles and Design'. Tata McGraw Hill, 2019.
+3. A. Anand Kumar, `Fundamentals of Digital Circuits'. 4th edition, Prentice Hall of India, Pvt Ltd, New Delhi,
+
+     2019.
+4. R.J. Tocci and N.S. Widmer, `Digital Systems: Principles and Applications'. 10th edition, Pearson Education Pvt.
+
+     Ltd, 2013.
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                        Bloom's Level
+
+CO1  Learn the number systems, Boolean functions, combinational and sequential logic          K2
+     circuits, digital logic families, and their relevance in digital system design
+
+CO2  Apply Boolean algebra, K-maps, and logic gates to simplify combinational and             K3
+     sequential circuits.
+
+CO3  Analyse and compare various digital logic families and their interfacing                 K4
+     techniques in terms of speed, power, and compatibility.
+
+CO4  Develop HDL code and programmable logic devices to simulate behaviour of                 K6
+     combinational and sequential circuits
+
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2  3                                                                                     2
+
+CO3     3                                                                                  2
+
+CO4                           3               3      11                                 1  3
+
+@    3  3                     3               3      11                                 1  3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                  20
+                                                                                           Third ACM
+
+                                  25IC202 LINEAR INTEGRATED CIRCUITS
+
+                                                                                                 3003
+
+OPERATIONAL AMPLIFIER CHARACTERISTICS: Functional Block Diagram - Symbol - Characteristics of
+
+an ideal operational amplifier - Circuit schematic of 741 op-amp - Open loop gain - CMRR - DC characteristics -
+
+Frequency response characteristics - stability - frequency compensation ­slew rate.              (9)
+
+LINEAR APPLICATIONS OF OPERATIONAL AMPLIFIERS: Inverting and Non-inverting amplifiers -
+
+Voltage follower - Summing amplifier - Differential amplifier - Instrumentation amplifier: Design and applications -
+
+Integrator and Differentiator - Voltage to Current and Current to Voltage converters - Active filters - low pass, high
+
+pass, wide band pass, Band stop and notch filter                                                 (9)
+
+NON-LINEAR APPLICATIONS OF OPERATIONAL AMPLIFIERS: Comparator - Regenerative comparator
+
+- Zero crossing detector - Window detector - Sample and Hold circuit - Precision diode - Half and Full wave
+
+rectifiers - Active peak detector - Clipper and Clamper - Logarithmic and Exponential amplifiers - Square and
+
+Triangular wave form generators.                                                                 (9)
+
+VOLTAGE REGULATORS AND SPECIAL FUNCTION ICS: Block diagram of general-purpose voltage
+
+regulator - Circuit configurations, Fixed and adjustable three terminal regulators - 555 Timer - Functional block
+
+diagram and description - Monostable and Astable Operation, Applications PLL: Functional Block diagram -
+
+VCO- Principle of operation-Applications.                                                        (9)
+
+SIGNAL CONVERTERS: Digital to Analog Converters - Binary weighted and R-2R Ladder types - Analog to
+
+digital converters - Continuous, Counter ramp - Successive approximation, Single slope ­Dual slope and Parallel
+
+types - Performance characteristics.                                                             (9)
+
+                                                                                           Total L:45 periods
+
+TEXT BOOKS:
+
+1. Roy Choudhury and Shail Jain, `Linear Integrated Circuits'. 5th edition, New Age International Limited, 2018.
+
+2. F. R. Coughlin and F.F. Driscoll, `Operational Amplifiers and Linear Integrated Circuits'. 6th edition, Pearson
+
+Education, Noida, 2016.
+
+REFERENCES:
+1. A. R. Gayakwad, `OP-amps and Linear Integrated Circuits'. 4th edition, Pearson Education, 2016.
+2. Sedra and Smith, `Microelectronic Circuits'. 7th edition, Oxford University Press, 2017.
+3. David A Bell, `Operational Amplifiers and Linear ICs'. 3rd edition, Prentice Hall of India, 2013.
+4. Sergio Franco, `Design with Operational Amplifiers and Analog Integrated Circuits'. 4th edition, McGraw Hill,
+
+     2017
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                        Bloom's Level
+                                                                                                  K2
+CO1  Explain the DC and AC performance characteristics of Op-amp, and its applications,           K3
+CO2  working of 555 timer, LM565 phase-locked loop, analog multipliers, voltage
+     regulators and A-D / D-A Converters.
+     Apply the basic circuit laws to obtain circuit parameters and waveform in analog
+     electronic circuits.
+
+CO3 Analyse analog electronic circuits that meet desired specifications.                   K4
+
+     Design analog electronic circuits for the desired specifications, and demonstrate     K5
+CO4 through mini-project.
+
+          Conduct investigation on analog electronic circuits using MATLAB/
+CO5 Multisim/PSpice/Proteus simulation tools.
+
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8                                PO9 PO10 PO11          PSO1  PSO2
+
+CO1                                                                                          3     1
+                                                                                             1     1
+CO2  3                                                                                       3     1
+                                                                                             3     1
+CO3          3                                                                               3     1
+
+CO4                        1111                         1                            1  1
+
+CO5                                        3
+
+@    3       3             1          3    3         1  1                            1  1
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                                  21
+                                                                                      Third ACM
+
+                               25HS201  
+
+   (Common to CIVIL, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+                                                                                      1001
+
+   :     ­   ­
+
+   ­   .                                                                              (3)
+
+   :     , 
+
+    ­      ­
+
+     ­  ,  ­
+
+       ­    ­
+
+   ,       
+
+ ­   ­    - 
+
+.                                                                                     (3)
+
+  :    ­  ­   ­ 
+,  ­       ­  -
+   ­ ,   ­   ­ 
+ ­   ­   ­   . (3)
+
+     : , , ,  ­  
+
+  ­   ­    ­
+
+     ­   ­  ­  
+
+ ­     ­  .                                                                           (3)
+
+   :     ­    ­ 
+
+   ­    ­    ­
+
+   ­    ­  .                                                                          (3)
+
+                                                                                      Total L: 15 periods
+
+                               25HS201 TAMILS AND TECHNOLOGY
+
+   (Common to CIVIL, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+                                                                                      1001
+
+WEAVING AND CERAMIC TECHNOLOGY: Weaving Industry during Sangam Age ­ Ceramic technology ­
+
+Black and Red Ware Potteries (BRW) ­ Graffiti on Potteries.                           (3)
+
+DESIGN AND CONSTRUCTION TECHNOLOGY: Designing and Structural construction House & Designs in
+
+household materials during Sangam Age - Building materials and Hero stones of Sangam age ­ Details of Stage
+
+Constructions in Silappathikaram - Sculptures and Temples of Mamallapuram - Great Temples of Cholas and other
+
+worship places - Temples of Nayaka Period - Type study (Madurai Meenakshi Temple)- Thirumalai Nayakar Mahal
+
+- Chetti Nadu Houses, Indo - Saracenic architecture at Madras during British Period.  (3)
+
+MANUFACTURING TECHNOLOGY: Art of Ship Building - Metallurgical studies - Iron industry - Iron
+
+smelting, steel -Copper and gold- Coins as source of history - Minting of Coins ­ Beads making-industries Stone
+
+beads -Glass beads - Terracotta beads -Shell beads/ bone beats - Archeological evidences - Gem stone types
+
+described in Silappathikaram.                                                         (3)
+
+AGRICULTURE AND IRRIGATION TECHNOLOGY: Dam, Tank, ponds, Sluice, Significance of Kumizhi
+Thoompu of Chola Period, Animal Husbandry - Wells designed for cattle use - Agriculture and Agro Processing -
+Knowledge of Sea - Fisheries ­ Pearl - Conche diving - Ancient Knowledge of Ocean - Knowledge Specific Society.
+
+                                                                                                                                          (3)
+
+SCIENTIFIC TAMIL & TAMIL COMPUTING: Development of Scientific Tamil - Tamil computing ­
+
+Digitalization of Tamil Books ­ Development of Tamil Software ­ Tamil Virtual Academy ­ Tamil Digital Library
+
+­ Online Tamil Dictionaries ­ Sorkuvai Project.                                       (3)
+
+                                                                                      Total L: 15 periods
+
+                                                                                      22
+                                                                                                     Third ACM
+
+TEXT ­ CUM ­ REFERENCE BOOKS
+     1. . . ,   -  ,     
+           .
+     2.  ., ,  
+     3.  -     ,   
+     4.  -  ,   
+     5. Dr. K. K. Pillay, `Social Life of Tamils'. A joint publication of TNTB, ESC and RMRL
+     6. Dr. S. Singaravelu, `Social Life of the Tamils ­ The Classical Period'. International Institute of Tamil
+          Studies.
+     7. Dr. S.V. Subaramanian and Dr. K. D. Thirunavukkarasu, `Historical Heritage of the Tamils'. International
+          Institute of Tamil Studies
+     8. Dr. M. Valarmathi, `The Contributions of the Tamils to Indian Culture'. International Institute of Tamil
+          Studies.
+     9. `Keeladi ­ Sangam City Civilization on the banks of river Vaigai'. Department of Archaeology, Tamilnadu
+          Text Book and Educational Services Corporation, Tamilnadu
+     10. Dr. K. K. Pillay, `Studies in the History of India with Special Reference to Tamilnadu'.
+     11. `Porunai Civilization'. Department of Archaeology, Tamil Nadu Text Book and Educational Services
+          Corporation, Tamilnadu
+     12. R. Balakrishnan, `Journey of Civilization Indus to Vaigai' RMRL, Tamilnadu
+     13. V Priyadharshini, `  (Tamils and Technology)'. VK publications, Sivakasi.
+
+COURSE OUTCOMES                                                                                      Bloom's Level
+                                                                                                            K2
+At the end of the course, students will be able to:                                                         K3
+
+           Identify the significance of ancient Tamil technologies in weaving, pottery, metallurgy,
+CO1 and architecture, with emphasis on traditional design and construction methods across
+
+           historical periods.
+           Use insights from traditional Tamil knowledge systems in agriculture, irrigation, and
+CO2 marine sciences, and connect the development of Tamil language to its applications in
+           digital platforms and computing.
+
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2                     3                                           3
+
+@                       3                                           3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                     23
+                                                                                           Third ACM
+
+                               LANGUAGE ELECTIVE
+
+                 25HS211 COMMUNICATION SKILLS FOR ENGINEERS
+
+                 (Common to CIVIL, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+                                                                                           0042
+
+COMMUNICATION CONCEPTS: Process of Communication ­ Inter and Intrapersonal Communication ­
+
+Essentials for effectiveness.                                                              (9)
+
+ORAL COMMUNICATION: Oral presentations with visual aids and Group discussions.             (16)
+
+FOCUS ON SOFT SKILLS: Etiquette ­ Work Place etiquette ­ Telephone etiquette- Body Language ­ Critical
+
+Reasoning and Conflict Management based on Case Studies ­ Group Communication- Meetings -Interview
+
+Techniques.                                                                                (14)
+
+TECHNICAL WRITING: Technical Writing Principles - Style and Mechanics - Technical Definitions ­ Physical,
+
+Functional and Process Descriptions ­ Technical Report Writing ­ Preparing Instructions ­ Interpretation of
+
+Technical Data.                                                                            (14)
+
+BUSINESS CORRESPONDENCE: Writing Emails, Preparing Resumes.                                (7)
+
+                                                                                           Total P: 60 periods
+
+TEXT BOOKS:
+1. Course materials prepared by the Faculty, Department of English.
+
+REFERENCES:
+1. Jeff Butterfield, `Soft Skills for Everyone'. Cengage Learning, New Delhi, 2020.
+2. Sabina Pillai and Agna Fernandez, `Soft skills and Employability Skills'. Cambridge University Press, New
+
+    Delhi, 2019.
+3. Prashant Sharma, `Soft Skills Personality Development for Life Success'. BPB Publications, New Delhi, 2021.
+4. K. N. Shoba and D. Praveen Sam, `Technical English'. Cambridge University Press, New York, 2020.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                        Bloom's Level
+                                                                                                  K2
+CO1  Produce clear and concise technical reports, compose professional and effective              K3
+CO2  emails and develop well-structured and impactful resumes
+CO3  Plan, organize, and deliver engaging and informative presentations using appropriate
+     visual aids and participate positively in group discussions
+
+     Resolve disagreements constructively, embody professional conduct and a strong
+     work ethic and apply critical thinking to generate effective solutions
+
+COs-POs & PSOs MAPPING
+
+CO           PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2                                                  3               3
+
+CO3                                                  1               1
+
+@                                                    3               3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                           24
+                                                                Third ACM
+
+                              25HS212 BASIC GERMAN
+(Common to CIVIL, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+                                                                                                                                      0042
+Guten Tag! - Learning: To greet, learn numbers till 20, practice telephone numbers & e mail address, learn
+alphabet, speak about countries & languages; Vocabulary: related to the topic; Grammar: W ­ Questions, Verbs &
+Personal pronouns I.
+
+Freunde, Kollegen und ich - Learning: To speak about hobbies, jobs, learn numbers from 20; Vocabulary: related
+to the topic; Grammar: Articles, Verbs & Personal pronouns II, sein & haben verbs, ja/nein Frage, singular/plural.
+
+In der Stadt ­ Learning: To know places, buildings, question, know transport systems, understand international
+words; Vocabulary: related to the topic; Grammar: Definite & indefinite articles, Negotiation, Imperative with Sie.
+
+Guten Appetit! ­ Learning: To speak about food, shop, converse; Vocabulary: related to the topic; Grammar:
+Sentence position, Accusative, Accusative with verbs.
+
+Tag fr Tag and Zeit mit Freunden ­ Learning: To learn time related expressions, speak about family, ask
+excuse, fix appointments on phone, birthdays, understand & write invitations, converse in the restaurant;
+Vocabulary: related to the topic; Grammar: Preposition ­ am, im, um, von...bis, Possessive articles, Modal verbs.
+
+                                                                                                                     Total P: 60 periods
+
+TEXT BOOK:
+1. Dengler, Stefanie et al., `Netzwerk A1.1'. Klett-Langenscheidt Gmbh, München, 2013.
+
+REFERENCES:
+1. Dengler, Stefanie et al., `Netzwerk A1'. Klett-Langenscheidt Gmbh, München, 2013.
+2. Sandra Evans,Angela Pude, `Franz Specht-Menschen A1'.­Hueber Verlag ,2012.
+3. Hermann Funk, Christina Kuhn, Silke Demme, `Studio d A1'. Goyal Publishers & Distributors Pvt. Ltd ,2009.
+4. Rosa-Maria Dallapiazza, Eduard von Jan, Til Schönherr, `Tangram Aktuell 1 (Deutsch als Fremdsprache)'. Max
+
+    Hueber Verlag, 2004.
+
+                                                                25
+                                         25HS213 BASIC JAPANESE                                  Third ACM
+            (Common to CIVIL, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+                                                                                                     0042
+
+Orientation Session, Geographic & Socio, economic perspective to Japan, Japanese people and culture and Basic
+greetings and responses.
+
+Basic script, Method of writing hiragana and katakana, and Combination sounds and simple words.
+
+Topic marker `wa', Desu / dewa arimasen cupolas, Interrogative particle `ka', Grammar particles `mo', `no',
+`Introducing some one: `Kochira wa ~' and Self introductions: Hajimemashite'
+
+Demonstratives `Kore', `Sore', `Are', Demonstrative `Kono', `Sono', `Ano', Possessive noun particle `no' and
+Japanese apartments: Greeting your neighbor.
+
+Place markers `Koko', `Soko', `Asoko', Direction markers `Kochira', `Sochira', `Achira' and Japanese department
+stores: Asking for and buying something.
+
+Asking for and telling the time, Particle `ni (at)' for time, kara (from) ~ made (until), Particle `to (and)', Time
+periods: Days of the week, months, time of day, Verbs (Present / future and past tense) and Telephone enquiry:
+Asking for a phone no. And business hours.
+Destination particle `e', Particles `de (mode of transportation)' and `to (with) and Japanese train station: Asking for
+Fare and track no. / types of trains.
+
+Direct object particle `o', Particle `de (place of action)', Verbs (`~masen ka', `~mashou') and `Ohanami' Cherry
+blossom viewing.
+
+Particle `de (by means of)', Particle `ni (to)', Aaemasu (give) and Moraimasu (receive) and Visiting a Japanese
+house.
+
+Adjectives (`i' and `na' type), Adjectives (Positive and negative usage), Particle `ga (however, but), `Dore which?)'
+and Leaving a room, thanking someone for hospitality.
+
+Likes and dislikes, Potential verbs (wakarimasu and dekimasu), `Kara ( ~ because)', Adverbs and Asking someone
+out over the phone.
+Verbs denoting presence: `Imasu' and `arimasu', Particle `ni (in)', `Dare (who?)', Adverbs (`Chikaku ni ~ `),
+Particle `dare mo (negative ~ no one)' , Dare ka (anyone), dare ga (who) , Nani ka (anything) , nani ga (what) - ~ya
+(and) ~ nado (etc.) and Asking for directions.
+
+Counters and Counting suffixes.
+
+Introduction to Adjectives (na and ii type), Different usages of adjectives, Comparison, Likes and dislikes and Going
+
+to a trip.
+
+Need and desire (ga hoshii), Wanting to ... (Tabeti desu), Going for a certain purpose (mi ­ni ikimasu) and
+
+Choosing from a menu.
+
+Verb groups, I, II and III and Exercises to group verbs.
+
+Please do (te kudasai), Present continuous tenses (te imasu), Shall I? (~ mashou ka) and Describing a natural
+
+phenomenon (It is raining).
+
+To grant permission (~te mo ii desu), Asking for permission (~ te mo ii desu ka) and Should not do (~ te
+
+waikemasen) Describing a continuing state and Describing a habitual action.
+
+Roleplays in Japanese.
+
+A demonstration on usage of chopsticks and Japanese tea party.
+
+                                                                             Total P: 60 periods
+
+TEXT BOOK
+1. `Minna no nohongo ­ Romaji ban'. (first 10 lessons of this book).
+
+REFERENCE
+1. `Minna no Nihongo I Honsatsu Roma'. ­ ji ban (Main Textbook Romanized Version). International publisher ­
+
+    3A Corporation, Tokyo, Indian distributor ­ Goyal Publishers & Distributors, New Delhi.
+
+                                                                                                 26
+                         25IC211 ANALOG AND DIGITAL ELECTRONICS LABORATORY                     Third ACM
+
+ANALOG ICS BASED EXPERIMENTS:                                                                      0042
+1. Implementation of linear applications of operational amplifier
+2. Implementation of Nonlinear applications of operational amplifier
+3. Design and implementation of active filters
+4. Implementation of voltage regulators
+5. Realization of a stable multivibrator using 555timer
+
+DIGITAL ICS BASED EXPERIMENTS:
+1. Realization of Basic Logic Gates using Universal Gates
+2. Design and implementation of combinational circuits
+3. Design and implementation of sequential circuits
+4. Design and implementation of synchronous sequential circuits
+5. Design and Implementation of digital functions using FPGA trainer board.
+
+                                                                                                                     Total P: 60 periods
+REFERENCES:
+1. David A Bell, `Laboratory Manual for Operational Amplifiers and Linear ICs'. 2nd edition, Prentice Hall of
+
+    India, New Delhi, 2006.
+2. Department of Instrumentation and Control Systems Engineering, `Laboratory manual'. PSG Institute of
+
+    Technology and Applied Research, Neelambur, Coimbatore-641062, 2025.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                         Bloom's Level
+                                                                                                   K2
+CO1  Explain the various types of combinational and sequential circuits and develop the            K3
+     logical circuit for the given scenario.                                                       K4
+                                                                                                    -
+CO2 Develop the applications of op-amp, voltage regulator circuits and timer IC 555
+
+CO3 Analyse the waveform generator circuits using timer IC 555.
+
+CO4  Work effectively in teams to perform experiments, analyse the analog and digital
+     circuit, and present findings through well-documented reports and presentations.
+
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2  3
+
+CO3     2                                                        2                       2
+
+CO4              2                                               22  2                   2  2
+
+@    3  2        2                                               22  2                   2  2
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                               27
+                                                                                                                                                                Third ACM
+
+                                 25BS212 PHYSICS AND CHEMISTRY LABORATORY
+                                                                                                                                      0042
+
+Physics (Any eight experiments)
+1. Determination of specific resistance of a given wire ­ Carey foster's bridge.
+2. Determination of Young's modulus of the material- Uniform Bending
+3. Measurement of Hall coefficient of a semiconductor using Hall effect setup.
+4. Determination of electrical resistivity of a given material using four probe setup.
+5. Determination of wavelength of laser using diffraction grating - LASER.
+6. Determination of Thickness of a thin wire ­ Air wedge method.
+7. Study of I-V characteristics of solar cell and determination of its efficiency
+8. Determination of velocity of sound and compressibility of liquid - Ultrasonic Interferometer.
+9. Determination of Planck's constant and work function of a metal -Photoelectric Effect
+10. Determination of bandgap of a semiconductor ­ Post office box.
+11. Validation of Faraday's law of Induction.
+12. Interpreting the working mechanism of spirometer,Co2 sensor, Venturi tube and heart rate sensor
+Demonstration:
+1. Determination of Numerical Aperture and Acceptance angle - Optical Fiber
+2. Study the energy loss of a ferrite magnetic material specimen by B-H curve.
+
+                                                                                                                     Total P: 30 periods
+REFERENCES:
+ 1. Department of Physics, `Physics laboratory observation'. PSG Institute of Technology and Applied Research,
+
+      Neelambur, Coimbatore-641062, 2025.
+ 2. Jerry D Wilson; Cecilia A Hernandez Hall, `Physics laboratory experiments'. Boston, MA: Cengage Learning,
+
+      2016.
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                          Bloom's Level
+
+     Relate the scientific principles and compare the experimental results with
+
+CO1 theoretical calculations and apply graphical analysis to visualise the importance of     K3
+
+     precise measurements.
+
+CO2  Analyse the experimental result outcomes using analytical and experimental skills       K4
+     for various engineering materials and applications.
+
+CHEMISTRY (Any eight experiments)
+1. Determination of total, temporary & permanent hardness of water by EDTA method.
+2. Determination of strength of acids in a mixture of acids using conductivity meter.
+3. Determination of strength of given hydrochloric acid using pH meter.
+4. Estimation of iron content of the given solution using potentiometer.
+5. Corrosion experiment-weight loss method.
+6. Electroplating of copper and Nickel and determination of coulombic efficiency.
+7. Designing a battery and determination of its characteristics.
+8. Construction of phase diagram of a simple eutectic system.
+9. Determination of kinematic viscosity and acid value of a lubricating oil.
+10. Anodizing of aluminium and determination of thickness of anodised film.
+
+                                                                                             Total P:30 periods
+
+REFERENCES:
+
+1. J Mendham `Vogel's Textbook of Quantitative Chemical Analysis'. 6th Ed., Pearsons Education 2009.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                          Bloom's Level
+
+CO3 Demonstrate the measurement of water quality parameters in the given water sample        K3
+
+CO4 Analyze the properties of materials for Engineering applications                         K4
+
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2
+
+CO3              3                                                    3                   3
+
+CO4                         3                        3
+
+@                33                                  3                3                   3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                      28
+                                                                                                                                                                   Third ACM
+
+                 25IC212 PROBLEM SOLVING AND PYTHON PROGRAMMING LABORATORY
+                                                                                                                                        0021
+
+  EXPERIMENTS
+1. Identification and solving of simple real life or scientific or technical problems, and developing algorithm and
+
+      flow charts for the same.
+2. Python programming using simple statements and expressions
+3. Scientific problems using Conditionals and Iterative loops.
+4. Implementing real-time/technical applications using Lists, Tuples.
+5. Implementing real-time/technical applications using Sets, Dictionaries.
+6. Implementing programs using Functions.
+7. Implementing programs using Strings.
+8. Implementing programs using written modules and Python Standard Libraries
+9. Implementing real-time/technical applications using File handling.
+10. Implementing real-time/technical applications using Exception handling.
+11. Exploring Pygame tool and developing a game activity using Pygame.
+
+                                                                                                                        Total P:30 periods
+  TEXT BOOKS:
+1. Allen B. Downey, `Think Python: How to Think like a Computer Scientist'. 2nd edition, O'Reilly Publishers,
+
+       2016.
+2. Karl Beecher, `Computational Thinking: A Beginner's Guide to Problem Solving and Programming'. 1st edition,
+
+       BCS Learning and Development Limited, 2017.
+
+REFERENCES:
+1. Paul Deitel and Harvey Deitel, `Python for Programmers'. 1st edition, Pearson Education, 2021.
+
+2. John V Guttag, `Introduction to Computation and Programming Using Python: With Applications to
+     Computational Modeling and Understanding Data'. 3rd edition, MIT Press, 2021.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                            Bloom's Level
+                                                                                                      K2
+CO1 Understand the basic constructs of Python Programming
+                                                                                                      K3
+CO2  Apply the different data structures like list, tuple, set or dictionary to solve complex         K4
+     problems.
+
+CO3 Implement real-time applications using the modules and packages
+
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2  3                  3                                                                      2   1
+
+CO3     3               3                                                                      2   1
+
+@    3  3               3                                                                      2   1
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                      29
+                                                                                     Third ACM
+
+                        25EEC01 WORKPLACE COMMUNICATION SKILLS
+             (Common to CIVIL, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+                                                                                     0020
+
+BUILDING COMMUNICATION SKILLS:
+1. Introduction to Workplace Communication
+2. Profile Building for Internships
+3. English in the Workplace (Grammar & Vocabulary)
+4. Professional Communication (Speaking & Writing)
+5. Workplace Communication Tools
+6. Career Exploration
+7. Resume Update
+
+                                                                                     Total P: 30 periods
+
+REFERENCES:
+
+1. P. C. Wren and H. Martin, `High school English Grammar and Composition'. S Chand Publishing, New Delhi,
+     2017.
+
+2. Norman Lewis, `Word Power Made Easy'. Goyal Publisher, New Delhi, 2011.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                  Bloom's Level
+                                                                                            K3
+CO1  Understand the importance of soft skills for employability and fine tune their         K2
+     writing skills ­ Resume writing
+
+CO2 Present with clarity and coherence while speaking in formal contexts.
+
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1                                                  3              3
+
+CO2                                                  3              3
+
+@                                                    3              3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                    30
+                                              SEMESTER III                                         Third ACM
+                                    25MA302 LINEAR ALGEBRA
+                                                                                                       3104
+
+VECTOR SPACES: General vector spaces - real vector spaces - Euclidean n-space - subspaces ­ linear
+
+independence- coordinates and basis - dimension ­ change of basis - row space, column space and null space ­
+
+consistency of linear systems - rank and nullity.                                                  (9+3)
+
+LINEAR TRANSFORMATIONS: General linear transformation - matrix transformations- geometry of linear
+
+operators on R2- matrices for general linear transformations - similarity.                         (9+3)
+
+INNER PRODUCT SPACES: Inner products - angle and orthogonality in inner product spaces, Gram - Schmidt
+
+process: QR decomposition, best approximation: least squares - least squares fitting to data.      (9+3)
+
+EIGENVALUES AND EIGENVECTORS: Eigenvalues and eigenvectors, diagonalization - orthogonal
+
+diagonalization - quadratic forms.                                                                 (9+3)
+
+MATRIX DECOMPOSITION AND OPTIMIZATION: Spectral decomposition - singular value decomposition -
+
+reduced singular value decomposition - optimization using quadratic forms.                         (9+3)
+
+                                                                                                    Total L: 45 + T: 15 = 60 periods
+TEXT BOOKS:
+1. Howard Anton, Chris Rorres, Anton Haul `Elementary Linear Algebra'. Wiley India, New Delhi, 2019.
+2. David C Lay,Judi J McDonald, Steven R. Lay `Linear Algebra and its Applications'. Pearson Education, New
+
+    Delhi, 2021.
+
+REFERENCES:
+1. Gareth Williams, `Linear Algebra with Applications'. Narosa Publishing House, New Delhi, 2017.
+2. Gilbert Strang, `Linear Algebra and Learning from Data'. Wellesley-Cambridge Press, USA, 2019.
+3. Friedberg, Insel and Spence, `Linear Algebra'. Pearson Education, USA, 2015.
+4. Steven J Leon, `Linear Algebra with Applications'. Pearson Education, USA, 2015
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                            Bloom's Level
+                                                                                                       K2
+CO1  Explain the concepts related to Vector spaces, Linear transformations, Inner product              K3
+CO2  spaces, Eigenvalues, Eigenvectors and Matrix decomposition.
+CO3  Apply the techniques of Vector spaces, Linear transformations, Inner product spaces,              K4
+     Eigenvalues, Eigenvectors and Matrix decomposition to solve engineering problems.
+CO4  Analyse the solutions of engineering problems employing Vector spaces, Linear
+     transformations, Inner product spaces, Eigenvalues, Eigenvectors and Matrix
+     decomposition
+     Use modern tools to solve engineering problems with the help of Vector spaces,
+     Linear transformations, Inner product spaces, Eigenvalues, Eigenvectors and Matrix
+     decomposition.
+
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2  3
+
+CO3     1
+
+CO4                                 1
+
+@    3  1                           1
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                   31
+                        25IC301 SENSORS AND TRANSDUCERS                                               Third ACM
+
+                                                                                                          4004
+
+SCIENCE OF MEASUREMENT: Units and Standards, General concept and terminology of measurement
+systems, General input - output configuration, transducer classification, Static and Dynamic characteristics,
+Calibration techniques (analog and digital) Statistical analysis of measurement data.
+
+                                                                                                                                       (12)
+
+RESISTANCE TRANSDUCERS: Principles of operation, construction details, characteristics of resistance
+
+transducers, resistance potentiometers, metal and semiconductor strain gauges. Signal conditioning circuits.
+
+Applications of strain gauge for measurement of load and torque.                                      (12)
+
+INDUCTIVE TRANSDUCERS: Induction potentiometer, variable reluctance transducers, LVDT, eddy current
+
+transducers, synchros and resolvers, magneto - strictive transducers, electromagnetic sensors - associated signal
+
+conditioning circuits for above transducers, Proximity sensor.                                        (12)
+
+OTHER SENSORS: Piezo-electric transducer, Piezo resistive sensor, capacitive transducer, Hall effect transducer,
+
+tachogenerator, stroboscope, photoelectric transducers, thermocouples, gyroscope, seismic instruments and
+
+accelerometers, digital displacement transducers, fibre optic sensor, IC sensor, LIDAR                (12)
+
+INTELLIGENT SENSORS: Smart sensors, Cogent sensors, Virtual sensors, Self adaptive sensors ­ Adaptation to
+
+linearity, Self-validating sensors, Temperature compensating sensors ­ Selection of sensors.          (12)
+
+                                                                                                 Total L: 60 periods
+
+TEXT BOOKS:
+
+1. Doebelin E O and Dhanesh N Manik, `Measurement Systems'. Tata McGraw-Hill, Seventh Edition, 2020.
+
+2. John P. Bentley, `Principles of Measurement Systems'. Pearson Education, Fourth Edition, 2020.
+
+REFERENCES:
+1. Murty D. V. S, `Transducers and Instrumentation'. Prentice-Hall of India Private Limited, New Delhi, Second
+
+    Edition, 2016.
+2. James W.Dally, William F.Rileyand, Kenneth G. McConnell, `Instrumentation for Engineering Measurements'.
+
+    Second Edition, Wiley Publishers, 2012.
+3. Manabendra Bhuyan, `Intelligent Instrumentation: Principles and Applications'. CRC Press, 2016.
+4. Richards S. Figliola and Donald E Beasley, `Theory and Design for Mechanical Measurements'. Seventh
+
+    Edition, Wiley Publishers, 2019.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                              Bloom's Level
+                                                                                                          K2
+CO1  Describe the principles of measurements, error analysis, characteristics, and                        K3
+CO2  operating principles of different types of transducers and sensors.
+CO3  Apply resistive, inductive, and capacitive transducers for measurement                               K4
+     applications, and evaluate measurement errors using statistical methods to assess                    K5
+     transducer characteristics.
+     Analyze the suitability and appropriate transducers and sensors for measuring
+     physical, chemical, and environmental parameters in industrial and real-world
+     applications.
+
+CO4  Perform assignments, modelling, and application of transducers and sensors for
+     practical measurement systems.
+
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2  3                                                                                                2
+
+CO3          3                                                                                        2
+
+CO4              2      1                                         1  1                        1    2  2
+
+@    33          2      1                                         1  1                        1    2  2
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                                32
+                              25IC302 C PROGRAMMING                                                 Third ACM
+
+                                                                                                        2002
+
+INTRODUCTION: Analysing and Defining the Problem - Algorithm - Flow Chart -Types of programming
+
+language. C: The C character set - Identifiers and keywords - Data types ­ Constants - Variables - Declarations -
+
+input and output functions-pre-processor directives.                                                        (3)
+
+OPERATORS AND EXPRESSIONS: Arithmetic operators - Unary operators - Relational operators - logical
+
+operators - Assignment operators - Conditional operators -bitwise operators- comma operator ­ size of operator -
+
+precedence and associativity- Library functions. Control Statements: simple if, if..else, nested if .. else, else..if ladder
+
+, switch case - while -do while - for - nested loops - break ­ continue.                                    (9)
+
+ARRAYS: Defining an array - Processing an array - Multi dimensional arrays -strings.                        (6)
+
+FUNCTIONS: Function prototype - Defining a function ­ function call - Passing arguments to a function ­nested
+
+function ­ recursive function- Storage classes - auto - static - extern and register variables.
+
+                                                                                                            (4)
+
+STRUCTURES: Definitions - Processing a structure ­ Array and structures ­ Nested structures - Structures and
+
+functions. Pointers: Definition - Pointer Arithmetic ­ types of pointer - const pointer, pointer to a constant, void
+
+pointer, null pointer.                                                                                      (8)
+
+                                                                                                    Total L: 30 periods
+
+TEXT BOOKS:
+1. Paul Deitel and Harvey Deitel, `C How to Program: With an Introduction to C++'. Eighth edition, Pearson
+
+      Education, 2018.
+2. Ajay Mittal, `Programming in C - A Practical approach'. Pearson, New Delhi, 2010
+
+REFERENCES:
+1. Gottfried B., `Programming with C'. McGraw Hill Education, New Delhi, 2018.
+2. Herbert Schildt, `C: The Complete Reference'. McGraw Hill, New Delhi, 2017.
+3. Kernighan B. W. and Ritchie D. M., `C Programming Language (ANSI C)'. Prentice Hall of India, New Delhi,
+
+    2013.
+
+4. Reema Thareja, `Programming in C'. Oxford University Press, India, Second edition, 2016
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                                 Bloom's Level
+                                                                                                            K2
+CO1 Understand the basic concepts and syntax of C Programming.                                              K3
+
+CO2  Write C programs involving structures, arrays of structures, nested structures, file I/O               K4
+     operations, and dynamic memory management techniques.                                                   -
+
+CO3  Develop programs that process and manipulate data using arrays, functions, and
+     structures.
+
+CO4 Simulate the basic concepts of C programming using the open-source software.
+
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11                                                  PSO1  PSO2
+
+CO1                                                                                                         1
+                                                                                                            1
+CO2  3                        3
+
+CO3                     2     2
+
+CO4                        1  1                                           1  1                   1
+
+@    3                  2  1  3                                           1  1                   1
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                             33
+                                                                                              Third ACM
+
+                              25IC303 ELECTRICAL MACHINES
+
+                                                                                                    4004
+
+DC MACHINES: Principles of energy conversion - Construction and principle of operation of DC generator - EMF
+
+equation - Characteristics of DC generators - Principle of operation of DC motor - Torque equation- Characteristics
+
+of DC motors -Starting of DC motors - Speed control of DC motors - Losses and efficiency calculations- Braking-
+
+Applications of DC machines.                                                                                 (12)
+
+TRANSFORMERS: Construction and principle of operation of single-phase transformer- EMF equation-
+Equivalent circuit - Testing of transformer ­ Efficiency and voltage regulation - All day efficiency - Operation of
+auto transformers - Three phase transformer connections - Applications of single phase and three phase
+transformers.
+
+                                                                                                                                        (12)
+
+SYNCHRONOUS MACHINES: Construction and principle of operation of three phase alternators - EMF equation
+
+- Determination of regulation - Theory of operation of synchronous motor - Methods of starting- Operating
+
+characteristics: Constant excitation with variable load and constant load with variable excitation ­Synchronous
+
+condenser­Applications.                                                                                      (12)
+
+INDUCTION MOTORS: Construction and principle of operation of three phase induction motor - Classification
+of induction motor ­Equivalent circuit - No load and blocked rotor test - Torque production ­ Torque slip
+characteristics - Maximum torque - Starting and speed control - Principle of operation of single-phase induction
+motor - Types of single-phase induction motors and their applications.
+
+                                                                                                                                         (12)
+
+SPECIAL MACHINES: Stepper motor ­ Switched reluctance motor - Universal motor - Brushless DC motor -
+
+Synchros - Servomotor ­Linear induction motor.                                                               (12)
+
+                                                                                              Total L: 60 periods
+
+TEXT BOOKS:
+ 1. Kothari D P and Nagrath I J, `Electric Machines'. Fifth Edition, Tata McGraw Hill, 2017.
+ 2. Bimbhra, `Electrical Machinery'. Khanna Publishers, 2021.
+
+REFERENCES:
+ 1. Theodore Wildi `Electrical Machines, Drives and Power Systems'. Sixth Edition, Pearson Education, 2013.
+ 2. Murugesh Kumar K, `DC Machines and Transformers'. Second Edition, Vikas Publishing House, 2016.
+ 3. Bhattacharya S. K, `Electrical Machines'. Fourth Edition, Tata McGraw Hill, 2017.
+ 4. Smarajit Ghosh, `Control Systems Theory and Applications'. Second Edition, Pearson Education,2013.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                           Bloom's Level
+                                                                                                      K2
+CO1  Explain the construction, operating principles, and basic characteristics of DC                  K3
+CO2  machines, transformers, synchronous machines, induction motors, and special electrical           K4
+CO3  machines.                                                                                        K5
+CO4  Compute the performance parameter of AC and DC machines.
+     Analyse the performance characteristics and speed control methods of DC motors and
+     induction motors under various loading conditions.
+     Identify suitable speed control technique and starting methods for AC and DC
+     machines.
+
+COs-POs & PSOs MAPPING
+
+CO   PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8                                PO9 PO10 PO11             PSO1  PSO2
+
+CO1                                                                                                   3
+                                                                                                      3
+CO2  3                                                                                                2
+                                                                                                      3
+CO3     3
+
+CO4  2
+
+@    3  3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                             34
+                             25HS301 PROJECT AND FINANCE MANAGEMENT                                              Third ACM
+
+                                                                                                                     3003
+
+INTRODUCTION TO PROJECT MANAGEMENT: Project: Trends in project management, project
+
+management versus general management, agile project management, the three goals of a project, life cycle of
+
+projects, project selection methods, project portfolio process, case study ­ friendly assisted living facility.  (9)
+
+ROLE OF PROJECT MANAGER AND ORGANISATION: Project manager's roles and responsibilities,
+
+selection of a project manager, project management as a profession, fitting projects into the parent organisation, the
+
+project team and agile team roles, case study ­ the company with traditional functional organizational structure
+
+setting up teams for the new initiatives.                                                                        (9)
+
+PROJECT ACTIVITIES: The planning process, work-breakdown structure and other aids, risk management,
+
+methods of budgeting, cost estimation, scheduling the project with PERT and CPM networks, allocating resources,
+
+resource loading and levelling, Goldratt's Critical Chain, application ­ using Project Libre for project management,
+
+case study ­ success of Chandrayan-3.                                                                            (9)
+
+INTRODUCTION TO FINANCE MANAGEMENT: Overview - finance and related disciplines, scope and
+
+objectives of financial management, time value of money, and risk and return and calculations with spreadsheet,
+
+analysis using cash flow statement and other statements.                                                         (9)
+
+PERSONAL FINANCE: Compounding, debt, equity and financial markets and investments- debt and bonds.
+
+Equity, mutual funds, hedge funds, real estate, and commodities, Personal financial plan to enhance wealth and job
+
+marketability, components of a financial plan, tools for planning ­ financial statements, applying time value concept
+
+of money and tax planning.                                                                                       (9)
+
+                                                                                    Total L: 45 periods
+
+TEXTBOOKS:
+    1. Jack R. Meredith and Scott M. Shafer, `Project Management in Practice'. Wiley, 2021
+
+2. Khan M. Y. and Jain P. K., `Basic Financial Management'. Tata McGraw Hill, 2012
+
+3. Michael Fisher, `Saving and Investing'. Author House, 2005
+
+4. Jeff Madura, `Personal Finance'. Pearson, 2020
+
+REFERENCES:
+
+1. National Finance Olympiad, `Personal Finance Handbook'. Pockvue Solutions, 2024
+
+2. Glen Arnold, `Investing'. Financial Times Guides, 2020
+
+3. Rachel Siegel and Carol Yacht, `Personal Finance'. Open Textbook Library, Saylor Foundation, 2009
+
+4. Google, `Google Project Management: Professional Certificate'. Google Project Management: Professional
+
+     Certificate, Coursera.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                          Bloom's Level
+                                                                                                     K2
+CO1  Understand the fundamentals of project management, roles of project managers, and               K3
+     project life cycle concepts.                                                                    K4
+                                                                                                      -
+CO2  Apply project planning tools like WBS, PERT, and CPM to effectively plan and
+     schedule project activities.
+
+CO3  Analyse various personal finance instruments and develop a personalized financial plan
+     considering investment, tax, and future wealth building strategies.
+
+CO4  Apply principles of financial management and spreadsheet-based tools to evaluate cash
+     flows, time value of money, and risk-return trade-offs.
+
+COs-POs & PSOs MAPPING
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9                              PO10  PO11               PSO1                PSO2
+
+CO1
+
+CO2 2
+
+CO3          2
+
+CO4                          1
+
+@    2       2               1
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                                 35
+                                                                                                                                                                Third ACM
+
+                               25IC311 SENSORS AND TRANSDUCERS LABORATORY
+                                                                                                                                      0042
+
+LIST OF EXPERIMENTS:
+  1. Measurement of weight using Strain gauge and Wheatstone bridge circuit.
+  2. Measurement of linear displacement using LVDT.
+  3. Temperature measurement using Thermocouple.
+  4. Temperature measurement using RTD and Thermistor.
+  5. Design of cold junction compensation for Thermocouples and lead wire compensation schemes for RTD.
+  6. Measurement of force and pressure using load cell.
+  7. Measurement of object distance using proximity sensor.
+  8. Experimental study of loading effect of potentiometer.
+  9. Implementation of opto-coupler using photoelectric transducers.
+  10. Characteristics of capacitive measurement systems.
+  11. Study of Hall effect sensor and digital transducer.
+  12. Study of vibration measurement using piezoelectric sensor.
+
+                                                                                                                      Total P:60 Periods
+REFERENCES:
+
+   1. John P Bentley, `Principles of Measurement Systems'. Third Edition, Pearson Education, 2015
+   2. Department of Instrumentation and Control Systems Engineering, `Laboratory Manual'. PSG Institute of
+
+      Technology and Applied Research, Neelambur, Coimbatore-641062, 2026
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                         Bloom's Level
+
+     Explain the working principles and characteristics of various sensors and transducers
+CO1 such as strain gauges, LVDT, and temperature sensors through hands-on experiments          K2
+
+     Apply sensor measurement techniques to determine physical parameters like                 K3
+CO2 displacement, pressure, and vibration in practical scenarios.
+
+     Analyse the performance characteristics and limitations of different sensor systems
+CO3 including capacitive, Hall effect, and piezoelectric sensors.                              K4
+
+     Design sensor-based measurement setups by interfacing opto-couplers, proximity
+CO4 sensors, and load cells for accurate real-world parameter detection.                       K5
+
+COs-POs & PSOs MAPPING
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2  3                  3                                          3      2                 3      2
+
+CO3     3                                                          3      2                 3      2
+
+CO4              3      3                                          3                        3      2
+
+@    3  3        3      3                                          3      2                 3      2
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                      36
+                                                                                                                                                                Third ACM
+
+                                         25IC312 C PROGRAMING LABORATORY
+                                                                                                                                      0021
+
+1. Working with RAPTOR Tool ­ Flowchart Interpreter
+2. Operators
+3. Decision making Statements
+4. Loops: while, do...While, for
+5. One dimensional array
+6. Two-dimensional array
+7. Strings
+8. Functions
+9. Recursive functions
+10. Structures, array of structures and union.
+11. Pointers and double pointers.
+12. File handling.
+Note: Separate Problem Sheets will be provided during the course
+
+                                                                                                                    Total P: 30 Periods
+REFERENCES:
+1. Paul Deitel and Harvey Deitel, `C How to Program: With an Introduction to C++'. Eighth edition, Pearson
+
+    Education, 2018.
+2. Ajay Mittal, `Programming in C - A Practical approach'. Pearson, New Delhi, 2010.
+3. Gottfried B., `Programming with C'. McGraw Hill Education, New Delhi, 2018.
+4. Herbert Schildt, `C: The Complete Reference'. McGraw Hill, New Delhi, 2017.
+5. Kernighan B. W. and Ritchie D. M., `C Programming Language (ANSI C)'. Prentice Hall of India, New Delhi,
+
+    2013
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                             Bloom's Level
+
+CO1 Understand the basic concepts of C programming through simple programs.                           K2
+
+CO2  Write a program that utilizes conditional statements, arrays, functions and structures is        K3
+     used to solve problems.
+
+CO3  Create modular programs with function calls, recursive functions, and pointer-based              K4
+     operations to enhance program structure and increase the coding efficiency.
+
+COs-POs & PSOs MAPPING
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9                              PO10     PO11               PSO1      PSO2
+
+CO1                                                                                                         2
+                                                                                                            2
+CO2  3                  3
+
+CO3     2               2
+
+@    3  2               3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                   25EEC02 FOUNDATIONS OF PROBLEM SOLVING
+                                                                                                                                      0021
+
+PROBLEM SOLVING:
+1.Speed Mathematics (SAW, Oz, Mirror methods)
+2. Speed Mathematics (High5, Minion, Butterfly methods)
+3. Speed Mathematics (Inception, Golden eye methods)
+4. Thinking with Numbers
+5. Problem Solving with Visual information
+6. Words Puzzles
+7. Resume Writing Essentials
+
+                                                                                                                     Total P: 30 Periods
+REFERENCES:
+1. R. S. Aggarwal, `Quantitative Aptitude for Competitive Examination'. S Chand Publishing, New Delhi, 2017.
+
+                                                                                                          37
+                                                                                              Third ACM
+
+                                                     SEMESTER IV
+
+                   25MA403 STOCHASTIC PROCESSES AND STATISTICAL ANALYSIS
+
+                                                                                                  3104
+
+PROBABILITY AND DISCRETE RANDOM VARIABLES: Probability, axioms, conditional probability, law
+
+of total probability, Bayes' theorem, discrete random variables, probability mass function, cumulative distribution
+
+function, binomial, Poisson and geometric random variables, expected values.                      (9+3)
+
+CONTINUOUS RANDOM VARIABLES: Cumulative distribution function, probability density function,
+
+uniform, exponential and Gaussian random variables, expected values.                              (9+3)
+
+PAIRS OF RANDOM VARIABLES: Joint cumulative distribution function, joint probability mass function,
+marginal probability mass function, joint probability density function, marginal probability density function,
+independent random variables, expected values, covariance, correlation and independence, central limit theorem.
+
+                                                                                                                                      (9+3)
+
+STOCHASTIC PROCESSES: Types of stochastic processes, Poisson process, discrete time Markov chains,
+
+classification of states, limiting state probabilities.                                           (9+3)
+
+STATISTICAL INFERENCE: Point estimation, interval estimation. Hypothesis testing: one and two tailed tests,
+
+tests concerning mean, proportion, and variance, single and two samples, tests for goodness of fit and independence
+
+of attributes.                                                                                    (9+3)
+
+                                                                                                    Total L: 45 + T: 15 = 60 Periods
+TEXT BOOKS:
+1. Roy D Yates and David J Goodman, `Probability and Stochastic Processes'. Wiley India, New Delhi, 2021.
+
+2. Ronald E. W, Raymond H. M, Sharon L. M and Keying Ye, `Probability and Statistics for Engineers and
+    Scientists'. Pearson Education, New Delhi, 2016.
+
+REFERENCES:
+1. Saeed Ghahramani, `Fundamentals of Probability with Stochastic Processes'. CRC Press, USA, 2018.
+2. Dougles C Montgomery and George C Runger, `Applied Statistics and Probability for Engineers'. Wiley India,
+
+    New Delhi, 2018.
+3. Athanasios P and Unnikrishna P. S, `Probability, Random Variables and Stochastic Processes'. Tata McGraw
+
+    Hill, New Delhi, 2017.
+4. Arnold O. A, `Probability, Statistics and Queueing theory: with computer science applications'. Academic
+
+    press, USA, 2014.
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                           Bloom's Level
+
+CO1  Explain the concepts related to Probability, Random variables, Stochastic processes and  K2
+     Statistical inference.
+
+CO2  Apply the techniques of Probability, Random variables, Stochastic processes and          K3
+     Statistical inference to solve engineering problems.
+
+CO3  Analyse the solutions of engineering problems using Probability, Random variables,       K4
+     Stochastic processes and Statistical inference.
+
+CO4  Use modern tools to solve engineering problems with the help of Matrix Theory and
+     Numerical Methods.
+
+COs-POs & PSOs MAPPING
+   CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2             3
+
+CO3                1
+
+CO4                   1
+
+@               3  1  1
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                  38
+            25IC401 ELECTRICAL AND ELECTRONIC MEASUREMENTS                                         Third ACM
+
+                                                                                                       3003
+
+MEASUREMENT ERROR ANALYSIS: Errors in measurement- types of errors - measurement error
+
+combinations- probability of errors: normal distribution of errors- probable error- limiting error- propagation of
+
+errors- linear and weighted regression- uncertainty analysis.                                      (9)
+
+ANALOG INDICATING INSTRUMENTS: Types of ammeters and voltmeters- PMMC Instruments -Moving
+
+Iron Instruments -Dynamometer type Instruments. Measurement of power and energy- Dynamometer type
+
+wattmeter - Single phase Induction type energy meter, Calibration of meters, Instrument Transformers: Ratio and
+
+phase angle errors, Phasor diagram.                                                                (9)
+
+MEASUREMENT OF R, L and C: Classification of resistances, Measurement of resistances: Ammeter Voltmeter
+
+method, Substitution method, Substitution method, Wheatstone bridge, Kelvin's double bridge method, General
+
+equation for AC bridge balance ­ Maxwell's bridge­Wien's bridge­Hay's bridge­Schering bridge ­ Anderson
+
+bridge.                                                                                            (9)
+
+TEST AND MEASURING INSTRUMENTS: Evolution of test and measuring instruments, Digital voltmeter of
+
+Ramp and Integrating types, Digital multimeter, Digital Storage Oscilloscope, Mixed Signal Oscilloscope, Wave
+
+form analysers­ Distortion meter ­Power analyser - Spectrum Analyzer, Signal generators.           (9)
+
+ELECTROMAGNETIC COUPLING: Introduction, Interference coupling mechanism, basics of circuit layout
+
+and grounding, concepts of interfaces, filtering and shielding - Safety: Introduction, electrical hazards, hazardous
+
+areas and classification - Non-hazardous areas, enclosures ­ NEMA types, fuses and circuit breakers -Protection
+
+methods: purging, explosion proofing and intrinsic safety.                                         (9)
+
+                                                                                                                     Total L: 45 Periods
+TEXT BOOKS:
+1. Golding E W, Widdis F C, `Electrical Measurements and Measuring Instruments'. Third Edition, Reem
+
+    Publications, New Delhi,2011.
+2. David A Bell, `Electronic Instrumentation and Measurements'. Oxford Pubilisher,2017.
+REFERENCES:
+1. Kalsi H S., `Electronic Instrumentation'. Third Edition, Tata McGraw-Hill, New Delhi,2017.
+2. Sawhney A K, `A Course in Electrical and Electronic Measurement and Instrumentation'. Dhanpat Rai and
+
+    Sons, New Delhi,2017.
+3. Albert D, Helfrick, William D Cooper, `Modern Electronic Instrumentation and Measurement Techniques'.
+
+    Pearson Education, NewDelhi,2016.
+4. Rangan C S, Sharma G R, Mani V S, `Instrumentation Devices and Systems'. McGraw Hill Education, Chennai,
+
+    2017.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                             Bloom's Level
+                                                                                                       K2
+CO1      Explain the types and sources of measurement errors, working principles of analog             K3
+CO2      instruments, and the fundamentals of electromagnetic interference and electrical              K4
+CO3      safety.
+         Apply suitable instruments and techniques--including analog meters, bridge methods,
+         and digital test equipment--to measure electrical quantities and analyse signals in
+         practical systems.
+
+         Analyse the performance and safety aspects of measurement systems considering
+         electromagnetic interference, circuit layout, and protective methods in hazardous and
+         non-hazardous environments.
+
+COs-POs & PSOs MAPPING
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2      3                                                                                      3  2
+
+CO3         3                        2                                                          3  2
+
+@        3  3                        2                                                          3  2
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                      39
+                                    25IC402 CONTROL SYSTEMS                                 Third ACM
+
+                                                                                               3104
+
+INTRODUCTION AND MODELING OF CONTROL SYSTEMS: Basic Components of Control Systems ­
+
+Types of Control Systems ­ Types of Feedback Control Schemes ­ Modeling of dynamic systems ­ Mechanical
+
+systems, Electrical systems ­Analogies - Linearization of Non-linear systems - Block diagram model ­ Block
+
+diagram and transfer function signal flow graph ­ Application of Mason's gain formula ­ Conversion between block
+
+diagrams to signal flow graphs.                                                                           (9+3)
+
+ANALYSIS AND DESIGN IN TIME DOMAIN: Introduction - Standard test signals - Time response of
+
+prototype first order and second order systems ­ Specification of step response - Analysis of steady state error: static
+
+error constants - Concepts of stability: absolute and relative stability ­ Routh-Hurwitz criterion. Introduction ­ Root
+
+locus analysis ­ Design using root locus Plots ­ Control system design--compensators.                     (9+3)
+
+ANALYSIS AND DESIGN IN FREQUENCY DOMAIN: Introduction--Frequency response analysis ­
+
+Frequency response specifications ­ Frequency response plots - Bode plot, Gain margin, Phase margin - Nyquist
+
+stability criterion - Stability analysis - Relative stability analysis - Control system design by frequency response
+
+analysis­ Compensators.
+
+                                                                                                          (9+3)
+
+MATHEMATICAL MODELING IN STATE SPACE: State variable representation: State variable concepts,
+
+State variable modeling - Modeling of mechanical, Electrical ­ State diagrams ­ Transformation of state variables:
+
+Similarity Transformation, Invariance property, Conversion of transfer functions to canonical state variable models -
+
+Conversion of state variable model to transfer functions.                                                 (9+3)
+
+ANALYSIS AND DESIGN IN STATE SPACE: Characteristic equation - Eigen values and Eigen vectors -
+
+Solution of state equation ­ State transition matrix - Concepts of controllability and observability - Controllability
+
+tests ­ Observability tests ­ Controllable and observable companion forms ­ Duality­ Pole placement design ­
+
+Design of state observers: Full order and reduced order observers.                                        (9+3)
+
+                                                                       Total L: 45 + T: 15 = 60 Periods
+
+TEXT BOOKS:
+
+1. M. Gopal, `Control Systems: Principles and Design'. Fourth Edition, Tata McGraw Hill, New Delhi, 2012
+
+2. K Ogata, `Modern Control Engineering'. Pearson, Fifth Edition,2018
+
+REFERENCES:
+ 1. William J Palm III, `System Dynamics'. Second Edition, Tata McGraw Hill, 2012.
+ 2. Norman S Nise, `Control Systems Engineering'. Sixth Edition, John Wiley & Sons, 2011.
+ 3. Farid Galnaraghi & Benjamin C. Kuo, `Automatic Control System'. Ninth Edition, John Wiley & Sons, Inc,2010.
+ 4. Anand Natarajan & P Ramesh Babu, `Control Systems Engineering'. Second Edition, SciTech, 2010.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                      Bloom's Level
+                                                                                                K2
+CO1  Classify the components of control systems and modelling methods for dynamic               K3
+     systems                                                                                    K4
+                                                                                                K5
+CO2 Employ state variable concepts for arriving at canonical models of systems                  K6
+
+CO3  Examine the performance of the systems both using time and frequency response
+CO4  principles
+CO5  Evaluate the state equations using eigenvalue and eigenvectors to select the
+     controllability and observability nature of the systems
+     Design control systems from frequency response characteristics and state observers
+     both in full and reduced forms
+
+COs-POs & PSOs MAPPING
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2  3                                                                                   2                2
+
+CO3          2                      1                                                    2                2
+
+CO4                      1       1                   1                                   2                2
+
+CO5                              2                                                       2                2
+
+@    3       2           1       2  1                1                                   2                2
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                             40
+                   25IC403 MICROPROCESSORS AND MICROCONTROLLERS                              Third ACM
+
+                                                                                                 4004
+
+MICROPROCESSOR: Architecture of 8-bit microprocessor, bus configurations, Instruction set classifications,
+data format and storage ­ Overview of 8085 Instruction Set­Programming exercise­Instruction execution time.
+
+                                                                                                                                        (12)
+
+MEMORY AND I/O INTERFACING: Interface requirements­Address space partitioning Buffering of Buses
+
+Memory control signals Typical EPROM, RAM Interfacing. I/O interfacing: Memory mapped I/O scheme­I/O
+
+mapped I/O scheme­I/O ports -Programmable peripheral interface.                              (12)
+
+MICROCONTROLLER: Microprocessor versus Microcontroller­ 8051 Microcontroller Block diagram ­ Internal
+
+Data RAM ­ Special Function Registers ­ Internal register banks and stack­Addressing mode and Instruction Set­
+
+8051 Assembler and Intel Hex file format.                                                    (12)
+
+ON-CHIP PERIPHERALS AND INTERFACING: Input / Output Ports structure - Counter and Timers, Serial
+
+Data Input / Output - Interrupts, LCD, LED and Keyboard Interfacing, ADC, DAC and Sensor interfacing,
+
+interfacing to external memory.                                                              (12)
+
+APPLICATIONS AND PROGRAMMING IN C: Stepper and DC moto interfacing, 8051 programming in C:
+
+Data types, I/O programming, Logic operation, Accessing code ROM space.                      (12)
+
+                                                                                                                     Total L: 60 Periods
+TEXT BOOKS:
+1. Ramesh S Gaonkar, `Microprocessor Architecture, Programming and Applications with the 8085'. Sixth
+
+     Edition, Penram International,2013.
+2. Muhammad Ali Mazidi, Janice Gillispie Mazidi, Rolin D McKinlay, `8051 Microcontroller and Embedded
+
+     Systems'. Second Edition, Pearson Education,2022.
+REFERENCES:
+1. Kenneth Ayala, `The 8051 Microcontroller'. Third Edition, Thomson Delmar Learning, 2016.
+2. Krishna Kant, `Microprocessors and Microcontrollers: Architecture, Programming and System Design 8085,
+
+     8086, 8051,8096'. Second Edition, PHI Learning Pvt.Ltd.,2016
+3. Douglas V Hall, `Microprocessor and Interfacing: Programming and Hardware'. Third Edition, McGraw Hill
+
+     Inc, 2013.
+4. Subrata Ghosal, `8051 Microcontroller: Internals, Instructions, Programming and Interfacing'. Pearson
+
+     Education India,2010.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                          Bloom's Level
+
+     Explain the architecture, instruction set, timing, and interfacing techniques of 8-bit
+
+CO1  microprocessors and microcontrollers, with emphasis on 8085 and 8051, including         K2
+     memory and I/O interfacing, address space partitioning, bus buffering, and
+                                                                                             K3
+     programmable I/O devices.
+                                                                                             K4
+CO2  Demonstrate the use of 8051 on-chip peripherals such as timers, serial communication,
+     and interrupts in basic embedded system design.                                         K6
+
+     Construct embedded applications by interfacing 8051 with external hardware                PSO2
+                                                                                                  2
+CO3 components such as LEDs, sensors, motors, ADCs, and DACs using assembly and C                 2
+                                                                                                  3
+     programming.                                                                                 3
+
+     Design and implement a mini-project or case study using 8051 microcontroller and C
+
+CO4 programming, involving real-world applications such as stepper motor control or sensor-
+
+     based automation.
+
+COs-POs & PSOs MAPPING
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1
+
+CO1
+
+CO2  3
+
+CO3     2
+
+CO4                     1
+
+@    3  2               1
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                             41
+                    25IC404 DATA STRUCTURES AND ALGORITHMS                                          Third ACM
+
+                                                                                                        2204
+
+ALGORITHM ANALYSIS: Algorithms- properties ­-Recursive Algorithms- Analysis of Algorithms-Best case,
+Average case, Worst case ­ Asymptotic Notations-Data types ­ Abstract data types ­ Types of Data structures
+
+                                                                                                                                      (6+6)
+
+LINEAR DATA STRUCTURES: Arrays-operations ­ Memory Representation- Row Major and Column Major ­
+Multi Dimensional Arrays ­ Sparse Matrix, Dense Matrix. Stack: Array implementation ­ operations-Applications ­
+Checking of well-formedness of Parenthesis- Infix to Postfix Conversions.
+
+                                                                                                                                       (6+6)
+
+QUEUES AND LISTS: QUEUES: Queue Operations-Circular Queue - Array Implementation of Queue, LINKED
+
+LIST: Types-Singly Linked List ­ Circularly Linked List ­ Doubly Linked List­List operations-linked stack-linked
+
+queue.                                                                                              (6+6)
+
+NONLINEAR DATA STRUCTURES: Trees-Terminologies - Binary trees ­ Representations ­ Operations ­
+
+Traversals- In order, Pre-order and Post order- Binary Search Trees ­ Insertion and deletion. Graph: Terminologies -
+
+Breadth First Search algorithm- Depth First Search Algorithm.                                       (6+6)
+
+SORTING AND SEARCHING: Bubble Sort ­ Insertion Sort ­ Radix Sort- Quick sort- Algorithms and Time
+
+Complexity. Linear Search ­ Binary Search ­ Hashing: Hash functions ­ Separate Chaining ­ Open Addressing ­
+
+Linear. robing.                                                                                     (6+6)
+
+                                                                                                    Total L: 30 + T: 30 = 60 Periods
+TEXT BOOKS:
+1. Thomas H Cormen, Charles E Leiserson, Ronald L Rivest, Clifford Stein, `Introduction to Algorithms'. The MIT
+
+    Press, 2022.
+2. Mark Allen Weiss, `Data Structures and Algorithm Analysis in C++'. Pearson Education, 2012.
+
+REFERENCES:
+1. Ellis Horowitz, Sartaj Sahni, Sanguthevar Rajasekaran, `Fundamentals of Computer
+
+    Algorithms'. Second Universities Press, 2011.
+2. Sahni Sartaj, `Data Structures, Algorithms and Applications in C++'. Silicon Press, 2009.
+3. Aaron M Tanenbaum, Moshe J Augenstein, Yedidyah Langsam, `Data structures using C and C++'. PHI
+
+    Learning, 2009.
+4. G A V Vijayalakshmi Pai, `Data Structures and Algorithms Concepts, Techniques and Allocations'. New
+
+    Delhi: McGraw Hill Education (India) Private Limited, 2015.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                                 Bloom's Level
+
+CO1     Explain the concepts of algorithms, their analysis, asymptotic notations, and types of              K2
+        data structures.                                                                                    K3
+                                                                                                            K4
+         Apply appropriate memory representations to implement and manipulate linear data                   K5
+CO2 structures such as arrays, stacks, queues, and linked lists (including their variants) to       PSO1 PSO2
+
+         perform efficient insertion, deletion, and traversal operations for various applications.                  1
+                                                                                                                    1
+CO3     Analyse the structure and operations of non-linear data structures such as trees and
+        graphs and apply suitable traversal and search algorithms.
+
+CO4     Compare different sorting and searching algorithms and evaluate their time
+        complexities to determine their efficiency for given problem scenarios.
+
+COs-POs & PSOs MAPPING
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11
+
+CO1
+
+CO2     3               3
+
+CO3              2      2
+
+CO4                 1   11
+
+@       3        2  1   31
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                    42
+                 25IC411 MICROPROCESSORS AND MICROCONTROLLERS LABORATORY                   Third ACM
+
+LIST OF EXPERIMENTS:                                                                           0042
+ 1. Arithmetic operations using 8085 microprocessor
+ 2. Code conversion using 8085 microprocessor
+ 3. Sorting using 8085
+ 4. Programmable Peripheral Interfacing i) ADC ii) DAC iii) Traffic Light Controller
+ 5. Rolling display using 8085
+ 6. Arithmetic operations using 8051 microcontroller
+ 7. Logical and Bit manipulation using 8051 microcontroller
+ 8. Generation of delay using on-chip timer/counter
+ 9. ADC and DAC interfacing
+ 10. Stepper and DC motor control interface to 8051.
+
+                                                                                                                     Total P: 60 Periods
+REFERENCES:
+1. Mukhopadhyay A. K., `Microprocessor-Based Laboratory Experiments and Projects'. Third Edition, I K
+
+     International Publishing House Pvt. Ltd,2010.
+2. Department of Instrumentation and Control Systems Engineering, `Laboratory Manual'. PSG Institute of
+
+     Technology and Applied Research, Neelambur, Coimbatore-641062, 2026.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                  Bloom's Level
+
+CO1  Use 8085 assembly language instructions to perform arithmetic operations, data          K2
+     conversions, and simple data processing tasks.                                          K3
+                                                                                             K4
+CO2  Develop programs on 8085 and 8051 to implement algorithms such as sorting,              K5
+     searching, and bitwise manipulations.
+
+CO3  Implement peripheral device interfacing through timers, counters, and serial
+     communication features of 8051 for real-time operations.
+
+CO4  Build embedded control applications by interfacing 8051 with ADCs, DACs, and
+     motors for real-world automation tasks.
+
+COs-POs & PSOs MAPPING
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9                              PO10  PO11       PSO1  PSO2
+                                                                                       3
+CO1                                                                         1          3
+                                                                            1          2
+CO2  3                                                                                 1
+                                                                                       3
+CO3              2
+
+CO4                                                  1  11
+
+@                2                                   1  11
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                    43
+                                                                                                                                                                Third ACM
+
+                              25IC412 MEASUREMENT AND CONTROL LABORATORY
+                                                                                                                                      0042
+
+LIST OF EXPERIMENTS:
+1. Measurement of resistance using Wheatstone bridge and Kelvin's Double bridge
+2. Measurement of capacitance and inductance using Schering Bridge and Anderson Bridge
+3. Extension of instrument ranges
+4. Calibration of analog instruments
+5. Calibration of digital instruments
+6. Time response of first order system
+7. Time response of second order system
+8. Study of frequency response analysis of a system
+9. Empirical modelling of real time systems
+10. Design of compensation networks
+
+                                                                                                                      Total P:60 Periods
+REFERENCES:
+1. Golding E W, Widdis FC, `Electrical Measurements and Measuring Instruments'. Reem Publications, New
+
+    Delhi, 2011.
+2. K Ogata, `Modern Control Engineering'. Pearson, Fifth Edition, 2018
+3. Department of Instrumentation and Control Systems Engineering, `Laboratory manual'. PSG Institute of
+
+    Technology and Applied Research, Neelambur, Coimbatore-641062, 2026.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                   Bloom's Level
+
+CO1  Interpret the system performance and determine the specifications from the time          K2
+     response of first order and second order systems.
+                                                                                              K3
+CO2  Evaluate the value of resistance as well as capacitance and inductance using             K4
+     measuring bridges.                                                                       K5
+
+CO3 Calibrate both analog and digital instruments by computing the errors.
+
+CO4 Design compensation networks by both time and frequency response analysis
+
+COs-POs & PSOs MAPPING                                                 PO10 PO11      PSO1            PSO2
+   CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9                                               2               1
+  CO1                                                                    1
+                                                                         1              2               2
+CO2  3                 2                                            1
+                                                                                        2               2
+CO3     3              3                                            1                   2               2
+                                                                                        2               2
+CO4              233                                                1
+
+@    3  3        3  3  3                                            1
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                 25EEC03 PROBLEM SOLVING                              0021
+
+1. Algorithmic thinking, branching and repetition problems
+2. Logical reasoning - data arrangements and relations
+3. Solving problems based on coding and decoding, series, analogy, odd man out and visual reasoning
+4. Problems based on ages, logical connectives, syllogisms, data interpretation and data sufficiency
+5. Solving problems on clocks calendars, direction sense and cubes
+6. Problems based on number system, percentages, simple and compound interest
+7. Resume update
+
+                                                                                                                     Total P: 30 Periods
+REFERENCE:
+1. R S Aggarwal, `Quantitative Aptitude for Competitive Examination'. S Chand Publishing, New Delhi, 2017
+
+                                                                                                      44
+                                                                                                             Third ACM
+
+                           25ICE01 MINI PROJECT - I
+
+                                                                                                             0021
+
+Students should learn project selection methodologies and teamwork skills to design hardware/software products.
+
+Create a good technical report and gain motivation to explain project ideas clearly.
+
+                                                                                                Total P: 30 periods
+
+COURSE GUIDELINES:
+
+ Students can choose project based on industry defined problem or user defined problem which must emulate the
+real-life problems.
+
+ It is desirable that students should work on the project in group of 2 or 3 but not more than three.
+
+ After making the group, students must decide the title of the project and they will present to the department. Also,
+students will prepare the proposal report of 4-5 pages and submit at the time of presentation.
+
+ At the end, students must submit the final report of the project and the format for the same will be given by the
+department.
+
+ The plagiarism check for the final report is to be done through the required software suggested by the department
+and the report must be having similarity less than 25%.
+
+ The students will report to the respective guide/supervisor at every fortnight to discuss their progress.
+
+ The final evaluation of the project will be done based on the demonstration and presentation.
+
+COURSE OUTCOME:
+
+At the end of the course, students will be able to:                                             Bloom's Level
+
+CO1  Identify and define a problem statement relevant to simple engineering                             K2
+     problems in electrical and electronics engineering.                                                K3
+                                                                                                        K4
+CO2 Apply basic electronic components and electric circuit concepts to develop a                        K6
+           working project.
+                                                                                                         -
+CO3 Analyze and solve the complex problems to proposed project work
+
+           Design and develop a basic electrical or electronic system to solve a real-world
+CO4
+
+           problem using appropriate tools and techniques.
+
+     Demonstrate teamwork, project and finance planning, time management and
+
+CO5 communicate technical information effectively through reports and
+
+     presentations.
+
+COs-POs & PSOs MAPPING
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9                                 PO10 PO11                       PSO1  PSO2
+
+CO1                                                                                                      3     3
+                                                                                                         3     3
+CO2  3                     3                                                                             3     3
+
+CO3     3                  3                                                                             3     3
+
+CO4                  3  3  3                         3
+
+CO5                                                  3333                             3      3
+
+@    3  3            3  3  3                         3  3  3        3                 3      3
+
+1 ­ low, 2 ­ medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                                 45
+                                                                                                    Third ACM
+
+                                   MANDATORY COURSES
+
+                                   25MC001 ENVIRONMENTAL SCIENCES
+
+             (Common to Civil, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+                                                                                                    2000
+
+INTRODUCTION TO ENVIRONMENT: Environment - Definition, scope and importance. Types and
+
+composition of atmosphere ­ particles, ions and radicals. Ozone layer- significance, formation and depletion.
+
+Ecosystems- Structure and functions, components, energy flow, food chains, food web, Biodiversity-levels, values
+
+and threats ­ India as a mega-diversity nation, hotspots of biodiversity, endangered and endemic species of India,
+
+conservation of biodiversity.                                                                                (6)
+
+ENERGY RESOURCES: Introduction ­ National and International status- exploitation - sustainable strategies-
+
+Fossil fuels-classification, composition, physico-chemical characteristics and energy content of coal, petroleum and
+
+natural gas; solar energy - introduction, harnessing strategies. Wind energy - availability, wind power plants, wind
+
+energy conversion systems, site characteristics, and types of wind turbines. Supporting renewable energy resources -
+
+tidal, geothermal, hydroelectric.                                                                            (6)
+
+ENVIRONMENTAL POLLUTION: Definition, Sources, causes, impacts and control measures of air pollution,
+
+water pollution, soil pollution, marine pollution, noise pollution, thermal pollution, nuclear hazards, RF hazards,
+
+Role of an individual in prevention of pollution. Disaster Management: Floods, earthquake, cyclone and landslides ­
+
+Case studies, consequences and rescue measures.                                                              (6)
+
+WASTE MANAGEMENT: Waste water - Characteristics of domestic and industrial wastewater - COD and BOD,
+
+Various stages of treatment ­ primary, secondary, tertiary treatment- Biological and advanced oxidation processes.
+
+Solid waste management ­ Characteristics of municipal solid waste (MSW), biomedical, automobile and e-wastes
+
+and their management, landfills, incineration, pyrolysis, gasification and composting.                       (6)
+
+SOCIAL ISSUES AND THE ENVIRONMENT: Environmentally Sustainable work practices- Rain water
+
+harvesting, Role of non-governmental organizations. Human ethics and rights- impact on environment and human
+
+health, role of information technology on environment and human kind. Green IT policies, Process of EIA - ISO
+
+14000. Legislation- Environment protection act ­ Air (Prevention and Control of Pollution) act ­ Water (Prevention
+
+and control of Pollution) act ­ Wildlife protection act ­ Forest conservation act.                           (6)
+
+                                                                                        Total L: 30 periods
+
+TEXT BOOKS:
+
+1. Gilbert M. Masters, `Introduction to Environmental Engineering and Science'. Pearson Education, New Delhi,
+
+2004.
+
+2. Deswal S and Deswal A, `A Basic Course in Environmental Studies'. Dhanpat Rai and Co, New Delhi, 2004.
+
+REFERENCES:
+1. Benny Joseph, `Environmental Science and Engineering'. Tata McGraw - Hill, New Delhi, 2006.
+2. Koteswara Rao M V R, `Energy Resources: Conventional & Non ­ Conventional'. BSP Publications, New
+
+     Delhi, 2006.
+3. Botkin and Keller, `Environmental Science'. Wiley India Private Limited, New Delhi, 2013.
+
+COURSE OUTCOMES:
+
+At the end of the course, students will be able to:                                           Bloom's Level
+                                                                                                     K2
+CO1 Explain the basic concepts of environment, energy sources and waste management
+                                                                                                     K3
+CO2  Use different renewable energy resources and environment protection measures for
+     sustainable development
+
+CO3 Conduct a case study and real-time environmental issues and present as a team
+
+COs-POs & PSOs MAPPING:
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10                                             PO11  PSO1  PSO2
+
+CO1                                                                                       2
+                                                                                          2
+CO2    1
+
+CO3                                                  2  2  2
+
+@      1                                             2  2  2
+
+1-low, 2-medium, 3-high @-OVERALL CONTRIBUTION TO THE COURSE
+
+                                                                                                             46
+                                                                                            Third ACM
+
+                            25MC002 INDIAN CONSTITUTION
+
+             (Common to Civil, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+                                                                                            2000
+
+INTRODUCTION: Evolution of Indian Constitution; significance of constitution; Composition; Preamble and its
+
+Philosophy.                                                                                 (4)
+
+RIGHTS, DUTIES AND DIRECTIVE PRINCIPLES: Fundamental Rights- Writs and Duties, Directive
+
+Principles of State Policy                                                                  (5)
+
+UNION GOVERNMENT: Union Government, President and Vice President, Houses of the Parliament and their
+
+functions; Types of Bills, Stages of passing of Bill into an Act, Veto Power, Constitution Amendment Procedure,
+
+Various Amendments made and their significance for India.                                   (6)
+
+STATE GOVERNMENT AND FEDERALISM: Composition of State Legislature; Powers, Functions and
+
+Position of Governor, Function of Chief Ministers, Council of Ministers; The Indian Federal System, Administrative
+
+Relationship between Union and States                                                       (8)
+
+JUDICIARY: Supreme Court, High Court; District Court and Lower Courts - Functions and Powers ­ Judges ­
+
+Qualifications and Powers - Judicial Review.                                                (7)
+
+                                                                                                                     Total L: 30 periods
+TEXT BOOKS:
+1. Subash C Kashyap, `Our Political System'. National Book Trust, 2011.
+2. Praveenkumar Mellalli E, `Constitution of India, Professional Ethics and Human Rights'. Sage Publications
+
+     India Pvt. Ltd., 2015.
+REFERENCES:
+1. Briji Kishore Sharma, `Introduction to the Constitution of India'. Prentice Hall of India, 2010.
+2. Basu D D, `Introduction to the Constitution of India'. Prentice Hall of India, 2016.
+3. Jain. M C, `The Constitution of India'. Law House, New Delhi, 2001.
+4. Shukla V N, `Constitution of India'. Eastern Book Company Ltd., New Delhi, 2011.
+
+COURSE OUTCOMES:
+
+At the end of the course, students will be able to:                                         Bloom's Level
+                                                                                                   K2
+CO1  Explain the evolution, significance, and philosophy of the Indian Constitution,
+     including its Preamble, composition, and core principles.                                     K3
+
+CO2  Analyze the structure, powers, and functions of the Union and State Governments,
+     including the roles of the President, Parliament, Governor, and Council of Ministers,
+     as well as the legislative process, types of bills, and constitutional amendments.
+
+CO3  Conduct a case study on the Indian Constitution, demonstrating understanding of its
+     evolution, fundamental rights and duties, structure of Union and State governments,
+     federal system, and the role of the judiciary in governance.
+
+COs-POs & PSOs MAPPING:
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2 2
+
+CO3                                                        2  2  2
+
+@    2                                                     2  2  2
+
+1-low, 2-medium, 3-high @-Overall Contribution to the Course
+
+                                                                                            47
+                                                                                                  Third ACM
+
+                                     25MC003 INDUSTRIAL SAFETY
+
+           (Common to Civil, CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+
+                                                                                                  2000
+
+SAFETY TERMINOLOGIES: Hazard-Types of Hazard- Risk-Hierarchy of Hazards Control Measures-Lead
+
+indicators- lag Indicators-Flammability- Toxicity Time-weighted Average (TWA) - Threshold Limit Value (TLV) -
+
+Short Term Exposure Limit (STEL)- Immediately dangerous to life or health (IDLH)- acute and chronic Effects-
+
+Routes of Chemical Entry-Personnel Protective Equipment- Health and Safety Policy-Material Safety Data Sheet
+
+MSDS.                                                                                             (6)
+
+STANDARDS AND REGULATIONS: Indian Factories Act-1948- Health- Safety- Hazardous materials and
+
+Welfare- ISO 45001:2018 occupational health and safety (OH&S) - Occupational Safety and Health Audit
+
+IS14489:1998- Hazard Identification and Risk Analysis- code of practice IS 15656:2006.            (6)
+
+SAFETY ACTIVITIES: Toolbox Talk- Role of safety Committee- Responsibilities of Safety Officers and Safety
+
+Representatives- Safety Training and Safety Incentives- Mock Drills- On-site Emergency Action Plan- Off-site
+
+Emergency Action Plan- Safety poster and Display- Human Error Assessment.                         (6)
+
+WORKPLACE HEALTH AND SAFETY: Noise hazard- Particulate matter- musculoskeletal disorder improper
+
+sitting poster and lifting Ergonomics RULE & REBA- Unsafe act & Unsafe Condition- Electrical Hazards- Crane
+
+Safety- Toxic gas Release.                                                                        (6)
+
+HAZARD IDENTIFICATION TECHNIQUES: Job Safety Analysis-Preliminary Hazard Analysis-Failure mode
+
+and Effects Analysis- Hazard and Operability- Fault Tree Analysis- Event Tree Analysis Qualitative and
+
+Quantitative Risk Assessment- Checklist Analysis- Root cause analysis- What-If Analysis- and Hazard
+
+Identification and Risk Assessment.                                                               (6)
+
+                                                                                           Total L: 30 periods
+
+TEXTBOOKS
+
+1. Jain R. K. and Sunil S. Rao, `Industrial Safety, Health and Environment Management Systems'. Khanna
+
+Publisher, 4th Edition, 2000.
+
+2. Deshmukh L. M., `Industrial Safety Management: Hazard Identification and Risk Control'. McGraw-Hill
+
+Education, 2007.
+
+REFERENCES
+1. John Ridley, John Channing, `Safety at Work'. Routledge, 7th Edition, 2008.
+2. Dan Petersen, `Techniques of Safety Management: A System Approach'. Amer Society of Safety Engineers, 4th
+
+     Edition, 2003.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to                                                Bloom's Level
+                                                                                                         K2
+CO1    Describe the safety protocols and standard operating procedures in industrial settings to         K3
+       ensure compliance with safety regulations and minimize hazards in the workplace.
+                                                                                                          -
+       Implement and test emergency response plans tailored to the industrial environments,
+
+CO2 ensuring effective action during emergencies such as fires, chemical spills or equipment
+
+       malfunctions.
+
+       Review and present on risk assessments and hazards using industry-specific tools to
+
+CO3 identify potential safety risks and choose appropriate corrective actions to prevent
+
+       accidents and injuries.
+
+CO - PO & PSO MAPPING
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1
+
+CO2 2                                               2  2
+
+CO3                                                 1  1  1        1                    1         1
+
+@      2                                            2  2  1        1                    1         1
+
+1 - low, 2- medium, 3 ­ high @-Overall Contribution to the Course
+
+                                                                                                     48
+           25MC004 DISASTER RISK REDUCTION AND MANAGEMENT                                            Third ACM
+           (Common to CSE, EEE, ECE, ICE, MECH, AI&DS and EE-VLSI)
+                                                                                                         2000
+
+HAZRADS, VULNERABILITY AND DISASTER RISKS: Definition: Disaster, Hazard, Vulnerability,
+
+Resilience, Risks ­ Types of Disasters: Natural, Human induced, Climate change induced ­ Earthquake, Landslide,
+
+Flood, Drought, Fire, etc. ­ Technological disasters - Structural collapse, Industrial accidents, oil spills - Causes,
+
+Impacts including social, Economic, political, environmental, health, psychosocial, etc.- Disaster vulnerability
+
+profile of India and Tamil Nadu - Global trends in disasters: urban disasters, pandemics, Complex emergencies,
+
+Inter relations between Disasters and Sustainable development Goals.                                      (6)
+
+DISASTER RISK REDUCTION (DRR): Sendai Framework for Disaster Risk Reduction, Disaster cycle -
+
+Community Based DRR, Structural ­ Non-structural measures, Roles and responsibilities of - community,
+
+Panchayati Raj Institutions / Urban Local Bodies (PRIs/ULBs), States, Centre, and other stakeholders - Early
+
+Warning System ­ Relevance of indigenous Knowledge, appropriate technology and Local resources.           (6)
+
+DISASTER MANAGEMENT: Components of Disaster Management ­ Preparedness of rescue and relief,
+
+mitigation, rehabilitation and reconstruction - Disaster Risk Management and post disaster management ­
+
+Compensation and Insurance- Disaster Management Act (2005) and Policy - Institutional Processes and Framework
+
+at State and Central Level - (NDMA ­ SDMA ­ DDMA ­ NRDF - Civic Volunteers).                              (6)
+
+TOOLS AND TECHNOLOGY FOR DISASTER MANAGEMENT: Early warning systems - Components of
+
+Disaster Relief: Water, Food, Sanitation, Shelter, Health, Waste Management, Institutional arrangements
+
+(Mitigation, Response and Preparedness) ­ Role of GIS and Information Technology in Disaster Management ­
+
+Disaster Damage Assessment - Elements of Climate Resilient Development ­ Standard operation Procedure for
+
+disaster response ­ Financial planning for disaster Management.                                           (6)
+
+DISASTER MANAGEMENT: CASE STUDIES: Case studies in the context of disasters - Landslide Hazard
+
+Zonation, Earthquake Vulnerability Assessment of Buildings and Infrastructure, Drought Assessment, Coastal
+
+Flooding, Storm Surge Assessment, Floods: Fluvial and Pluvial Flooding, Forest Fire, Man Made disasters.  (6)
+
+                                                                                 Total L: 30 periods
+
+TEXTBOOKS
+
+1. Thomas D. Schneid, and Larry Collins, `Disaster Management and Preparedness'. CRC Publications, 2016.
+
+2. R. Singh, `Disaster Management Guidelines: Earthquakes, Landslides, Avalanches and Tsunami'. Horizon Press
+
+Publications, 2017.
+
+3. J. P. Singhal, `Disaster Management'. Laxmi Publications, 2024.
+
+4. T. Bhattacharya, `Disaster Science and Management'. McGraw Hill India Education Pvt. Ltd., 2012.
+
+REFERENCES
+1. Government of India, `Disaster Management Act'. New Delhi, 2005.
+2. Government of India, `National Disaster Management Policy'. New Delhi, 2009.
+3. R. Shaw, `Community based Disaster risk reduction'. Natural Hazard Science, Oxford Research Encyclopedias,
+
+    2016.
+
+COURSE OUTCOMES
+
+At the end of the course, students will be able to:                                          Bloom's Level
+                                                                                                    K2
+CO1  Summarize the concepts, tools, technologies and strategies for disaster risk reduction
+     and management.
+
+COs-POs & PSOs MAPPING
+
+CO PO1 PO2 PO3 PO4 PO5 PO6 PO7 PO8 PO9 PO10 PO11 PSO1 PSO2
+
+CO1                     1                            1  1        1    1       1
+
+@                       1                            1  1        1    1       1
+
+1-low, 2-medium, 3-high @-Overall Contribution to the Course
+
+                                                                                                          49
+
