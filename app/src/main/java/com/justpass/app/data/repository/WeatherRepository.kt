@@ -24,7 +24,13 @@ object WeatherRepository {
             val prefs = SecurePreferences.getInstance(context)
             prefs.lastWeatherScene = scene.name
             prefs.lastWeatherFetchTime = System.currentTimeMillis()
-            scene
+            // Persist today's sunrise/sunset so day↔night can be re-derived from
+            // the device clock between fetches (see currentScene).
+            prefs.weatherSunriseMin = isoTimeToMinutes(response.daily?.sunrise?.firstOrNull())
+            prefs.weatherSunsetMin = isoTimeToMinutes(response.daily?.sunset?.firstOrNull())
+            // Reflect the live clock immediately in case the fetched scene's
+            // day/night no longer matches "now" (e.g. fetch happened at dusk).
+            dayNightAdjusted(scene, isDayNow(context))
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -36,8 +42,56 @@ object WeatherRepository {
         val lastFetch = prefs.lastWeatherFetchTime
         val cachedName = prefs.lastWeatherScene
         return if (cachedName.isNotEmpty() && (System.currentTimeMillis() - lastFetch) < CACHE_DURATION_MS) {
-            WeatherScene.fromString(cachedName)
+            dayNightAdjusted(WeatherScene.fromString(cachedName), isDayNow(context))
         } else null
+    }
+
+    /**
+     * The scene to show *right now*: the last-known weather condition, but with
+     * its day/night variant re-derived from the device clock vs the stored
+     * sunrise/sunset. This makes a cached CLEAR_DAY flip to CLEAR_NIGHT the
+     * instant the clock passes sunset — independent of the hourly fetch loop or
+     * network availability. Returns null only if we've never stored a scene.
+     */
+    fun currentScene(context: Context): WeatherScene? {
+        val prefs = SecurePreferences.getInstance(context)
+        val name = prefs.lastWeatherScene
+        if (name.isEmpty()) return null
+        return dayNightAdjusted(WeatherScene.fromString(name), isDayNow(context))
+    }
+
+    /** Swap a scene's day/night variant; scenes without a variant pass through. */
+    private fun dayNightAdjusted(scene: WeatherScene, isDay: Boolean): WeatherScene = when (scene) {
+        WeatherScene.CLEAR_DAY, WeatherScene.CLEAR_NIGHT ->
+            if (isDay) WeatherScene.CLEAR_DAY else WeatherScene.CLEAR_NIGHT
+        WeatherScene.PARTLY_DAY, WeatherScene.PARTLY_NIGHT ->
+            if (isDay) WeatherScene.PARTLY_DAY else WeatherScene.PARTLY_NIGHT
+        WeatherScene.OVERCAST, WeatherScene.OVERCAST_NIGHT ->
+            if (isDay) WeatherScene.OVERCAST else WeatherScene.OVERCAST_NIGHT
+        else -> scene // CLOUDY, RAIN, SNOW, FOG, THUNDERSTORM… have no time variant
+    }
+
+    /** Is it daytime per the device clock vs the stored sunrise/sunset? */
+    private fun isDayNow(context: Context): Boolean {
+        val prefs = SecurePreferences.getInstance(context)
+        val sunrise = prefs.weatherSunriseMin
+        val sunset = prefs.weatherSunsetMin
+        val now = java.time.LocalTime.now()
+        val nowMin = now.hour * 60 + now.minute
+        // No stored sun times yet → fall back to a simple 6am–6pm heuristic.
+        if (sunrise < 0 || sunset < 0) return nowMin in (6 * 60) until (18 * 60)
+        return nowMin in sunrise until sunset
+    }
+
+    /** "2026-06-01T06:05" → 365 (minutes after local midnight); -1 if unparseable. */
+    private fun isoTimeToMinutes(iso: String?): Int {
+        if (iso.isNullOrBlank()) return -1
+        val timePart = iso.substringAfter('T', "")
+        val parts = timePart.split(":")
+        if (parts.size < 2) return -1
+        val h = parts[0].toIntOrNull() ?: return -1
+        val m = parts[1].take(2).toIntOrNull() ?: return -1
+        return h * 60 + m
     }
 
     fun shouldFetch(context: Context): Boolean {
