@@ -592,10 +592,8 @@ fun getR2025ProfessionalElectives(department: Department): List<ElectiveCourse> 
         Department.MECH -> r2025MechProfessionalElectives
         Department.CIVIL -> r2025CivilProfessionalElectives
         Department.AIDS -> r2025AidsProfessionalElectives
-        // TODO: curate ICE/VLSI R2025 professional-elective lists from the
-        // official syllabi. Until then, no autocomplete suggestions (user
-        // types the elective name manually).
-        Department.ICE, Department.VLSI -> emptyList()
+        Department.ICE -> r2025IceProfessionalElectives
+        Department.VLSI -> r2025VlsiProfessionalElectives
     }
 }
 
@@ -883,4 +881,94 @@ private val r2025AidsProfessionalElectives = listOf(
     ElectiveCourse("25ADP19", "Quantum Computing"),
     ElectiveCourse("25ADP20", "Responsible AI"),
     ElectiveCourse("25CSP14", "Cyber Forensics")
+)
+
+// R2025 ICE Professional Electives (5 Verticals) — from official B.E. ICE syllabus
+private val r2025IceProfessionalElectives = listOf(
+    // Vertical I - Industrial Electronics and System Design
+    ElectiveCourse("25ICP01", "Industrial Electric Drives"),
+    ElectiveCourse("25ICP02", "Process Modelling and Simulation"),
+    ElectiveCourse("25ICP03", "System Identification"),
+    ElectiveCourse("25ICP04", "P and I Diagrams"),
+    ElectiveCourse("25ICP05", "Graphical System Design"),
+    ElectiveCourse("25ICP06", "Soft Computing Techniques"),
+    ElectiveCourse("25ICP07", "Fault Detection and Diagnosis"),
+    ElectiveCourse("25ICP08", "Automotive Instrumentation and Control"),
+    // Vertical II - Applied Instrumentation
+    ElectiveCourse("25ICP09", "Instrumentation Standards"),
+    ElectiveCourse("25ICP10", "Fiber Optics and Laser Instrumentation"),
+    ElectiveCourse("25ICP11", "Nano Science and Instrumentation"),
+    ElectiveCourse("25ICP12", "Virtual Instrumentation"),
+    ElectiveCourse("25ICP13", "Safety Instrumented Systems"),
+    ElectiveCourse("25ICP14", "Thermal Power Plant Instrumentation"),
+    ElectiveCourse("25ICP15", "Instrumentation in Oil and Gas Industry"),
+    ElectiveCourse("25ICP16", "Instrumentation for Nuclear Power Plant"),
+    // Vertical III - Advanced Control
+    ElectiveCourse("25ICP17", "Advanced Topics in PID Control"),
+    ElectiveCourse("25ICP18", "Computer Control of Processes"),
+    ElectiveCourse("25ICP19", "Building Automation"),
+    ElectiveCourse("25ICP20", "Hydraulics and Pneumatics"),
+    ElectiveCourse("25ICP21", "Fault Tolerant Control"),
+    ElectiveCourse("25ICP22", "Robotics and Automation"),
+    ElectiveCourse("25EEP03", "IoT and its Applications"),
+    ElectiveCourse("25EEP36", "Cyber Security"),
+    // Vertical IV - Diversified
+    ElectiveCourse("25EEP07", "Digital Image Processing"),
+    ElectiveCourse("25ICP23", "Micro Electro Mechanical Systems"),
+    ElectiveCourse("25EEP35", "VLSI Design Techniques"),
+    ElectiveCourse("25ICP24", "Real Time Embedded Systems"),
+    ElectiveCourse("25EEP34", "Data Analytics"),
+    ElectiveCourse("25ICP25", "Industry 4.0"),
+    ElectiveCourse("25ICP26", "Machine Learning and Deep Learning"),
+    ElectiveCourse("25ICP27", "Multi Sensor Data Fusion"),
+    // Vertical V - Healthcare Instrumentation
+    ElectiveCourse("25ICP28", "Biomedical Instrumentation"),
+    ElectiveCourse("25ICP29", "Medical Imaging Equipment"),
+    ElectiveCourse("25ICP30", "Diagnostic and Therapeutic Instrumentation"),
+    ElectiveCourse("25ICP31", "Bio-Signal Analysis"),
+    ElectiveCourse("25ICP32", "Biomedical Image Processing"),
+    ElectiveCourse("25ICP33", "Physiological Control Systems"),
+    ElectiveCourse("25ICP34", "Biomechanics"),
+    ElectiveCourse("25ICP35", "Rehabilitation Instrumentation"),
+)
+
+// R2025 VLSI (EE-VLSI) Professional Electives (4 Verticals) — from official
+// B.Tech Electronics Engineering (VLSI Design & Technology) syllabus
+private val r2025VlsiProfessionalElectives = listOf(
+    // Vertical I - VLSI Design to Tape-out
+    ElectiveCourse("25ECP01", "Mixed Signal IC Design"),
+    ElectiveCourse("25ECP02", "CAD for VLSI"),
+    ElectiveCourse("25ECP03", "Low Power IC Design"),
+    ElectiveCourse("25ECP04", "VLSI Signal Processing"),
+    ElectiveCourse("25EVP01", "Memory Design and Testing"),
+    ElectiveCourse("25EVP02", "AI Optimization of VLSI Circuit Design"),
+    ElectiveCourse("25EVP03", "RF IC Design"),
+    ElectiveCourse("25EVP04", "Beyond CMOS"),
+    // Vertical II - Signal Processing and Technologies
+    ElectiveCourse("25ECP11", "Advanced Digital Signal Processing"),
+    ElectiveCourse("25ECP12", "Digital Image Processing"),
+    ElectiveCourse("25ECP13", "Speech Processing"),
+    ElectiveCourse("25ECP14", "Software Defined Radio"),
+    ElectiveCourse("25ECP15", "Wavelets and Its Applications"),
+    ElectiveCourse("25ECP16", "Biomedical Signal Processing"),
+    ElectiveCourse("25ECP17", "5G and Beyond"),
+    ElectiveCourse("25ECP18", "Mobile Communication"),
+    // Vertical III - IoT and Embedded Systems
+    ElectiveCourse("25ECP21", "Real Time Operating Systems"),
+    ElectiveCourse("25ECP22", "IoT Based System Design"),
+    ElectiveCourse("25ECP23", "Artificial IoT"),
+    ElectiveCourse("25ECP24", "Industrial Internet of Things and Industry 4.0"),
+    ElectiveCourse("25ECP25", "FPGA Based Embedded Systems"),
+    ElectiveCourse("25ECP26", "Robotics"),
+    ElectiveCourse("25ECP27", "Wearable Devices"),
+    ElectiveCourse("25ECP28", "IoT Processors"),
+    // Vertical IV - Emerging Technologies
+    ElectiveCourse("25ECP08", "VLSI Architectures for AI Applications"),
+    ElectiveCourse("25ECP32", "Quantum Computing"),
+    ElectiveCourse("25ECP33", "Artificial Intelligence and Machine Learning"),
+    ElectiveCourse("25ECP37", "Cryptography and Network Security"),
+    ElectiveCourse("25EVP31", "MEMS and Microsystems"),
+    ElectiveCourse("25EVP32", "Reconfigurable Architectures and Approximate Computing"),
+    ElectiveCourse("25EVP33", "Optoelectronics"),
+    ElectiveCourse("25EVP34", "IC Packaging and Electromagnetic Interference and Compatibility"),
 )
