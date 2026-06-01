@@ -175,6 +175,16 @@ class SecurePreferences(context: Context) {
         get() = regularPrefs.getLong(KEY_LAST_WEATHER_FETCH_TIME, 0L)
         set(value) = regularPrefs.edit().putLong(KEY_LAST_WEATHER_FETCH_TIME, value).apply()
 
+    /** Today's sunrise as minutes-after-midnight (local), or -1 if unknown. */
+    var weatherSunriseMin: Int
+        get() = regularPrefs.getInt(KEY_WEATHER_SUNRISE_MIN, -1)
+        set(value) = regularPrefs.edit().putInt(KEY_WEATHER_SUNRISE_MIN, value).apply()
+
+    /** Today's sunset as minutes-after-midnight (local), or -1 if unknown. */
+    var weatherSunsetMin: Int
+        get() = regularPrefs.getInt(KEY_WEATHER_SUNSET_MIN, -1)
+        set(value) = regularPrefs.edit().putInt(KEY_WEATHER_SUNSET_MIN, value).apply()
+
     /**
      * Hash of the last class-marks payload uploaded to the Worker. ClassMarksUploadWorker
      * compares freshly-computed hash against this and skips the upload if equal, so we don't
@@ -381,6 +391,8 @@ class SecurePreferences(context: Context) {
         private const val KEY_AUTO_WEATHER_ENABLED = "auto_weather_enabled"
         private const val KEY_LAST_WEATHER_SCENE = "last_weather_scene"
         private const val KEY_LAST_WEATHER_FETCH_TIME = "last_weather_fetch_time"
+        private const val KEY_WEATHER_SUNRISE_MIN = "weather_sunrise_min"
+        private const val KEY_WEATHER_SUNSET_MIN = "weather_sunset_min"
         private const val KEY_LAST_UPLOADED_MARKS_HASH = "last_uploaded_marks_hash"
         private const val KEY_CLASS_COMPARE_UNLOCKED = "class_compare_unlocked"
         private const val KEY_TARGET_CGPA = "target_cgpa"

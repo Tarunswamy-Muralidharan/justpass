@@ -671,13 +671,18 @@ fun AttendanceApp() {
                 mutableStateOf(securePrefs.autoWeatherEnabled)
             }
 
-            // Refresh scene from cached prefs (in case background fetch updated it).
+            // Re-derive the scene for "now" — same weather condition, but the
+            // day/night variant recomputed from the device clock vs the stored
+            // sunrise/sunset. Cheap + offline; keeps the sky in sync with real
+            // dusk/dawn between the sparse hourly fetches.
             val refreshSceneFromPrefs: () -> Unit = {
-                val cached = com.justpass.app.data.repository.WeatherRepository
-                    .getCachedWeatherScene(context)
-                if (cached != null && cached != weatherScene) {
-                    weatherScene = cached
-                    securePrefs.weatherScene = cached.name
+                if (autoWeatherEnabled) {
+                    val now = com.justpass.app.data.repository.WeatherRepository
+                        .currentScene(context)
+                    if (now != null && now != weatherScene) {
+                        weatherScene = now
+                        securePrefs.weatherScene = now.name
+                    }
                 }
             }
 
@@ -694,6 +699,28 @@ fun AttendanceApp() {
                     }
                     kotlinx.coroutines.delay(60L * 60L * 1000L)
                 }
+            }
+
+            // Day/night ticker — flip the sky variant from the device clock every
+            // minute, so a cached daytime scene becomes night the moment the clock
+            // passes sunset, regardless of fetch cadence or network.
+            LaunchedEffect(autoWeatherEnabled) {
+                if (!autoWeatherEnabled) return@LaunchedEffect
+                while (true) {
+                    refreshSceneFromPrefs()
+                    kotlinx.coroutines.delay(60L * 1000L)
+                }
+            }
+
+            // Also re-sync immediately whenever the app returns to the foreground.
+            DisposableEffect(autoWeatherEnabled) {
+                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                        refreshSceneFromPrefs()
+                    }
+                }
+                activityForUpdate.lifecycle.addObserver(observer)
+                onDispose { activityForUpdate.lifecycle.removeObserver(observer) }
             }
             LiquidGlassScaffold(
                 weatherScene = weatherScene,
