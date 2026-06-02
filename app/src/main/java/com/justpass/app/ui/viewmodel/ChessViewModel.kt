@@ -770,16 +770,17 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             val recentGames = repo.getRecentGames(profile.id)
             var anyProcessed = false
             // SELF-CREDIT model: each device credits ONLY its own
-            // chess_profiles/<p_rollHash> doc, gated by local match history so a
-            // finished game counts at most once per player. This is the same
-            // model the web/PWA client uses — so a JustPass↔PWA game can't
-            // double-count (it previously did once both sides keyed by p_rollHash,
-            // because Android credited BOTH players while the PWA credited only
-            // itself), and a result can never land on a phantom profile keyed by
-            // the opponent's Firebase UID. Abandonment is still credited by the
-            // winner via recordAbandonmentResult (the leaver writes leftBy and
-            // never self-credits); the local-history gate below stops that from
-            // double-counting if the same game later surfaces in a poll.
+            // chess_profiles/<p_rollHash> doc — never the opponent's. Combined
+            // with the per-(game,player) chess_credits claim inside
+            // recordGameResult, this means each player's stat lands EXACTLY once
+            // regardless of how many paths observe the finish (this 30s poll,
+            // the +3s post-game check, the WebView onClose, the opponent's
+            // device, or the abandonment path). It also matches the web/PWA
+            // client's self-credit model, so a JustPass↔PWA game can't
+            // double-count, and a result can never hit a phantom profile keyed
+            // by the opponent's Firebase UID. Local match history is used only
+            // to dedup the on-device history LIST, not as the stat-idempotency
+            // key (it was unsafe under concurrent polls).
             for (game in recentGames) {
                 if (game.lichessGameId.isBlank()) continue
                 val result = repo.checkLichessGameResult(game.lichessGameId)
@@ -795,15 +796,18 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                     else -> "loss"
                 }
 
-                // Credit my own stat + record history exactly once (local history
-                // is the dedup key). "aborted" records history but no stat change.
+                // Stat credit is idempotent at the Firestore layer (returns true
+                // only on the first successful credit for this game+player).
+                if (myResult == "win" || myResult == "loss" || myResult == "draw") {
+                    if (repo.recordGameResult(profile.id, myResult, game.lichessGameId)) {
+                        anyProcessed = true
+                    }
+                }
+                // History list dedups separately on local entries (and covers
+                // "aborted", which never touches stats).
                 val existingIds = _uiState.value.matchHistory.map { it.lichessGameId }.toSet()
                 if (game.lichessGameId !in existingIds) {
-                    if (myResult == "win" || myResult == "loss" || myResult == "draw") {
-                        repo.recordGameResult(profile.id, myResult)
-                    }
                     saveMatchToHistory(opponentName, myResult, game.lichessGameId)
-                    anyProcessed = true
                 }
 
                 // If this is the player's currently open game, the JS pollGameEnd

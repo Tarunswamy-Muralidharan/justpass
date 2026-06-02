@@ -80,6 +80,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ─── chess_credits ───────────────────────────────────────────────
+    // Idempotency ledger: one IMMUTABLE doc per "{lichessGameId}__{playerId}",
+    // written the first and only time that player's result for that game is
+    // credited (in the same transaction that increments their profile stat).
+    // Any authed client may create one — the abandonment winner writes the
+    // leaver's credit doc too — but no one can update or delete it, so a
+    // credit can never be replayed and stats can't be inflated.
+    match /chess_credits/{creditId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+
     // ─── announcements ───────────────────────────────────────────────
     // Read-only for clients; written from the Firebase Console / Cloud
     // Functions only. Public read because the app shows announcements
