@@ -8402,3 +8402,69 @@ Bumped to versionCode 14 / versionName 3.0.5. `app-release.apk` built and sidelo
 - **`Build aborted on Crashlytics symbol upload network failure`** — `:app:uploadCrashlyticsMappingFileRelease` fails the whole `assembleRelease` task if the network is down at upload time, even though the APK is fully built and signed by that point. Workaround for a flaky network: just rerun; or temporarily disable the upload in `firebaseCrashlytics { mappingFileUploadEnabled = false }` in the release build type. Don't ship without the mapping if you do that — Crashlytics traces will be obfuscated.
 
 ---
+
+## 2026-06-01 → 2026-06-02 — ICE/VLSI branches, admin-access leak fix, QPapers polish + ads, fresh-DB release prep
+
+Long multi-session sprint driven from the connected Moto G54 (wireless ADB, 192.168.0.4:5555). A mix of a real data gap (two missing R2025 branches), a genuine privilege-escalation bug, a QPapers data-integrity bug, UI polish, dead-code cleanup, and ad/monetisation wiring — finished by wiping the QPapers DB clean for a fresh release.
+
+### ICE + VLSI R2025 branches (were missing entirely)
+**Problem:** The R2025 syllabus on psgitech.ac.in lists 8 UG branches; the app's `Department` enum only had 7. **B.E. Instrumentation & Control (ICE)** and **B.Tech Electronics Engineering (VLSI Design & Technology, "EE-VLSI")** were absent — VLSI everywhere, ICE had stale partial syllabus JSON but no enum entry. Separately, ICE students were being **mis-detected as ECE**.
+
+**Root cause (mis-detection):** `detectDepartment()` matches programme names by substring, and the generic `contains("ELECTRONICS")` rule fired on "…and Instrumentation" / "Electronics Engineering (VLSI…)" before any ICE/VLSI rule existed.
+
+**Solution:**
+- Added `ICE` and `VLSI` to the `Department` enum (`CgpaData.kt`).
+- Added `INSTRUMENTATION`/`EIE` (ICE) and `VLSI`/`EE-VLSI` (VLSI) substring rules in `detectDepartment()` **before** the ELECTRICAL/ELECTRONICS rules so they win.
+- Extracted full 8-semester curricula for both branches from the official rev4 syllabus PDFs (parsed the course-structure tables with a throwaway Python script) into `getCurriculum()` (both the R2025 and the R2021 fall-back maps).
+- Added `VLSI_R2025` (20 subjects: sems 0–2 = first-year + language electives, matching the scope the other R2025 depts already ship) to `syllabus_r2021.json`, extracted from the PDF detail sections. `ICE_R2025` already existed.
+- Curated `ICE`/`VLSI` R2025 professional-elective lists in `ElectiveData.kt` from the PDF "LIST OF PROFESSIONAL ELECTIVE COURSES: VERTICALS" grids.
+
+**Gotchas:** (1) `getCurriculum` + both `ElectiveData` functions have exhaustive `when(Department)` blocks — adding enum entries forces a branch in every one or it won't compile (compiler-enforced, which is how I knew the sweep was complete). (2) `syllabus_r2021.json` is CRLF / UTF-8-no-BOM / 2-space-pretty / no-trailing-newline — re-dumping with LF diffs the entire file; a surgical CRLF text-insert keeps the diff to just the added block. (3) The rev4 PDFs only detail sems 1–4 (the R2025 batch is only in 2nd year by now).
+
+**Cascade:** Everything funnels through `detectDepartment → Department → cachedDepartment`, so the QPaper department tiles (`Department.entries`), syllabus viewer (`<enumName>_R2025` JSON key), CGPA calculator, and anonymous class-marks grouping all picked up ICE/VLSI automatically. Verified on-device: both tiles render under QPapers → R2025, and the syllabus/curriculum load.
+
+### Admin-access leak — roll 715523244037 (Ritheesh) was an unintended admin
+**Problem:** Signed in as Ritheesh, the QPapers admin Approval Queue and contributor identities were visible. Ritheesh should be an ordinary student.
+
+**Root cause:** Admin identity = `playerId = "p_" + abs(roll.hashCode()).toString(16)`. The dev's own roll is **715523244053 → p_678fd629**, but `TournamentAdmins.HARDCODED_PLAYER_IDS` carried **`p_678fd663`** commented as "Tarunswamy" — and `p_678fd663` is the hash of **715523244037 (Ritheesh)**, not the dev. A roll typo (037 vs 053) baked the wrong person's hash into the admin set. A matching Firestore `admin_roles/p_678fd663` doc (a latent server-side grant) had also been created from the wrong roll.
+
+**Solution:** Removed `p_678fd663` from `HARDCODED_PLAYER_IDS` (kept `p_678fd629` = the dev's real id), corrected the comments, and deleted Firestore `admin_roles/p_678fd663`. Confirmed via Firestore REST that every live `admin_uids` doc points to `p_678fd629` and none to `p_678fd663` — Ritheesh had never actually self-registered server-side, so the grant was still latent (no data leak occurred).
+
+**Lesson:** When hard-coding an admin by hash, compute it from the CORRECT roll and cross-check against live data. Formula: `p_${abs(roll.hashCode()).toString(16)}`.
+
+### QPapers "Approve & Place" stamped the wrong regulation
+**Problem:** An approved `25PH102` (R2025) paper didn't appear in the R2025 browse. Firestore showed it `status=approved` but `regulation=R2021`.
+
+**Root cause:** `QPaperReuploadScreen.kt` built the target slot's regulation from `viewModel.effectiveRegulation` — the **admin's own** regulation. The dev is batch 2023 → R2021, so approving a batch-2025 student's R2025 paper re-filed it as R2021. Since `25PH102` isn't an R2021 subject either, it became invisible in both regulations.
+
+**Solution:** Derive the slot regulation from `state.sourcePaper.regulation` (preserve the contributor's choice), falling back to `effectiveRegulation` only when there's no source paper. Re-tested end-to-end: a batch-2025 student uploads R2025 → the R2021 admin approves → the paper stays R2025 → shows in the right place. Firestore confirmed `reg=R2025`.
+
+**Firestore-edit gotcha (self-inflicted, recovered):** A REST `PATCH` using a **truncated doc ID** (I'd printed only the first 8 chars) *created a new junk doc* — Firestore PATCH upserts — instead of editing the real one. The real doc was untouched; deleted the junk, then fixed the real doc with a field-count-verified masked PATCH. Always use the full doc ID, back up the doc JSON, and GET-verify field count before/after.
+
+### QPapers UI polish
+- **Frosted-glass year picker:** the "Contribute → pick year" `DropdownMenu` was the default translucent menu and let the screen content bleed through it. Gave it a dark-glass fill (`0xFF1E2A3A` @ 0.9) + white top-highlight + hairline border, matching `GlassListCard` / the app's liquid-glass surfaces. (A popup window can't sample a live backdrop for real blur, so a frosted fill is the closest faithful look.) Verified on-device.
+- **`Sem` badge fit:** the post-upload "Want to help with more?" list renders the category in a 36 dp circle; the long `"Sem Paper"` label wrapped/clipped and looked cramped. Added a short `badge` property to `PaperCategory` (CA1 / CA2 / **Sem**) and used it in the circle. CA1/CA2 unchanged.
+
+### Dead-code cleanup
+Compiler reported no unused private members. A reference-sweep over the 306 top-level declarations surfaced 4 provably-unreferenced items, all removed: `ExamTimetableEntry.kt` (abandoned exam-timetable model, distinct from the exam-seat finder), `DepartmentSyllabus` (superseded by the manual JSON parse in `SyllabusViewModel`), `calculateTargetCgpa()` (superseded by `calculateTargetCgpaFromLocal`, which the dashboard calls directly), and the unused `Barcode()` composable. R8 already strips these from the release binary, so this is readability tidy-up, not size/perf. Build + unit tests stayed green.
+
+### QPapers banner ad + owner test ads, release-capable
+**Goal:** put a banner in QPapers; the dev's device sees **AdMob test ads on debug AND release**; everyone else gets **real ads, only when a Remote Config switch is flipped**; and no real ads to anyone yet.
+
+**Implementation:**
+- `QPapersFlow.kt`: wrapped the route `Crossfade` in a `Column` and pinned `AdBanner(screenName = "QPapers")` at the bottom, shown only on the browse routes (DepartmentList / SemesterList / SubjectList / CategoryDetail) — not the PDF viewer, upload forms, thank-you, or admin screens. `AdBanner` self-gates on `AdConfig.adsEnabled`, so it stays invisible until ads are on.
+- `AdConfig.kt`: removed the `if (!BuildConfig.DEBUG) return false` gate in `isOwnerDemoDevice` (and dropped the now-unused `BuildConfig` import); re-enabled `715523244053` in `OWNER_DEMO_ROLLS`. The owner roll now forces `adsEnabled` + `useTestIds` ON on **both** debug and release (test ad UNIT → test creatives). Roll-gated, so a leaked APK needs the owner's SIS login to trigger it and no other user is affected.
+- Production stays RC-gated and OFF: `remote_config_defaults.xml` keeps `ads_enabled = false` (no ads to anyone until flipped in Firebase Console) and `ads_use_test_ids = false` (real ads when enabled); `ads_test_device_ids` already lists the dev devices, so even on the real unit the owner device serves test creatives — a second safety layer that can never bill.
+
+Verified on-device: AdMob test banner + interstitial render for the owner; the production path stays dormant.
+
+### Release prep — fresh database
+Wiped all QPapers Firestore data (`qpapers` + `qpapers_contributors` → 0 docs each) so the launch starts from an empty, clean state.
+
+### Obstacles + patterns from this session
+- **Compose exposes no accessibility tree to UIAutomator** — `ui_dump` / `ui_find_element` come back empty, so on-device automation is blind coordinate-tapping off a scaled screenshot. Estimate taps as a *fraction* of the true device resolution (1080×2400), not raw screenshot pixels. Re-lock orientation (`settings put system user_rotation 0`) before navigating — the device kept auto-rotating to landscape mid-flow and breaking the coordinate math.
+- **Firebase REST via the firebase-tools refresh token** (`~/.config/configstore/firebase-tools.json` → mint a Google OAuth token → Firestore / Remote-Config REST) is the reliable way to read, verify, and clean Firestore when there's no admin SDK on hand. Caveats: full doc IDs only (a truncated ID upserts a new doc), masked PATCH preserves other fields (always verify the field count), back up before editing.
+- **Per-device Firebase Auth uid ≠ SIS login** — "My Contributions" is keyed by the Firebase Auth uid (anonymous, per-install), so it showed the same paper across different SIS logins on the one device. The contributor display name + roll is the SIS identity captured at upload time; the uid is the device's.
+- **Two independent "test ads on my device" layers** — the roll-based owner override (forces the test ad unit) and `ads_test_device_ids` (test creatives on the real unit). Keeping both means the owner device can never serve a real/billable impression, on any build.
+
+---
