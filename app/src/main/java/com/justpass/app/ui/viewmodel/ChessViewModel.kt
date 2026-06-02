@@ -205,7 +205,12 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                         lobby.declineChallenge(ourChallengeId)
                         val urls = lobby.acceptChallenge(challenge.id, challenge.timeControl.toString())
                         if (urls != null) {
-                            val accepted = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first)
+                            val accepted = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first,
+                        // Stamp the server-reported gameId (V2 accepter only learns it
+                        // from CHALLENGE_ACCEPTED) so recordGameStartV2 persists the
+                        // shared chess_challenges doc from THIS side too — the game is
+                        // then credited even if the sender's write never lands.
+                        lichessGameId = (lobby as? ChessRepositoryV2)?.takeAcceptedLichessId(challenge.id) ?: challenge.lichessGameId)
                             _uiState.value = _uiState.value.copy(
                                 acceptedChallenge = accepted,
                                 pendingChallenge = null,
@@ -419,12 +424,17 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
     fun sendFriendRequest(player: OnlinePlayer) {
         val profile = _uiState.value.myProfile ?: return
         viewModelScope.launch {
-            // CF Worker broadcasts presence keyed by Firebase Auth UID, but
-            // chess_friends + inbox listeners use p_${rollHash}. Resolve the
-            // lobby player's profile id (p_xxx) by displayName so the receiver's
-            // inbox listener (`whereEqualTo toId == myProfile.id`) actually
-            // sees the request.
-            val resolvedToId = repo.findProfileIdByName(player.displayName) ?: player.id
+            // Presence is now keyed by the stable p_${rollHash} (declared via
+            // ?pid=), which is exactly what chess_friends + the inbox listener
+            // (`whereEqualTo toId == myProfile.id`) expect — so the lobby
+            // player's id IS the right target. Only fall back to the fragile
+            // name lookup for a peer still on an older build that announces its
+            // Firebase UID (non-p_ id) as its presence id.
+            val resolvedToId = if (player.id.startsWith("p_")) {
+                player.id
+            } else {
+                repo.findProfileIdByName(player.displayName) ?: player.id
+            }
             Log.d("ChessVM", "sendFriendRequest player.id=${player.id} resolved=$resolvedToId")
             val sent = repo.sendFriendRequest(profile.id, profile.visibleName, resolvedToId, player.displayName)
             _uiState.value = _uiState.value.copy(
@@ -586,7 +596,12 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val urls = lobby.acceptChallenge(challenge.id, challenge.timeControl.toString())
             if (urls != null) {
-                val accepted = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first)
+                val accepted = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first,
+                        // Stamp the server-reported gameId (V2 accepter only learns it
+                        // from CHALLENGE_ACCEPTED) so recordGameStartV2 persists the
+                        // shared chess_challenges doc from THIS side too — the game is
+                        // then credited even if the sender's write never lands.
+                        lichessGameId = (lobby as? ChessRepositoryV2)?.takeAcceptedLichessId(challenge.id) ?: challenge.lichessGameId)
                 _uiState.value = _uiState.value.copy(
                     acceptedChallenge = accepted,
                     pendingChallenge = null,
@@ -753,110 +768,76 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
         val profile = _uiState.value.myProfile ?: return
         viewModelScope.launch {
             val recentGames = repo.getRecentGames(profile.id)
-            val unchecked = recentGames.filter { !it.resultChecked && it.lichessGameId.isNotBlank() }
             var anyProcessed = false
-            for (game in unchecked) {
+            // SELF-CREDIT model: each device credits ONLY its own
+            // chess_profiles/<p_rollHash> doc, gated by local match history so a
+            // finished game counts at most once per player. This is the same
+            // model the web/PWA client uses — so a JustPass↔PWA game can't
+            // double-count (it previously did once both sides keyed by p_rollHash,
+            // because Android credited BOTH players while the PWA credited only
+            // itself), and a result can never land on a phantom profile keyed by
+            // the opponent's Firebase UID. Abandonment is still credited by the
+            // winner via recordAbandonmentResult (the leaver writes leftBy and
+            // never self-credits); the local-history gate below stops that from
+            // double-counting if the same game later surfaces in a poll.
+            for (game in recentGames) {
+                if (game.lichessGameId.isBlank()) continue
                 val result = repo.checkLichessGameResult(game.lichessGameId)
-                if (result != null && result != "ongoing") {
-                    // processGameResult uses atomic claim — safe for both players to call
-                    repo.processGameResult(game)
-                    anyProcessed = true
+                if (result == null || result == "ongoing") continue
 
-                    // Save to local history (each device saves their own view)
-                    val myColor = if (game.fromId == profile.id) game.fromColor.ifBlank { "white" }
-                                  else if (game.fromColor == "white") "black" else "white"
-                    val opponentName = if (game.fromId == profile.id) game.toName else game.fromName
-                    val myResult = when {
-                        result == "draw" -> "draw"
-                        result == "aborted" -> "aborted"
-                        result == myColor -> "win"
-                        else -> "loss"
-                    }
-                    // Avoid duplicate local history entries
-                    val existingIds = _uiState.value.matchHistory.map { it.lichessGameId }.toSet()
-                    if (game.lichessGameId !in existingIds) {
-                        saveMatchToHistory(opponentName, myResult, game.lichessGameId)
-                    }
-
-                    // If this is the player's currently open game, the JS pollGameEnd
-                    // inside the Lichess WebView may not fire (Lichess doesn't paint
-                    // `.result-wrap` for outoftime until the opponent claims). The
-                    // server-side Lichess API poll already knows the result, so route
-                    // it through pendingAbandonResult to close the WebView Dialog and
-                    // surface the Game Over screen. consumeAbandonResult() clears
-                    // activeGameLichessId, so the next 30s tick won't re-fire.
-                    if (game.lichessGameId == _uiState.value.activeGameLichessId
-                        && _uiState.value.pendingAbandonResult == null) {
-                        val hint = when (myResult) {
-                            "win" -> "mywin"
-                            "loss" -> "oppwin"
-                            "draw" -> "draw"
-                            else -> "draw"
-                        }
-                        val winnerColor = when (result) {
-                            "white", "black", "draw" -> result
-                            else -> "draw"
-                        }
-                        val text = when (myResult) {
-                            "win" -> "You win!"
-                            "loss" -> "You lost"
-                            "draw" -> "Draw"
-                            else -> "Game over"
-                        }
-                        _uiState.value = _uiState.value.copy(
-                            pendingAbandonResult = "$winnerColor|$text|$myColor|$hint"
-                        )
-                    }
+                val myColor = if (game.fromId == profile.id) game.fromColor.ifBlank { "white" }
+                              else if (game.fromColor == "white") "black" else "white"
+                val opponentName = if (game.fromId == profile.id) game.toName else game.fromName
+                val myResult = when {
+                    result == "draw" -> "draw"
+                    result == "aborted" -> "aborted"
+                    result == myColor -> "win"
+                    else -> "loss"
                 }
-            }
-            // Also check for games that were already processed by the other player
-            // but we haven't saved to local history yet
-            val checked = recentGames.filter { it.resultChecked && it.lichessGameId.isNotBlank() }
-            val existingIds = _uiState.value.matchHistory.map { it.lichessGameId }.toSet()
-            for (game in checked) {
-                if (game.lichessGameId in existingIds) continue
-                val result = repo.checkLichessGameResult(game.lichessGameId)
-                if (result != null && result != "ongoing") {
-                    val myColor = if (game.fromId == profile.id) game.fromColor.ifBlank { "white" }
-                                  else if (game.fromColor == "white") "black" else "white"
-                    val opponentName = if (game.fromId == profile.id) game.toName else game.fromName
-                    val myResult = when {
-                        result == "draw" -> "draw"
-                        result == "aborted" -> "aborted"
-                        result == myColor -> "win"
-                        else -> "loss"
+
+                // Credit my own stat + record history exactly once (local history
+                // is the dedup key). "aborted" records history but no stat change.
+                val existingIds = _uiState.value.matchHistory.map { it.lichessGameId }.toSet()
+                if (game.lichessGameId !in existingIds) {
+                    if (myResult == "win" || myResult == "loss" || myResult == "draw") {
+                        repo.recordGameResult(profile.id, myResult)
                     }
                     saveMatchToHistory(opponentName, myResult, game.lichessGameId)
                     anyProcessed = true
+                }
 
-                    // Route through pendingAbandonResult so the WebView Dialog closes
-                    // even if our JS poll never fired — mirror unchecked branch.
-                    if (game.lichessGameId == _uiState.value.activeGameLichessId
-                        && _uiState.value.pendingAbandonResult == null) {
-                        val hint = when (myResult) {
-                            "win" -> "mywin"
-                            "loss" -> "oppwin"
-                            "draw" -> "draw"
-                            else -> "draw"
-                        }
-                        val winnerColor = when (result) {
-                            "white", "black", "draw" -> result
-                            else -> "draw"
-                        }
-                        val text = when (myResult) {
-                            "win" -> "You win!"
-                            "loss" -> "You lost"
-                            "draw" -> "Draw"
-                            else -> "Game over"
-                        }
-                        _uiState.value = _uiState.value.copy(
-                            pendingAbandonResult = "$winnerColor|$text|$myColor|$hint"
-                        )
+                // If this is the player's currently open game, the JS pollGameEnd
+                // inside the Lichess WebView may not fire (Lichess doesn't paint
+                // `.result-wrap` for outoftime until the opponent claims). The
+                // server-side Lichess API poll already knows the result, so route
+                // it through pendingAbandonResult to close the WebView Dialog and
+                // surface the Game Over screen. consumeAbandonResult() clears
+                // activeGameLichessId, so the next 30s tick won't re-fire.
+                if (game.lichessGameId == _uiState.value.activeGameLichessId
+                    && _uiState.value.pendingAbandonResult == null) {
+                    val hint = when (myResult) {
+                        "win" -> "mywin"
+                        "loss" -> "oppwin"
+                        "draw" -> "draw"
+                        else -> "draw"
                     }
+                    val winnerColor = when (result) {
+                        "white", "black", "draw" -> result
+                        else -> "draw"
+                    }
+                    val text = when (myResult) {
+                        "win" -> "You win!"
+                        "loss" -> "You lost"
+                        "draw" -> "Draw"
+                        else -> "Game over"
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        pendingAbandonResult = "$winnerColor|$text|$myColor|$hint"
+                    )
                 }
             }
-            // Refresh profile + leaderboard after processing
-            if (anyProcessed || unchecked.isNotEmpty()) {
+            // Refresh profile + leaderboard after crediting something.
+            if (anyProcessed) {
                 val refreshed = repo.getOrCreateProfile(profile.id, profile.displayName, "")
                 if (refreshed != null) {
                     _uiState.value = _uiState.value.copy(myProfile = refreshed)

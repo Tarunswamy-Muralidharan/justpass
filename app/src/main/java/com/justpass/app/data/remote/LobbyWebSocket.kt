@@ -34,7 +34,12 @@ import kotlin.math.min
  */
 class LobbyWebSocket(
     private val wsUrl: String,
-    private val tokenProvider: suspend () -> String?
+    private val tokenProvider: suspend () -> String?,
+    // Stable app-level player id (`p_<rollHash>`) to declare to the server as
+    // ?pid=. The Worker uses it as the lobby identity so presence + challenge
+    // ids match the Firestore chess_profiles key. Null/blank → omit (server
+    // falls back to the Firebase UID). Read fresh on every (re)connect.
+    private val pidProvider: () -> String? = { null }
 ) {
 
     enum class ConnectionState { CONNECTING, CONNECTED, DISCONNECTED, RECONNECTED }
@@ -125,7 +130,21 @@ class LobbyWebSocket(
             Log.w(TAG, "tokenProvider threw: ${e.message}")
             null
         }
-        val builder = Request.Builder().url(wsUrl)
+        // Append the stable player id as ?pid= so the server keys lobby
+        // presence/challenges by p_<rollHash> (matches the chess_profiles
+        // doc id) instead of the Firebase UID. URL-encoded defensively;
+        // omitted when blank so the server falls back to the UID.
+        val pid = try { pidProvider() } catch (e: Exception) {
+            Log.w(TAG, "pidProvider threw: ${e.message}")
+            null
+        }
+        val effectiveUrl = if (!pid.isNullOrBlank()) {
+            val sep = if (wsUrl.contains("?")) "&" else "?"
+            wsUrl + sep + "pid=" + java.net.URLEncoder.encode(pid, "UTF-8")
+        } else {
+            wsUrl
+        }
+        val builder = Request.Builder().url(effectiveUrl)
         if (!token.isNullOrBlank()) builder.addHeader("Authorization", "Bearer $token")
         val req = builder.build()
 

@@ -851,9 +851,15 @@ class ChessRepository {
             return
         }
 
-        val result = checkLichessGameResult(challenge.lichessGameId) ?: return
-        if (result == "ongoing") {
-            // Unclaim — game not finished yet
+        val result = checkLichessGameResult(challenge.lichessGameId)
+        if (result == null || result == "ongoing") {
+            // Release the claim so a later poll retries. We claim resultChecked
+            // BEFORE polling Lichess (so two devices don't both credit), but if
+            // the poll can't produce a verdict we must hand the claim back —
+            // otherwise the game is stranded resultChecked=true forever and
+            // BOTH players' stats silently never land. `null` = transient
+            // Lichess/network error (5xx, timeout, parse miss); "ongoing" =
+            // not finished yet. Both must un-claim, not just "ongoing".
             try { challengeCollection.document(challenge.id).update("resultChecked", false).await() } catch (_: Exception) {}
             return
         }

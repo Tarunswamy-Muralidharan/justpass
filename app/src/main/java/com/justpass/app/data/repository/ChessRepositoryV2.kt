@@ -49,16 +49,24 @@ class ChessRepositoryV2 private constructor() : ChessLobby {
 
     private val gson = Gson()
 
-    private val ws: LobbyWebSocket = LobbyWebSocket(WS_URL) { fetchFirebaseIdToken() }
+    // pidProvider declares our stable p_<rollHash> to the server (?pid=) so the
+    // lobby keys us by that id — the SAME id chess_profiles / chess_challenges
+    // use. `myId` is set in goOnline() before connect() and is the p_<rollHash>.
+    private val ws: LobbyWebSocket = LobbyWebSocket(
+        WS_URL,
+        { fetchFirebaseIdToken() },
+        { myId.ifBlank { null } },
+    )
 
     // Single slot — ChessViewModel only calls listenOnlinePlayers once per session.
     @Volatile private var onlinePlayersCallback: ((List<OnlinePlayer>) -> Unit)? = null
     @Volatile private var friendIdsSnapshot: Set<String> = emptySet()
-    // CF Worker tags presence with Firebase Auth UID (worker.ts sets
-    // X-Player-Id: verified.uid). chess_friends docs key by p_${rollHash}.
-    // The two ID-spaces never match, so we ALSO match online players by
-    // displayName as a fallback. ViewModel pushes friend display names here
-    // whenever friendProfiles refreshes.
+    // Presence is now keyed by the stable p_${rollHash} (the client declares it
+    // via ?pid= and the Worker forwards it as X-Player-Id), so id-based isFriend
+    // matching against chess_friends (also p_${rollHash}) works directly. The
+    // displayName fallback below is retained only as belt-and-suspenders for the
+    // migration window — peers on an older build still announce their Firebase
+    // UID as their presence id, and this lets them still light up as a friend.
     @Volatile private var friendNamesSnapshot: Set<String> = emptySet()
     @Volatile private var myId: String = ""
     @Volatile private var myDisplayName: String = ""
@@ -85,6 +93,14 @@ class ChessRepositoryV2 private constructor() : ChessLobby {
     // that status listeners can surface accepted/declined updates even though
     // the server doesn't echo the challenge back to the sender on send.
     private val sentChallenges: ConcurrentHashMap<String, ChessChallenge> = ConcurrentHashMap()
+
+    // lichessGameId observed in CHALLENGE_ACCEPTED, keyed by challengeId. The
+    // ACCEPTER only learns the gameId from this server message (its locally
+    // built `accepted` challenge has a blank lichessGameId), so we stash it
+    // here for the ViewModel to read and stamp onto the accepted challenge —
+    // letting the accepter ALSO persist the shared chess_challenges doc
+    // (recordGameStartV2), instead of relying solely on the sender's write.
+    private val acceptedLichessIds: ConcurrentHashMap<String, String> = ConcurrentHashMap()
 
     @Volatile private var wsConnected: Boolean = false
 
@@ -121,6 +137,7 @@ class ChessRepositoryV2 private constructor() : ChessLobby {
         currentOnlinePlayers.clear()
         recentIncoming.clear()
         sentChallenges.clear()
+        acceptedLichessIds.clear()
         pendingAcceptCompletables.values.forEach { it.complete(null) }
         pendingAcceptCompletables.clear()
         challengeStatusCallbacks.clear()
@@ -339,6 +356,15 @@ class ChessRepositoryV2 private constructor() : ChessLobby {
         emitOnlinePlayers()
     }
 
+    /**
+     * The lichessGameId the server reported for [challengeId] in
+     * CHALLENGE_ACCEPTED, consumed once. Lets the accepter stamp it onto its
+     * accepted challenge so it can persist the shared chess_challenges doc.
+     * Returns null if not seen (e.g. the sender path, which already has it).
+     */
+    fun takeAcceptedLichessId(challengeId: String): String? =
+        acceptedLichessIds.remove(challengeId)
+
     private fun handleChallengeIncoming(obj: JsonObject) {
         val id = obj.get("challengeId")?.asString ?: return
         val fromId = obj.get("fromId")?.asString ?: ""
@@ -365,6 +391,10 @@ class ChessRepositoryV2 private constructor() : ChessLobby {
         val blackUrl = obj.get("blackUrl")?.asString ?: ""
         val lichessGameId = obj.get("lichessGameId")?.asString ?: ""
         val fromColor = obj.get("fromColor")?.asString ?: "white"
+
+        // Stash the gameId so the accepter (who only learns it here) can stamp
+        // it onto its accepted challenge and persist the chess_challenges doc.
+        if (lichessGameId.isNotBlank()) acceptedLichessIds[id] = lichessGameId
 
         // Pair(challengerUrl, opponentUrl) — matches ChessRepository.acceptChallenge contract.
         val challengerUrl = if (fromColor == "white") whiteUrl else blackUrl

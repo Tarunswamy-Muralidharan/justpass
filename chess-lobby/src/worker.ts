@@ -217,8 +217,28 @@ export default {
     const id = env.LOBBY.idFromName("global");
     const stub = env.LOBBY.get(id);
 
+    // Stable lobby identity. We REQUIRE a valid Firebase token to connect
+    // (the auth check above), but the *lobby identity* a client is known by
+    // is the app-level stable player id (`p_<rollHash>`), passed as ?pid=.
+    // This is the SAME key the clients use for the Firestore `chess_profiles`
+    // leaderboard + match-history docs, so presence ids and challenge
+    // from/to ids line up exactly with the stats layer. Before this, the DO
+    // keyed players by the Firebase anonymous UID, which never matched
+    // `p_<rollHash>` — so finished games credited a ghost profile keyed by
+    // the UID and the real profile's win/loss never updated.
+    //
+    // Falls back to the Firebase UID when ?pid= is absent or malformed, so
+    // older clients that don't send it keep working (no regression — they
+    // just get the old UID-keyed behaviour until updated). Accepts both the
+    // Android hex form (p_1a2b3c) and the PWA decimal form (p_123456).
+    const declaredPid = url.searchParams.get("pid");
+    const playerKey =
+      declaredPid && /^p_[A-Za-z0-9]{1,32}$/.test(declaredPid)
+        ? declaredPid
+        : verified.uid;
+
     const forwarded = new Request(request, request);
-    forwarded.headers.set("X-Player-Id", verified.uid);
+    forwarded.headers.set("X-Player-Id", playerKey);
     if (verified.name) {
       forwarded.headers.set("X-Player-Name", verified.name);
     }
