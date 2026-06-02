@@ -18,6 +18,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -578,6 +580,23 @@ private fun YearPickerButton(label: String, onPick: (Int) -> Unit) {
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            // Frosted-glass panel to match the app's liquid-glass surfaces
+            // (e.g. the bottom bar) instead of the default translucent menu
+            // that let the screen content bleed through. Dark glass base
+            // (app dialog colour 0xFF1E2A3A) + white top highlight + hairline
+            // border — glassy, but readable.
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(12.dp))
+                .drawBehind {
+                    drawRect(Color(0xFF1E2A3A).copy(alpha = 0.90f))
+                    drawRect(
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.06f), Color.Transparent),
+                            startY = 0f, endY = size.height * 0.4f,
+                        )
+                    )
+                },
         ) {
             // Years 2022..2030 give enough range without going wild
             (2030 downTo 2022).forEach { y ->

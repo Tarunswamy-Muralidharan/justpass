@@ -433,7 +433,7 @@ private fun GapCard(gap: UploadIntent, onClick: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    gap.category.label,
+                    gap.category.badge,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,

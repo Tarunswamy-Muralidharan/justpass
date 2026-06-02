@@ -51,10 +51,12 @@ data class QPaper(
  * Categories of papers. Persisted as lowercase keys ('ca1', 'ca2', 'sem')
  * for stable Firestore queries that don't care about case folding.
  */
-enum class PaperCategory(val key: String, val label: String) {
-    CA1("ca1", "CA1"),
-    CA2("ca2", "CA2"),
-    SEM("sem", "Sem Paper");
+enum class PaperCategory(val key: String, val label: String, val badge: String) {
+    CA1("ca1", "CA1", "CA1"),
+    CA2("ca2", "CA2", "CA2"),
+    // `badge` is the short form for tight circular badges where the full
+    // "Sem Paper" label overflows the circle. `label` stays long for rows/tabs.
+    SEM("sem", "Sem Paper", "Sem");
 
     companion object {
         fun fromKey(key: String): PaperCategory? =
