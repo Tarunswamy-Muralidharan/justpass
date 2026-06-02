@@ -26,6 +26,10 @@ class ChessRepository {
     private val challengeCollection = db.collection("chess_challenges")
     private val profileCollection = db.collection("chess_profiles")
     private val friendCollection = db.collection("chess_friends")
+    // One doc per (lichessGameId, playerId) — the idempotency ledger that makes
+    // every stat credit land EXACTLY once, no matter how many code paths
+    // (concurrent polls, abandonment-vs-poll, both devices) observe the finish.
+    private val creditCollection = db.collection("chess_credits")
 
     companion object {
         private const val TAG = "ChessRepo"
@@ -168,26 +172,49 @@ class ChessRepository {
         }
     }
 
-    suspend fun recordGameResult(playerId: String, result: String) {
-        if (result !in listOf("win", "loss", "draw")) return
-        try {
-            // FieldValue.increment is atomic on the server, so two concurrent
-            // results landing on the same profile (e.g. both players in two
-            // games at once) can't drop an update the way the old read-modify-
-            // write transaction could.
-            //
-            // set(merge=true) — not update() — because the opponent's
-            // chess_profiles doc may not exist yet on THIS device. update()
-            // fails with NOT_FOUND on a missing doc, dropping the stat.
-            // FieldValue.increment treats a missing field as 0, so the first
-            // write seeds the counters; later writes merge.
-            val statField = when (result) { "win" -> "wins"; "loss" -> "losses"; else -> "draws" }
-            profileCollection.document(playerId).set(mapOf(
-                statField to FieldValue.increment(1),
-                "gamesPlayed" to FieldValue.increment(1),
-            ), SetOptions.merge()).await()
+    /**
+     * Credit [playerId] a win/loss/draw for [gameId] EXACTLY ONCE, ever, across
+     * every device + code path. Returns true iff this call was the one that
+     * actually applied the increment.
+     *
+     * Idempotency is enforced at the Firestore layer, not via local match
+     * history: a single transaction (a) claims chess_credits/{gameId}__{playerId}
+     * and (b) increments the profile counters — atomically. Any later caller
+     * (a concurrent 30s poll, the abandonment path, the opponent's device,
+     * a fresh session after restart) re-reads the claim, sees it exists, and
+     * no-ops. This is what stops the self-credit model from inflating the
+     * leaderboard. A blank id can't be deduped, so we refuse rather than risk a
+     * double — the normal poll will re-credit once a real id is known.
+     *
+     * set(merge=true) on the profile so the opponent's doc (which may not exist
+     * yet on THIS device) is seeded rather than NOT_FOUND-dropped.
+     */
+    suspend fun recordGameResult(playerId: String, result: String, gameId: String): Boolean {
+        if (result !in listOf("win", "loss", "draw")) return false
+        if (playerId.isBlank() || gameId.isBlank()) return false
+        val statField = when (result) { "win" -> "wins"; "loss" -> "losses"; else -> "draws" }
+        return try {
+            val creditRef = creditCollection.document("${gameId}__${playerId}")
+            val profileRef = profileCollection.document(playerId)
+            db.runTransaction { txn ->
+                // All reads must precede all writes in a Firestore transaction.
+                if (txn.get(creditRef).exists()) return@runTransaction false
+                txn.set(creditRef, mapOf(
+                    "gameId" to gameId,
+                    "playerId" to playerId,
+                    "result" to result,
+                    "at" to System.currentTimeMillis(),
+                ))
+                txn.set(profileRef, mapOf(
+                    statField to FieldValue.increment(1),
+                    "gamesPlayed" to FieldValue.increment(1),
+                ), SetOptions.merge())
+                true
+            }.await()
         } catch (e: Exception) {
+            // Transient failure → DON'T mark credited; a later poll retries.
             Log.e(TAG, "Record result error: ${e.message}")
+            false
         }
     }
 
@@ -593,30 +620,33 @@ class ChessRepository {
     }
 
     /**
-     * Atomically mark a game as finished due to the opponent abandoning.
-     * Credits winnerId with a win and loserId with a loss. Returns true
-     * iff this call was the one to claim the challenge (prevents both
-     * devices double-counting).
+     * Credit an abandonment: winnerId a win, loserId a loss. Idempotency is now
+     * per-(game,player) inside [recordGameResult] (the chess_credits ledger), so
+     * this no longer needs its own whole-challenge claim — and crucially the
+     * loser's OWN later Lichess poll will hit the same claim and no-op, instead
+     * of the loss landing twice (once here, once from the leaver's poll).
+     *
+     * The stable game id is the Lichess game id read off the challenge doc (NOT
+     * a captured-at-start value that may have been blank), so the claim key is
+     * identical to the one the normal poll uses for the same game. Returns true
+     * iff the WINNER's credit was newly applied (drives the one-time "you win"
+     * UI on the detecting device).
      */
     suspend fun recordAbandonmentResult(challengeId: String, winnerId: String, loserId: String): Boolean {
         return try {
-            val docRef = challengeCollection.document(challengeId)
-            val claimed = FirebaseFirestore.getInstance().runTransaction { txn ->
-                val snap = txn.get(docRef)
-                if (snap.getBoolean("resultChecked") == true) return@runTransaction false
-                // set-merge so V2 challenges (no parent Firestore doc) don't fail NOT_FOUND.
-                txn.set(docRef, mapOf(
-                    "resultChecked" to true,
-                    "abandoned" to true
-                ), SetOptions.merge())
-                true
-            }.await()
-            if (claimed) {
-                recordGameResult(winnerId, "win")
-                recordGameResult(loserId, "loss")
-                Log.d(TAG, "Recorded abandonment: $winnerId wins, $loserId loses")
+            val gameId = try {
+                challengeCollection.document(challengeId).get().await().getString("lichessGameId") ?: ""
+            } catch (_: Exception) { "" }
+            if (gameId.isBlank()) {
+                // No stable id yet — refuse rather than risk an un-dedupable
+                // double; the normal poll credits both once the id is known.
+                Log.w(TAG, "recordAbandonmentResult: blank gameId for $challengeId — deferring to poll")
+                return false
             }
-            claimed
+            val winnerCredited = recordGameResult(winnerId, "win", gameId)
+            recordGameResult(loserId, "loss", gameId)
+            Log.d(TAG, "Abandonment $gameId: $winnerId win(newly=$winnerCredited), $loserId loss")
+            winnerCredited
         } catch (e: Exception) {
             Log.w(TAG, "recordAbandonmentResult failed: ${e.message}")
             false
@@ -827,66 +857,13 @@ class ChessRepository {
         }
     }
 
-    /**
-     * Process game result for both players in a challenge.
-     * fromColor tells us which color the challenger (fromId) played.
-     * Uses atomic claim to prevent double-counting when both players process simultaneously.
-     */
-    suspend fun processGameResult(challenge: ChessChallenge) {
-        if (challenge.lichessGameId.isBlank() || challenge.resultChecked) return
-
-        // Atomically claim this challenge — only one device processes it
-        val claimed = try {
-            val docRef = challengeCollection.document(challenge.id)
-            FirebaseFirestore.getInstance().runTransaction { txn ->
-                val snap = txn.get(docRef)
-                if (snap.getBoolean("resultChecked") == true) return@runTransaction false
-                txn.update(docRef, "resultChecked", true)
-                true
-            }.await()
-        } catch (_: Exception) { false }
-
-        if (!claimed) {
-            Log.d(TAG, "Challenge ${challenge.id} already processed by another device")
-            return
-        }
-
-        val result = checkLichessGameResult(challenge.lichessGameId)
-        if (result == null || result == "ongoing") {
-            // Release the claim so a later poll retries. We claim resultChecked
-            // BEFORE polling Lichess (so two devices don't both credit), but if
-            // the poll can't produce a verdict we must hand the claim back —
-            // otherwise the game is stranded resultChecked=true forever and
-            // BOTH players' stats silently never land. `null` = transient
-            // Lichess/network error (5xx, timeout, parse miss); "ongoing" =
-            // not finished yet. Both must un-claim, not just "ongoing".
-            try { challengeCollection.document(challenge.id).update("resultChecked", false).await() } catch (_: Exception) {}
-            return
-        }
-
-        val fromColor = challenge.fromColor.ifBlank { "white" }
-        val toColor = if (fromColor == "white") "black" else "white"
-
-        when (result) {
-            "draw" -> {
-                recordGameResult(challenge.fromId, "draw")
-                recordGameResult(challenge.toId, "draw")
-            }
-            "aborted" -> { /* No rating change */ }
-            fromColor -> {
-                // Challenger won
-                recordGameResult(challenge.fromId, "win")
-                recordGameResult(challenge.toId, "loss")
-            }
-            toColor -> {
-                // Acceptor won
-                recordGameResult(challenge.fromId, "loss")
-                recordGameResult(challenge.toId, "win")
-            }
-        }
-
-        Log.d(TAG, "Processed result for ${challenge.lichessGameId}: $result (from=$fromColor)")
-    }
+    // NOTE: the old `processGameResult(challenge)` (credit-BOTH-players via a
+    // single whole-challenge resultChecked claim) was removed in favour of the
+    // self-credit model: each device credits only its own profile through the
+    // idempotent [recordGameResult] (per-(game,player) chess_credits claim).
+    // Crediting BOTH sides from one device double-counted the opponent once the
+    // opponent (esp. the PWA) also self-credited, and routed the opponent's
+    // result through a phantom profile when their id wasn't yet a p_<rollHash>.
 
     /** Get recent accepted challenges for a player (to check results) */
     suspend fun getRecentGames(playerId: String, limit: Int = 10): List<ChessChallenge> {
