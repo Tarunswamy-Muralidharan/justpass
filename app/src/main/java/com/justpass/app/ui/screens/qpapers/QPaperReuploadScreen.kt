@@ -45,7 +45,13 @@ fun QPaperReuploadScreen(
     onBack: () -> Unit,
 ) {
     val state by viewModel.reuploadState.collectAsStateWithLifecycle()
-    val regulation = viewModel.effectiveRegulation
+    // Preserve the SOURCE paper's regulation when approving/re-homing. Using
+    // the admin's own effectiveRegulation here mis-filed papers: an R2021-batch
+    // admin approving an R2025 contribution stamped it R2021, making it
+    // invisible in the R2025 browse (the subject only exists under R2025).
+    val regulation = state.sourcePaper?.regulation
+        ?.let { rn -> com.justpass.app.data.model.Regulation.entries.firstOrNull { it.name == rn } }
+        ?: viewModel.effectiveRegulation
     val currentYear = remember { Calendar.getInstance().get(Calendar.YEAR) }
     val context = LocalContext.current
     val isPlace = state.mode == ReuploadMode.PLACE
