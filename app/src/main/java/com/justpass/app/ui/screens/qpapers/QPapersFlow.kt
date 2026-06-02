@@ -3,17 +3,11 @@ package com.justpass.app.ui.screens.qpapers
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.justpass.app.data.model.QPaper
 import com.justpass.app.data.model.UploadIntent
-import com.justpass.app.ui.components.AdBanner
 import com.justpass.app.ui.viewmodel.QPaperViewModel
 import io.github.fletchmckee.liquid.LiquidState
 
@@ -76,8 +70,7 @@ fun QPapersFlow(
 
     val current = remember(version) { stack.last() }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-    Crossfade(targetState = current, animationSpec = tween(200), label = "qpaperFlow", modifier = Modifier.weight(1f)) { route ->
+    Crossfade(targetState = current, animationSpec = tween(200), label = "qpaperFlow") { route ->
         when (route) {
             QPaperRoute.DepartmentList -> QPaperDepartmentScreen(
                 cardState = cardState,
@@ -212,22 +205,6 @@ fun QPapersFlow(
                 viewModel = viewModel,
                 onOpenViewer = { paper -> push(QPaperRoute.Viewer(paper)) },
                 onBack = { pop() },
-            )
-        }
-    }
-
-        // Banner ad on the QPapers browse screens only — not the PDF viewer,
-        // upload forms, thank-you, or admin screens. Self-gates on
-        // AdConfig.adsEnabled, so it stays hidden until ads are turned on
-        // (owner-demo device, or the ads_enabled Remote Config flag).
-        val showBanner = current is QPaperRoute.DepartmentList ||
-            current is QPaperRoute.SemesterList ||
-            current is QPaperRoute.SubjectList ||
-            current is QPaperRoute.CategoryDetail
-        if (showBanner) {
-            AdBanner(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                screenName = "QPapers",
             )
         }
     }

@@ -34,6 +34,7 @@ import com.justpass.app.data.model.QPaper
 import com.justpass.app.data.model.Regulation
 import com.justpass.app.data.model.detectDepartment
 import com.justpass.app.data.model.getCurriculum
+import com.justpass.app.ui.components.AdBanner
 import com.justpass.app.ui.components.GlassCardShape
 import com.justpass.app.ui.components.GlassCardShapeSmall
 import com.justpass.app.ui.components.GlassListCard
@@ -124,6 +125,8 @@ fun QPaperDepartmentScreen(
                 }
             },
         )
+
+        AdBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), screenName = "QPapers")
 
         if (isAdmin) {
             RegulationSwitcher(
@@ -258,6 +261,8 @@ fun QPaperSemesterListScreen(
             onBack = onBack,
         )
 
+        AdBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), screenName = "QPapers")
+
         if (semesters.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
@@ -327,6 +332,8 @@ fun QPaperSubjectListScreen(
             subtitle = "${regulation.displayName} · ${subjects.size} subjects",
             onBack = onBack,
         )
+
+        AdBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), screenName = "QPapers")
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -406,6 +413,8 @@ fun QPaperCategoryScreen(
             subtitle = route.subjectName,
             onBack = onBack,
         )
+
+        AdBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), screenName = "QPapers")
 
         TabRow(
             selectedTabIndex = PaperCategory.all.indexOf(selectedCategory),
