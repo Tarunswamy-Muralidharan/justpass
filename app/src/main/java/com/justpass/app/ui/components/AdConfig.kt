@@ -6,7 +6,6 @@ import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.RequestConfiguration
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.remoteConfigSettings
-import com.justpass.app.BuildConfig
 import com.justpass.app.data.local.SecurePreferences
 
 object AdConfig {
@@ -16,12 +15,16 @@ object AdConfig {
     private const val PREFS = "ad_config_cache"
 
     // Owner-only demo override. When the signed-in roll matches one of these,
-    // ads are forced ON with AdMob's test creatives regardless of the global
-    // ads_enabled Remote Config flag. Lets the developer preview the ad slots
-    // on their own device while the rest of the userbase stays ad-free.
-    // Gated to debug builds so a leaked release APK can't impersonate.
+    // ads are forced ON with AdMob's TEST creatives regardless of the global
+    // ads_enabled Remote Config flag — on BOTH debug and release builds. Lets
+    // the owner preview/verify the live ad slots on the shipped app while the
+    // rest of the userbase stays ad-free until ads_enabled is flipped.
+    // Roll-gated: needs the owner's actual SIS login, so a leaked APK can't
+    // trigger it without the owner's credentials.
     private val OWNER_DEMO_ROLLS = setOf<String>(
-        // "715523244053", // Tarunswamy — disabled: no demo ads on device for now
+        "715523244053", // Tarunswamy — owner device: test ads here only,
+                        // everyone else is RC-controlled (real ads, off
+                        // until ads_enabled is turned on).
     )
 
     // Real (production) AdMob unit IDs.
@@ -52,12 +55,14 @@ object AdConfig {
     val interstitialAdUnitId: String get() = if (useTestIds) TEST_INTERSTITIAL_ID else REAL_INTERSTITIAL_ID
 
     /**
-     * Debug-build + matching roll = owner demo device. Forces ads ON with
-     * test creatives even when the global ads_enabled RC flag is off.
-     * Release builds always return false so a leaked APK can't impersonate.
+     * Matching roll = owner demo device. Forces ads ON with AdMob test
+     * creatives even when the global ads_enabled RC flag is off — works on
+     * release builds too, so the owner sees test ads on the shipped app
+     * while everyone else stays ad-free until ads_enabled is flipped.
+     * Combined with ads_test_device_ids, the owner device never risks a
+     * real/billable impression.
      */
     private fun isOwnerDemoDevice(context: Context): Boolean {
-        if (!BuildConfig.DEBUG) return false
         val roll = SecurePreferences.getInstance(context).rollNumber ?: return false
         return roll in OWNER_DEMO_ROLLS
     }
