@@ -632,14 +632,26 @@ class ChessRepository {
      * iff the WINNER's credit was newly applied (drives the one-time "you win"
      * UI on the detecting device).
      */
-    suspend fun recordAbandonmentResult(challengeId: String, winnerId: String, loserId: String): Boolean {
+    suspend fun recordAbandonmentResult(
+        challengeId: String,
+        winnerId: String,
+        loserId: String,
+        fallbackGameId: String = "",
+    ): Boolean {
         return try {
-            val gameId = try {
+            // Prefer the persisted challenge-doc id; fall back to the caller's
+            // captured-at-start id. The fallback matters on a sub-second
+            // rage-quit, where recordGameStartV2's async write hasn't committed
+            // the lichessGameId yet — without it the winner would see the "you
+            // win" banner but get no win stat and no Analyze history row, and
+            // the poll later skips blank-id games so it never self-heals.
+            val docGameId = try {
                 challengeCollection.document(challengeId).get().await().getString("lichessGameId") ?: ""
             } catch (_: Exception) { "" }
+            val gameId = docGameId.ifBlank { fallbackGameId }
             if (gameId.isBlank()) {
-                // No stable id yet — refuse rather than risk an un-dedupable
-                // double; the normal poll credits both once the id is known.
+                // Truly no stable id anywhere — refuse rather than risk an
+                // un-dedupable double; the poll credits both once an id exists.
                 Log.w(TAG, "recordAbandonmentResult: blank gameId for $challengeId — deferring to poll")
                 return false
             }

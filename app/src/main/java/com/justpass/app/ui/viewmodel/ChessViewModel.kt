@@ -714,7 +714,7 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
             // Credit the win immediately — don't wait for Lichess flag fall.
             if (myId != null) {
                 viewModelScope.launch(Dispatchers.IO) {
-                    val ok = repo.recordAbandonmentResult(challengeId, winnerId = myId, loserId = leaverId)
+                    val ok = repo.recordAbandonmentResult(challengeId, winnerId = myId, loserId = leaverId, fallbackGameId = capturedLichessId)
                     Log.d("ChessVM", "recordAbandonmentResult claimed=$ok challenge=$challengeId")
                     if (ok) {
                         val existingIds = _uiState.value.matchHistory.map { it.lichessGameId }.toSet()

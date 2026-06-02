@@ -81,12 +81,21 @@ service cloud.firestore {
     }
 
     // ─── chess_credits ───────────────────────────────────────────────
-    // Idempotency ledger: one IMMUTABLE doc per "{lichessGameId}__{playerId}",
-    // written the first and only time that player's result for that game is
-    // credited (in the same transaction that increments their profile stat).
-    // Any authed client may create one — the abandonment winner writes the
-    // leaver's credit doc too — but no one can update or delete it, so a
-    // credit can never be replayed and stats can't be inflated.
+    // Idempotency ledger: one doc per "{lichessGameId}__{playerId}", written
+    // the first and only time that player's result for that game is credited
+    // (in the SAME transaction that increments their profile stat). The
+    // exactly-once guarantee against COOPERATING clients comes from that
+    // transactional create-if-absent — no client code ever updates or deletes
+    // a credit, so the double-count fixes hold for all real app traffic.
+    //
+    // NOTE (not server-enforced anti-replay): the catch-all rule at the bottom
+    // (`match /{document=**}`) is OR-combined with this block and currently
+    // grants update/delete to any authed user, so these `if false` lines do
+    // NOT make the doc truly immutable server-side. A hostile client could
+    // delete a credit and re-mint a stat — but it could already write any
+    // chess_profiles doc directly under the same catch-all, so this widens
+    // nothing. True immutability waits on the v3 work that binds chess doc keys
+    // to request.auth.uid and tightens the catch-all.
     match /chess_credits/{creditId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
