@@ -52,5 +52,9 @@
   },
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true
-  }
+  },
+  "enabledMcpjsonServers": [
+    "maestro",
+    "appium"
+  ]
 }
