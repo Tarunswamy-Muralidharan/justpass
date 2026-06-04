@@ -1203,6 +1203,19 @@ private fun LichessGameScreen(
                     settings.userAgentString = settings.userAgentString + " JustPass-Chess"
                     setBackgroundColor(android.graphics.Color.parseColor("#1A1A2E"))
 
+                    // Lichess holds an ANONYMOUS player's seat via a session cookie
+                    // (lila2) set when this WebView opens the join URL
+                    // `lichess.org/{id}?color=black` and re-presented across the 303
+                    // redirect to `/{id}/black`. WebView cookie acceptance is NOT on
+                    // by default on every device, so without this the acceptor's seat
+                    // cookie is dropped on the redirect and Lichess demotes them to
+                    // SPECTATOR (the reported bug: one phone can move, the other is
+                    // stuck spectating). Mirrors WebViewAuthenticator.kt, which does
+                    // the same to keep the Keycloak session alive. `this` = this WebView.
+                    val jpCookieMgr = android.webkit.CookieManager.getInstance()
+                    jpCookieMgr.setAcceptCookie(true)
+                    jpCookieMgr.setAcceptThirdPartyCookies(this, true)
+
                     var pageReady = false
                     // Hide Lichess chrome (header/footer/site nav) but KEEP .mchat,
                     // .clinput, and the in-game chat tabs so the in-app chat works.
@@ -1470,6 +1483,12 @@ private fun LichessGameScreen(
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, pageUrl: String?) {
                             super.onPageFinished(view, pageUrl)
+                            // Commit the lichess.org seat cookie to disk once the
+                            // join + 303 redirect has settled, so the anonymous
+                            // black seat survives a later cold reload (process
+                            // restore, Replay/Analysis re-open) instead of starting
+                            // from an empty cookie jar.
+                            android.webkit.CookieManager.getInstance().flush()
                             view?.evaluateJavascript(hideJs, null)
                             view?.evaluateJavascript(themeJs, null)
                             view?.evaluateJavascript(chatJs, null)
