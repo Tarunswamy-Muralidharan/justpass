@@ -1,13 +1,17 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Auto-backup rules (referenced by android:fullBackupContent; used on API < 31).
+   Default behaviour backs up ALL shared_prefs. We must NOT back up the
+   EncryptedSharedPreferences store: its AES master key lives in the
+   AndroidKeyStore and is device-bound (keystore keys are never included in a
+   backup). Restoring the encrypted file onto a different device — or after a
+   keystore reset — leaves the file with no matching key, so the first read
+   throws "KeyStoreException: Signature/MAC verification failed" /
+   AEADBadTagException and crashes MainActivity at launch (Crashlytics issue
+   SecurePreferences.<init>). Excluding the file means a restored user simply
+   re-logs in once. The plaintext fallback store must never leave the device.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="sharedpref" path="laudea_secure_prefs.xml"/>
+    <exclude domain="sharedpref" path="laudea_secure_prefs_fallback.xml"/>
 </full-backup-content>
