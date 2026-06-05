@@ -190,9 +190,28 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 },
                 onChallenge = { challenge ->
-                // Mutual challenge: if we already sent a challenge to this same person,
-                // auto-accept theirs (both want to play!) and cancel ours
+                // Mutual challenge: both players challenged each other at (nearly)
+                // the same instant. This MUST be resolved DETERMINISTICALLY so
+                // exactly ONE of the two challenges becomes the game. The old code
+                // had BOTH phones cancel-own + accept-peer, so on the single-threaded
+                // Worker a CANCEL raced the ACCEPT on the SAME surviving challenge id
+                // → 0 or 1 Lichess game, and whichever phone ended up seatless became
+                // a spectator (the "opens on only one phone / can't move / no chat"
+                // bug). Rule: the player with the SMALLER id is the WAITER — its
+                // outgoing challenge is the canonical survivor, so it does NOTHING
+                // (never cancels it) and opens via its still-alive sentChallengeListener
+                // "accepted" path (→ white). The LARGER-id player is the ACCEPTER: it
+                // cancels ONLY its own outgoing (a DIFFERENT challenge id, so that
+                // CANCEL can never race the survivor's ACCEPT) and accepts the waiter's
+                // challenge (→ black). The survivor is therefore mutated exactly once.
                 if (_uiState.value.sentChallengeId != null && challenge.fromId == _uiState.value.sentChallengeToId) {
+                    if (myPlayerId < challenge.fromId) {
+                        // WAITER: keep our outgoing challenge + its listener alive.
+                        // The peer (accepter) will accept it; our sendChallenge()
+                        // listenChallengeStatus "accepted" branch then opens us.
+                        return@listenIncomingChallenges
+                    }
+                    // ACCEPTER (myPlayerId > challenge.fromId):
                     val ourChallengeId = _uiState.value.sentChallengeId!!
                     senderCountdownJob?.cancel()
                     sentChallengeListener?.remove()
@@ -200,9 +219,8 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                         sentChallengeId = null, sentChallengeName = null,
                         sentChallengeToId = null, senderCountdown = null
                     )
-                    // Cancel our outgoing challenge and accept theirs
                     viewModelScope.launch {
-                        lobby.declineChallenge(ourChallengeId)
+                        lobby.declineChallenge(ourChallengeId)   // CANCEL our OWN (loser) challenge only
                         val urls = lobby.acceptChallenge(challenge.id, challenge.timeControl.toString())
                         if (urls != null) {
                             val accepted = challenge.copy(status = "accepted", gameUrl = urls.second, opponentUrl = urls.first,
@@ -220,6 +238,13 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                             // can find this challenge and credit win/loss.
                             launch { repo.recordGameStartV2(accepted) }
                             watchForOpponentLeave(challenge.id)
+                        } else {
+                            // Accept produced no game (challenge gone / Lichess error /
+                            // offline). Surface it instead of leaving a frozen card.
+                            _uiState.value = _uiState.value.copy(
+                                pendingChallenge = null, challengeCountdown = null,
+                                errorMessage = "Couldn't start the game — please try again"
+                            )
                         }
                     }
                     return@listenIncomingChallenges
@@ -611,6 +636,17 @@ class ChessViewModel(application: Application) : AndroidViewModel(application) {
                 // find this challenge and credit win/loss.
                 launch { repo.recordGameStartV2(accepted) }
                 watchForOpponentLeave(challenge.id)
+            } else {
+                // Accept produced no game — the challenge was already gone on the
+                // server (expired past its 15s TTL, cancelled, or lost in a race),
+                // Lichess game creation failed, or the socket was down (10s accept
+                // timeout). Surface it with a retry hint instead of leaving the
+                // accept card frozen with no feedback (the "Accept does nothing" bug).
+                _uiState.value = _uiState.value.copy(
+                    pendingChallenge = null,
+                    challengeCountdown = null,
+                    errorMessage = "Couldn't open the game — tap to try again"
+                )
             }
         }
     }

@@ -1204,23 +1204,56 @@ private fun LichessGameScreen(
                     setBackgroundColor(android.graphics.Color.parseColor("#1A1A2E"))
 
                     // Lichess holds an ANONYMOUS player's seat via a session cookie
-                    // (lila2) set when this WebView opens the join URL
-                    // `lichess.org/{id}?color=black` and re-presented across the 303
-                    // redirect to `/{id}/black`. WebView cookie acceptance is NOT on
-                    // by default on every device, so without this the acceptor's seat
-                    // cookie is dropped on the redirect and Lichess demotes them to
-                    // SPECTATOR (the reported bug: one phone can move, the other is
-                    // stuck spectating). Mirrors WebViewAuthenticator.kt, which does
-                    // the same to keep the Keycloak session alive. `this` = this WebView.
+                    // (lila2). Accept cookies so the seat survives the in-game
+                    // navigation (mirrors WebViewAuthenticator.kt). `this` = this WebView.
                     val jpCookieMgr = android.webkit.CookieManager.getInstance()
                     jpCookieMgr.setAcceptCookie(true)
                     jpCookieMgr.setAcceptThirdPartyCookies(this, true)
 
+                    // Start every game with a FRESH Lichess session — THE fix for the
+                    // "one phone is a spectator / can't move / no chat" bug. Verified
+                    // via CDP on-device: opening `/{id}?color=white|black` with a FRESH
+                    // session AUTO-SEATS the player (no "Join the game" form, lands
+                    // directly as a seated player), whereas REUSING a persisted `lila2`
+                    // makes Lichess demand a manual join form and frequently drops the
+                    // seat → spectator. (The previous code's onPageFinished flush() that
+                    // PERSISTED the session across games was exactly backwards.) We
+                    // expire ONLY lichess.org cookies here — never the Keycloak/SIS auth
+                    // cookies that live in this same shared CookieManager.
+                    run {
+                        val lichessCookieNames = linkedSetOf(
+                            "lila2", "rk2", "rk", "mlat", "sid", "lila-http"
+                        )
+                        jpCookieMgr.getCookie("https://lichess.org")
+                            ?.split(";")?.forEach { pair ->
+                                val n = pair.substringBefore("=").trim()
+                                if (n.isNotEmpty()) lichessCookieNames.add(n)
+                            }
+                        lichessCookieNames.forEach { n ->
+                            jpCookieMgr.setCookie("https://lichess.org", "$n=; Max-Age=0; path=/; domain=.lichess.org")
+                            jpCookieMgr.setCookie("https://lichess.org", "$n=; Max-Age=0; path=/")
+                        }
+                        jpCookieMgr.flush()
+                    }
+
                     var pageReady = false
+                    // AUTO-JOIN — the real fix for the "one phone is a spectator /
+                    // can't move" bug. Lichess open-challenge URLs (`/{id}?color=white`
+                    // or `?color=black`) do NOT auto-seat the player: they land on an
+                    // "Open challenge" page with a <form class="accept" method="post"
+                    // action="/challenge/{id}/accept?color=…"> and a "Join the game"
+                    // button that must be SUBMITTED to claim the seat. The app never
+                    // submitted it, so whichever side the user didn't manually tap
+                    // (or whose tap didn't land) never took its seat and Lichess showed
+                    // it as a SPECTATOR. Submitting the form on load seats the player
+                    // automatically. The form only exists on the landing page, so this
+                    // no-ops once we're in the actual game. The guard prevents a double
+                    // POST if onPageCommitVisible + onPageFinished both fire pre-redirect.
+                    val joinJs = "javascript:(function(){if(window._jpJoin)return;var f=document.querySelector('form.accept');if(f){window._jpJoin=1;f.submit();}})()"
                     // Hide Lichess chrome (header/footer/site nav) but KEEP .mchat,
                     // .clinput, and the in-game chat tabs so the in-app chat works.
                     // Avoid bare `nav` — Lichess uses <nav> for the chat tab strip.
-                    val hideJs = "javascript:(function(){if(document.getElementById('jp'))return;var s=document.createElement('style');s.id='jp';s.textContent='body>header,body>.header,#top,.site-title,.site-buttons,body>footer,.fbt,.topnav,.dasher,.hamburger,.signin,.signup,body>nav,.site-nav,.lobby__table,.lobby__app,.round__top__table,.game__meta__infos{display:none!important}#top,.top,div[role=banner],div[class*=site-buttons],div[class*=topnav]{display:none!important}body,.round__app,.round{padding-top:0!important;margin-top:0!important}';(document.head||document.documentElement).appendChild(s);})()"
+                    val hideJs = "javascript:(function(){if(document.getElementById('jp'))return;var s=document.createElement('style');s.id='jp';s.textContent='body>header,body>.header,#top,.site-title,.site-buttons,body>footer,body>.fbt,.topnav,.dasher,.hamburger,.signin,.signup,body>nav,.site-nav,.lobby__table,.lobby__app,.round__top__table,.game__meta__infos{display:none!important}#top,.top,div[role=banner],div[class*=site-buttons],div[class*=topnav]{display:none!important}body,.round__app,.round{padding-top:0!important;margin-top:0!important}';(document.head||document.documentElement).appendChild(s);})()"
                     val boardCss = boardTheme.css
                     val themeJs = "javascript:(function(){if(document.getElementById('jp-theme'))return;var s=document.createElement('style');s.id='jp-theme';s.textContent='$boardCss';(document.head||document.documentElement).appendChild(s);})()"
 
@@ -1336,11 +1369,26 @@ private fun LichessGameScreen(
                           "});" +
                         "}" +
                         "setPh();armChat();tagSelf();" +
-                        // Slowed from 600ms → 2500ms. The chat polling caused
-                        // ~500 querySelectorAll passes per 5min on long games,
-                        // contributing to a slow OOM (bug report: "crash in
-                        // 5 min"). 2.5s is still responsive enough for chat.
-                        // Auto-stop after game ends.
+                        // Spawn the watchers ONCE. The CSS above is re-applied on
+                        // every (re)injection (cheap, idempotent), but onPageFinished
+                        // AND onPageCommitVisible both fire across the ?color=black
+                        // 303 redirect — guard the intervals so we don't leak
+                        // duplicate timers each time.
+                        "if(window._jpChatInit)return;window._jpChatInit=1;" +
+                        // Fast bootstrap: Lichess builds .mchat client-side AFTER the
+                        // load event (and after the colour redirect), so poll quickly
+                        // until it appears, then stop. If it NEVER appears we're almost
+                        // certainly a spectator (no player-chat DOM) — log it (surfaced
+                        // via onConsoleMessage) instead of silently showing an empty board.
+                        "var _jpTries=0;var _jpBoot=setInterval(function(){" +
+                          "setPh();armChat();tagSelf();" +
+                          "if(document.querySelector('.mchat')){clearInterval(_jpBoot);return;}" +
+                          "if(++_jpTries>=12){clearInterval(_jpBoot);console.log('[JP] no .mchat after 6s — spectator?');}" +
+                        "},500);" +
+                        // Steady-state tagging. Slowed from 600ms → 2500ms: the chat
+                        // polling caused ~500 querySelectorAll passes per 5min on long
+                        // games, contributing to a slow OOM (bug report: "crash in
+                        // 5 min"). 2.5s is still responsive enough. Auto-stops at game end.
                         "var _jpChatT=setInterval(function(){" +
                           "if(window._jpDone){clearInterval(_jpChatT);return;}" +
                           "setPh();armChat();tagSelf();" +
@@ -1481,6 +1529,29 @@ private fun LichessGameScreen(
                     }, "JustPass")
 
                     webViewClient = object : WebViewClient() {
+                        // Inject chrome-hiding + theme + chat + rename + game-end
+                        // scripts. Every script is idempotent (jp/jp-theme/_jpChatInit/
+                        // _jpName/_jpPoll guards), so this is safe to call repeatedly.
+                        // Run it from BOTH onPageFinished AND onPageCommitVisible: the
+                        // latter fires on the final /{id}/{color} page after the
+                        // ?color= 303 redirect, which onPageFinished can miss — without
+                        // it a seated player could land on an un-styled page with no chat.
+                        fun injectChrome(view: WebView?) {
+                            // Claim the seat FIRST (open-challenge landing page → submit
+                            // the join form) so the player is seated before anything else.
+                            view?.evaluateJavascript(joinJs, null)
+                            view?.evaluateJavascript(hideJs, null)
+                            view?.evaluateJavascript(themeJs, null)
+                            view?.evaluateJavascript(chatJs, null)
+                            view?.evaluateJavascript(renameJs, null)
+                            if (isLiveGame) view?.evaluateJavascript(pollGameEnd, null)
+                        }
+
+                        override fun onPageCommitVisible(view: WebView?, pageUrl: String?) {
+                            super.onPageCommitVisible(view, pageUrl)
+                            injectChrome(view)
+                        }
+
                         override fun onPageFinished(view: WebView?, pageUrl: String?) {
                             super.onPageFinished(view, pageUrl)
                             // Commit the lichess.org seat cookie to disk once the
@@ -1489,11 +1560,7 @@ private fun LichessGameScreen(
                             // restore, Replay/Analysis re-open) instead of starting
                             // from an empty cookie jar.
                             android.webkit.CookieManager.getInstance().flush()
-                            view?.evaluateJavascript(hideJs, null)
-                            view?.evaluateJavascript(themeJs, null)
-                            view?.evaluateJavascript(chatJs, null)
-                            view?.evaluateJavascript(renameJs, null)
-                            if (isLiveGame) view?.evaluateJavascript(pollGameEnd, null)
+                            injectChrome(view)
                             if (!pageReady) {
                                 pageReady = true
                                 view?.postDelayed({ isLoading = false }, 400)
