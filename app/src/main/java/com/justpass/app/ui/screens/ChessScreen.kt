@@ -1212,28 +1212,50 @@ private fun LichessGameScreen(
 
                     // Start every game with a FRESH Lichess session — THE fix for the
                     // "one phone is a spectator / can't move / no chat" bug. Verified
-                    // via CDP on-device: opening `/{id}?color=white|black` with a FRESH
-                    // session AUTO-SEATS the player (no "Join the game" form, lands
-                    // directly as a seated player), whereas REUSING a persisted `lila2`
-                    // makes Lichess demand a manual join form and frequently drops the
-                    // seat → spectator. (The previous code's onPageFinished flush() that
-                    // PERSISTED the session across games was exactly backwards.) We
-                    // expire ONLY lichess.org cookies here — never the Keycloak/SIS auth
-                    // cookies that live in this same shared CookieManager.
+                    // via on-device CDP traces: opening `/{id}?color=white|black` with a
+                    // FRESH session seats the player; REUSING a persisted `lila2` makes
+                    // Lichess demand a "Join the game" form and frequently drops the seat
+                    // → spectator. (The old onPageFinished flush() that PERSISTED the
+                    // session across games was exactly backwards.) We expire ONLY
+                    // lichess.org cookies — never the Keycloak/SIS auth cookies in this
+                    // same shared CookieManager.
+                    //
+                    // CRITICAL ORDERING: setCookie() is ASYNC. If we loadUrl() right after
+                    // setting the expiries, the GET races the clear and STILL sends the
+                    // stale lila2 (verified: that lands the 2nd player in spectator). So
+                    // we DEFER the game's loadUrl() into the setCookie completion callback,
+                    // with a timeout fallback so the WebView can never end up blank.
+                    val jpWebView = this
+                    var jpLoaded = false
+                    val loadGameOnce = {
+                        if (!jpLoaded) { jpLoaded = true; jpWebView.loadUrl(url) }
+                    }
                     run {
                         val lichessCookieNames = linkedSetOf(
-                            "lila2", "rk2", "rk", "mlat", "sid", "lila-http"
+                            "lila2", "lila-http", "rk2", "rk", "mlat", "sid", "flash"
                         )
                         jpCookieMgr.getCookie("https://lichess.org")
                             ?.split(";")?.forEach { pair ->
                                 val n = pair.substringBefore("=").trim()
                                 if (n.isNotEmpty()) lichessCookieNames.add(n)
                             }
-                        lichessCookieNames.forEach { n ->
-                            jpCookieMgr.setCookie("https://lichess.org", "$n=; Max-Age=0; path=/; domain=.lichess.org")
-                            jpCookieMgr.setCookie("https://lichess.org", "$n=; Max-Age=0; path=/")
+                        val expiries = lichessCookieNames.flatMap { n ->
+                            listOf(
+                                "$n=; Max-Age=0; path=/; domain=.lichess.org",
+                                "$n=; Max-Age=0; path=/"
+                            )
                         }
-                        jpCookieMgr.flush()
+                        // Apply all expiries; the LAST one carries a callback that loads
+                        // the game URL only once the cookie store has committed the change.
+                        expiries.dropLast(1).forEach {
+                            jpCookieMgr.setCookie("https://lichess.org", it, null)
+                        }
+                        jpCookieMgr.setCookie("https://lichess.org", expiries.last()) {
+                            jpCookieMgr.flush()
+                            jpWebView.post { loadGameOnce() }
+                        }
+                        // Safety net: if the callback is ever dropped, load anyway.
+                        jpWebView.postDelayed({ loadGameOnce() }, 700)
                     }
 
                     var pageReady = false
@@ -1249,7 +1271,18 @@ private fun LichessGameScreen(
                     // automatically. The form only exists on the landing page, so this
                     // no-ops once we're in the actual game. The guard prevents a double
                     // POST if onPageCommitVisible + onPageFinished both fire pre-redirect.
-                    val joinJs = "javascript:(function(){if(window._jpJoin)return;var f=document.querySelector('form.accept');if(f){window._jpJoin=1;f.submit();}})()"
+                    // STAGGER the seat-claim by colour. On a Lichess OPEN challenge,
+                    // if both players submit their "Join the game" form at ~the same
+                    // instant (which happens when both tap Play simultaneously — the
+                    // mutual-challenge path — so both WebViews open and submit together),
+                    // Lichess bumps the LATER submitter to SPECTATOR. The normal flow
+                    // works precisely because its two joins are naturally staggered
+                    // (verified on-device: normal=seats both, simultaneous=one spectator;
+                    // a controlled run with white fully seated BEFORE black also seats
+                    // both). So we force that stagger: WHITE submits immediately, BLACK
+                    // waits ~2s so white is seated first. Colour is read from the form's
+                    // action (/challenge/{id}/accept?color=white|black).
+                    val joinJs = "javascript:(function(){if(window._jpJoin)return;var f=document.querySelector('form.accept');if(!f)return;window._jpJoin=1;var blk=(f.getAttribute('action')||'').indexOf('color=black')>=0;setTimeout(function(){var g=document.querySelector('form.accept');if(g)g.submit();},blk?2000:0);})()"
                     // Hide Lichess chrome (header/footer/site nav) but KEEP .mchat,
                     // .clinput, and the in-game chat tabs so the in-app chat works.
                     // Avoid bare `nav` — Lichess uses <nav> for the chat tab strip.
@@ -1591,7 +1624,10 @@ private fun LichessGameScreen(
                         }
                     }
                     webViewRef.view = this
-                    loadUrl(url)
+                    // NOTE: loadUrl(url) is intentionally NOT called here. It is deferred
+                    // into the cookie-clear completion callback above (loadGameOnce) so the
+                    // first GET goes out with a fresh Lichess session — see the fresh-session
+                    // comment near the CookieManager block. Loading here would race the clear.
                 }
             }
         )
