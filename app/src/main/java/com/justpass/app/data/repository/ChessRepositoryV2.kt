@@ -247,6 +247,11 @@ class ChessRepositoryV2 private constructor() : ChessLobby {
         challengeId: String,
         timeControl: String
     ): Pair<String, String>? {
+        // Socket is down — the ACCEPT can't reach the Worker, so don't make the
+        // caller wait the full ACCEPT_TIMEOUT_MS (10s) for a reply that can't
+        // come. Fail fast so the ViewModel surfaces its retry prompt immediately
+        // instead of leaving the accept card frozen (part of the G2 fix).
+        if (!wsConnected) return null
         val deferred = CompletableDeferred<Pair<String, String>?>()
         pendingAcceptCompletables[challengeId] = deferred
         val msg = JsonObject().apply {
