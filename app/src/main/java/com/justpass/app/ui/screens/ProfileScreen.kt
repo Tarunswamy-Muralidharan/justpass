@@ -554,6 +554,9 @@ fun ProfileScreen(
                     modifier = Modifier.clickable { Analytics.logProfileAction("attendance_target"); showTargetDialog = true },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
+                // 3.0.5: Weather settings hidden (saved for 3.0.6). Restore by removing
+                // this `if (false) {` wrapper and its matching close `}` below.
+                if (false) {
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 // Auto weather toggle — fetches real Neelambur weather from Open-Meteo
                 ListItem(
@@ -627,6 +630,7 @@ fun ProfileScreen(
                         containerColor = Color(0xFF1E2A3A),
                     )
                 }
+                } // end 3.0.5 weather-hidden block (restore for 3.0.6)
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 // Class compare: delete my data — only shown when the feature
                 // flag is on. Wipes the user's row on the Worker D1 + clears
