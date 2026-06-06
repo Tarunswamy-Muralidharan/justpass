@@ -1237,6 +1237,7 @@ private fun LichessGameScreen(
                     // with a timeout fallback so the WebView can never end up blank.
                     val jpWebView = this
                     var jpLoaded = false
+                    var seatRetries = 0   // self-healing reload count if the seat doesn't take
                     // SEQUENTIAL SEATING. A fresh Lichess session AUTO-SEATS on the
                     // `?color=X` GET (no "Join the game" form), so if both phones load
                     // their colour URL at the same instant they race on the open
@@ -1620,6 +1621,21 @@ private fun LichessGameScreen(
                             if (!pageReady) {
                                 pageReady = true
                                 view?.postDelayed({ isLoading = false }, 400)
+                            }
+                            // SELF-HEALING SEAT-RETRY. A fresh-session auto-seat redirects
+                            // away from `?color=X` to the seated game URL. If we're still on
+                            // the `?color=` join landing after a few seconds, the seat didn't
+                            // take (the intermittent Lichess open-challenge race) — reload to
+                            // retry. On reload the session now exists, so Lichess shows the
+                            // "Join the game" form, which joinJs auto-submits → seats. Capped.
+                            if ((pageUrl ?: "").contains("?color=") && seatRetries < 3) {
+                                view?.postDelayed({
+                                    if (webViewRef.alive && (view.url ?: "").contains("?color=")) {
+                                        seatRetries++
+                                        android.util.Log.d("ChessJS", "[JP] seat-retry $seatRetries — reloading (seat didn't take)")
+                                        view.loadUrl(url)
+                                    }
+                                }, 3500)
                             }
                         }
 
