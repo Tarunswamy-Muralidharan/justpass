@@ -1237,8 +1237,21 @@ private fun LichessGameScreen(
                     // with a timeout fallback so the WebView can never end up blank.
                     val jpWebView = this
                     var jpLoaded = false
+                    // SEQUENTIAL SEATING. A fresh Lichess session AUTO-SEATS on the
+                    // `?color=X` GET (no "Join the game" form), so if both phones load
+                    // their colour URL at the same instant they race on the open
+                    // challenge and one is stranded ("one phone loading opponent, other
+                    // in the game"). Deterministically order it: the WHITE side loads
+                    // immediately and seats first; the BLACK side waits ~2.6s so it
+                    // seats AFTER white. (Verified earlier: white-fully-seated-then-black
+                    // always seats both.) Colour is read from this WebView's own URL.
+                    val jpIsBlackSide = url.contains("color=black") || Regex("/[A-Za-z0-9]{8}/black").containsMatchIn(url)
                     val loadGameOnce = {
-                        if (!jpLoaded) { jpLoaded = true; jpWebView.loadUrl(url) }
+                        if (!jpLoaded) {
+                            jpLoaded = true
+                            if (jpIsBlackSide) jpWebView.postDelayed({ jpWebView.loadUrl(url) }, 2600)
+                            else jpWebView.loadUrl(url)
+                        }
                     }
                     run {
                         // Guarantee a TRULY fresh Lichess session for EVERY game. Expiring
