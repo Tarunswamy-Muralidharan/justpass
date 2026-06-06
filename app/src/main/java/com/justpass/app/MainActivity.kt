@@ -741,10 +741,13 @@ fun AttendanceApp() {
                             Analytics.logFeatureUsed(bottomTabs[index].label.lowercase())
                         },
                         onCenterTap = {
-                            gamesPopupOpen = !gamesPopupOpen
-                            Analytics.logFeatureUsed("games_popup_toggle")
+                            // 3.0.5: Human Benchmark hidden (saved for 3.0.6) — the games
+                            // popup only offered HB + Chess, so go straight to Chess.
+                            // Restore `gamesPopupOpen = !gamesPopupOpen` for 3.0.6.
+                            currentScreen = Screen.Chess
+                            Analytics.logFeatureUsed("games_chess")
                         },
-                        centerSelected = gamesPopupOpen,
+                        centerSelected = currentScreen == Screen.Chess,
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }
