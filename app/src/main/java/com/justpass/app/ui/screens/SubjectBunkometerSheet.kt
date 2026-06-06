@@ -13,9 +13,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -223,8 +225,17 @@ fun SubjectBunkometerSheet(
                                         fontSize = 11.sp, color = Color.White.copy(alpha = 0.7f))
                                 }
                             }
-                            TextButton(onClick = { selectedDates.clear() }) {
-                                Text("Clear days", fontSize = 12.sp, color = accent)
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = { selectedDates.clear() },
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                border = BorderStroke(1.dp, accent.copy(alpha = 0.7f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Clear days", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }

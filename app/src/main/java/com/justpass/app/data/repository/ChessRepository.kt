@@ -81,20 +81,24 @@ class ChessRepository {
             ensureFirebaseAuth()
             val doc = profileCollection.document(playerId).get().await()
             if (doc.exists()) {
-                // Force-overwrite stored displayName with the current
-                // biodata real name + lock nameMode to "real" — the
-                // anonymous nickname mode was removed 2026-05-25.
+                // Keep the stored displayName fresh with the current biodata
+                // real name so an admin can always look up who a player really
+                // is in chess_profiles/<id>.displayName — even when they show a
+                // nickname publicly. PRESERVE the user's chosen nameMode +
+                // nickname (default "real") so Random/Custom names persist
+                // across loads. Stats/leaderboard/history are keyed by id, never
+                // by the name, so this never affects any of them.
                 val storedName = doc.getString("displayName") ?: ""
-                if (storedName != realName || doc.getString("nameMode") != "real") {
+                if (storedName != realName) {
                     profileCollection.document(playerId).update(
-                        mapOf("displayName" to realName, "nameMode" to "real")
+                        mapOf("displayName" to realName)
                     ).await()
                 }
                 ChessProfile(
                     id = doc.id,
                     displayName = realName,
                     nickname = doc.getString("nickname") ?: "",
-                    nameMode = "real",
+                    nameMode = (doc.getString("nameMode") ?: "real").ifBlank { "real" },
                     wins = doc.getLong("wins")?.toInt() ?: 0,
                     losses = doc.getLong("losses")?.toInt() ?: 0,
                     draws = doc.getLong("draws")?.toInt() ?: 0,
@@ -880,8 +884,7 @@ class ChessRepository {
     /** Get recent accepted challenges for a player (to check results) */
     suspend fun getRecentGames(playerId: String, limit: Int = 10): List<ChessChallenge> {
         return try {
-            // Only fromId query uses composite index (fromId+status+timestamp)
-            // toId query skips orderBy to avoid needing a second composite index
+            // asSender uses the deployed fromId+status+timestamp composite index.
             val asSender = challengeCollection
                 .whereEqualTo("fromId", playerId)
                 .whereEqualTo("status", "accepted")
@@ -889,10 +892,19 @@ class ChessRepository {
                 .limit(limit.toLong())
                 .get().await()
 
+            // asReceiver: NO orderBy/limit on the query — a toId+status+timestamp
+            // composite index is NOT deployed, and an UNORDERED limit(N) returns
+            // docs by __name__ (challenge ids are random UUIDs). So once a player
+            // had accepted >N games, the NEWEST accepted game fell outside the
+            // window and its result was never checked → the accepter's win/loss
+            // SILENTLY STOPPED RECORDING after ~N accepted games (leaderboard
+            // under-counted accepters). Fix: fetch all this player's accepted
+            // games and sort/cap in memory below so the newest are always
+            // considered. (Future optimization: add the toId+status+timestamp
+            // composite index and restore orderBy(timestamp).limit(N).)
             val asReceiver = challengeCollection
                 .whereEqualTo("toId", playerId)
                 .whereEqualTo("status", "accepted")
-                .limit(limit.toLong())
                 .get().await()
 
             (asSender.documents + asReceiver.documents).mapNotNull { doc ->
@@ -908,7 +920,9 @@ class ChessRepository {
                     resultChecked = doc.getBoolean("resultChecked") ?: false,
                     timestamp = doc.getLong("timestamp") ?: 0L
                 )
-            }.sortedByDescending { it.timestamp }
+            }.distinctBy { it.id }
+                .sortedByDescending { it.timestamp }
+                .take(limit)   // cap result-checks to the newest games overall
         } catch (e: Exception) {
             Log.e(TAG, "Get recent games error: ${e.message}")
             emptyList()

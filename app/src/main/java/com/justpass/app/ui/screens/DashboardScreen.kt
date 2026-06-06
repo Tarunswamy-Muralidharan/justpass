@@ -13,6 +13,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -1111,11 +1112,24 @@ fun DashboardScreen(
                                 }
 
                                 if (selectedDates.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    TextButton(
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedButton(
                                         onClick = { selectedDates.clear() },
-                                        contentPadding = PaddingValues(horizontal = 8.dp)
-                                    ) { Text("Clear all", fontSize = 12.sp) }
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            contentColor = MaterialTheme.colorScheme.primary
+                                        )
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Clear all", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
                             }
 
