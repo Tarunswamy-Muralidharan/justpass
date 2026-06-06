@@ -67,10 +67,16 @@ data class ChessProfile(
     val lastOnline: Long = 0L
 ) {
     val rating: Int get() = 1000 + (wins * 15) - (losses * 10) + (draws * 3)
-    // Always show the real biodata name. Anonymous nicknames removed
-    // 2026-05-25 — same identity across PWA + Android, no more guessing
-    // who's who behind a random `SilentKnight#42` handle.
-    val visibleName: String get() = displayName.ifBlank { nickname }
+    // Display name honours the user's chosen nameMode: "custom"/"random" show
+    // their nickname; "real" (the default) shows the biodata name. Stats,
+    // leaderboard rank and match history are ALL keyed by the player id, never
+    // by this string, so switching name modes never affects them. The real
+    // biodata name is always kept fresh in chess_profiles/<id>.displayName for
+    // admin lookup even when a nickname is shown publicly.
+    val visibleName: String get() = when (nameMode) {
+        "custom", "random" -> nickname.ifBlank { displayName }
+        else -> displayName.ifBlank { nickname }
+    }
 }
 
 data class FriendRequest(

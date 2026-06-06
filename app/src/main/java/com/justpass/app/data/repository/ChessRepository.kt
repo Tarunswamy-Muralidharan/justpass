@@ -81,20 +81,24 @@ class ChessRepository {
             ensureFirebaseAuth()
             val doc = profileCollection.document(playerId).get().await()
             if (doc.exists()) {
-                // Force-overwrite stored displayName with the current
-                // biodata real name + lock nameMode to "real" — the
-                // anonymous nickname mode was removed 2026-05-25.
+                // Keep the stored displayName fresh with the current biodata
+                // real name so an admin can always look up who a player really
+                // is in chess_profiles/<id>.displayName — even when they show a
+                // nickname publicly. PRESERVE the user's chosen nameMode +
+                // nickname (default "real") so Random/Custom names persist
+                // across loads. Stats/leaderboard/history are keyed by id, never
+                // by the name, so this never affects any of them.
                 val storedName = doc.getString("displayName") ?: ""
-                if (storedName != realName || doc.getString("nameMode") != "real") {
+                if (storedName != realName) {
                     profileCollection.document(playerId).update(
-                        mapOf("displayName" to realName, "nameMode" to "real")
+                        mapOf("displayName" to realName)
                     ).await()
                 }
                 ChessProfile(
                     id = doc.id,
                     displayName = realName,
                     nickname = doc.getString("nickname") ?: "",
-                    nameMode = "real",
+                    nameMode = (doc.getString("nameMode") ?: "real").ifBlank { "real" },
                     wins = doc.getLong("wins")?.toInt() ?: 0,
                     losses = doc.getLong("losses")?.toInt() ?: 0,
                     draws = doc.getLong("draws")?.toInt() ?: 0,

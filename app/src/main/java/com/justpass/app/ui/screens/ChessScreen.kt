@@ -531,7 +531,7 @@ fun ChessScreen(
                         "What is this?" to "A live chess lobby for PSG iTech students. See who's online, challenge them, and play on Lichess!",
                         "Getting started" to "1. Set your display name\n2. Link your Lichess username\n3. You'll appear online when you open this screen",
                         "Challenging" to "Tap the sword icon next to any player. They get 15s to accept. Once accepted, Lichess opens for both.",
-                        "Ratings" to "Win = +25 SR, Loss = -20, Draw = +5. Check the leaderboard!",
+                        "Ratings" to "Win = +15 SR, Loss = -10, Draw = +3. Check the leaderboard!",
                         "Friends" to "Send friend requests — friends show a star badge and appear at the top.",
                         "Need Lichess?" to "100% free — no account needed for casual games. Get it from Play Store or lichess.org"
                     )
