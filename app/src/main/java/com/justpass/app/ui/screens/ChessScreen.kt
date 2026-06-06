@@ -200,6 +200,16 @@ fun ChessScreen(
     LaunchedEffect(uiState.acceptedChallenge) {
         val challenge = uiState.acceptedChallenge ?: return@LaunchedEffect
         activeChallenge = challenge // save for name-based results
+        // Ensure BOTH players can "Play Again": the CHALLENGER sets
+        // lastChallengedPlayer via challengeTarget, but the ACCEPTER never did,
+        // so previously only the challenger saw the rematch button. Set it to the
+        // opponent (the other side of this challenge) for whoever we are.
+        val myId = uiState.myProfile?.id ?: ""
+        val oppId = if (challenge.fromId == myId) challenge.toId else challenge.fromId
+        val oppName = if (challenge.fromId == myId) challenge.toName else challenge.fromName
+        if (oppId.isNotBlank()) {
+            lastChallengedPlayer = OnlinePlayer(id = oppId, displayName = oppName)
+        }
         val url = challenge.gameUrl.ifBlank { challenge.opponentUrl }
         if (url.isNotBlank()) {
             activeGameUrl = url
@@ -1082,7 +1092,7 @@ private fun LichessGameScreen(
     // Auto-close when game ends (live games only)
     LaunchedEffect(gameEnded) {
         if (gameEnded != null && isLiveGame) {
-            kotlinx.coroutines.delay(1500) // let user see the final position
+            kotlinx.coroutines.delay(700) // brief glimpse of the final position, then Game Over
             onClose(gameEnded)
         }
     }
@@ -1231,31 +1241,31 @@ private fun LichessGameScreen(
                         if (!jpLoaded) { jpLoaded = true; jpWebView.loadUrl(url) }
                     }
                     run {
-                        val lichessCookieNames = linkedSetOf(
-                            "lila2", "lila-http", "rk2", "rk", "mlat", "sid", "flash"
+                        // Guarantee a TRULY fresh Lichess session for EVERY game. Expiring
+                        // lila2 by-name was intermittently leaving a stale session intact
+                        // under rapid back-to-back play — one phone then got stranded on the
+                        // "Open challenge" page while the other was already in the game (the
+                        // "one phone loading opponent, other in the game" bug). Nuke ALL
+                        // WebView cookies for a clean slate, but SAVE + RESTORE the
+                        // SIS/Keycloak login cookies so the college login is never disturbed
+                        // (SIS auth is token-based, but this also avoids any re-login form).
+                        // removeAllCookies() is async — load the game ONLY in its callback.
+                        val sisHosts = listOf(
+                            "https://accounts.psgitech.ac.in",
+                            "https://laudea.psgitech.ac.in"
                         )
-                        jpCookieMgr.getCookie("https://lichess.org")
-                            ?.split(";")?.forEach { pair ->
-                                val n = pair.substringBefore("=").trim()
-                                if (n.isNotEmpty()) lichessCookieNames.add(n)
+                        val savedSis = sisHosts.map { it to (jpCookieMgr.getCookie(it) ?: "") }
+                        jpCookieMgr.removeAllCookies {
+                            savedSis.forEach { (host, cookieStr) ->
+                                cookieStr.split(";").map { it.trim() }
+                                    .filter { it.contains("=") }
+                                    .forEach { jpCookieMgr.setCookie(host, it) }
                             }
-                        val expiries = lichessCookieNames.flatMap { n ->
-                            listOf(
-                                "$n=; Max-Age=0; path=/; domain=.lichess.org",
-                                "$n=; Max-Age=0; path=/"
-                            )
-                        }
-                        // Apply all expiries; the LAST one carries a callback that loads
-                        // the game URL only once the cookie store has committed the change.
-                        expiries.dropLast(1).forEach {
-                            jpCookieMgr.setCookie("https://lichess.org", it, null)
-                        }
-                        jpCookieMgr.setCookie("https://lichess.org", expiries.last()) {
                             jpCookieMgr.flush()
                             jpWebView.post { loadGameOnce() }
                         }
                         // Safety net: if the callback is ever dropped, load anyway.
-                        jpWebView.postDelayed({ loadGameOnce() }, 700)
+                        jpWebView.postDelayed({ loadGameOnce() }, 1000)
                     }
 
                     var pageReady = false
@@ -1471,7 +1481,7 @@ private fun LichessGameScreen(
                             if(window._jpDone){clearInterval(_jpNameT);return;}
                             rewrite();
                         },2000);
-                    })()""".trimIndent().replace("\n", "")
+                    })()""".trimIndent().replace(Regex("//[^\n]*"), "").replace("\n", "")
 
                     // Poll for game-over with the broadest possible detection.
                     // Lichess mobile uses hashed class names for some elements,
@@ -1542,7 +1552,7 @@ private fun LichessGameScreen(
                             console.log('[JP] FIRING winner='+winner+' myC='+myC+' result='+result);
                             JustPass.onGameEnd(winner+'|'+txt+'|'+myC+'|'+result);
                         },1500);
-                    })()""".trimIndent().replace("\n", "")
+                    })()""".trimIndent().replace(Regex("//[^\n]*"), "").replace("\n", "")
 
                     // JS interface to receive game-end callback. Wrap in try/catch
                     // because pollGameEnd runs on a setInterval inside Lichess — if
