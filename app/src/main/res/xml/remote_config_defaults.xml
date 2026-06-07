@@ -83,22 +83,19 @@
              `announcement_title` + `announcement_message`. Once a user taps
              "Got it", the id is saved in SecurePrefs and the dialog never
              re-shows for them — unless you publish a different id. -->
-        <!-- 3.0.5: baked-in "chess is live + per-subject Plan Leave" announcement.
-             Console values (if set) override these. To re-broadcast later, bump
-             announcement_id in the console. -->
         <key>announcement_active</key>
-        <value>true</value>
+        <value>false</value>
     </entry>
     <entry>
         <key>announcement_id</key>
-        <value>v305-chess-planleave</value>
+        <value></value>
     </entry>
     <entry>
         <key>announcement_title</key>
-        <value>Chess is now live!</value>
+        <value></value>
     </entry>
     <entry>
         <key>announcement_message</key>
-        <value>Online chess is fully working now — challenge your friends and play live games. Also new: open any subject and tap "Plan leave" for a per-subject bunkometer that shows how many classes you can skip.</value>
+        <value></value>
     </entry>
 </defaultsMap>

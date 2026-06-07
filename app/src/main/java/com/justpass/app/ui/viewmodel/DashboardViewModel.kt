@@ -558,6 +558,23 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
      * who previously dismissed an earlier announcement.
      */
     private fun fetchAnnouncement() {
+        // 3.0.5: one-time, LOCAL (non-RC) "What's new" dialog. Shows once on the
+        // first launch of this version, then never again (per-id dismissal via
+        // SecurePreferences.dismissedAnnouncementId, set in dismissAnnouncement),
+        // and ONLY on the 3.0.5 build (versionCode 14) — so 3.0.6 won't show it.
+        // Takes priority over the Remote Config announcement below.
+        if (com.justpass.app.BuildConfig.VERSION_CODE == 14 &&
+            securePrefs.dismissedAnnouncementId != "whatsnew-v305") {
+            _uiState.value = _uiState.value.copy(
+                announcement = Announcement(
+                    id = "whatsnew-v305",
+                    title = "What's new in 3.0.5",
+                    message = "♟ Online Chess is now fixed and fully working — challenge your friends and play live games!\n\n📊 New: per-subject Plan Leave — open any subject and tap \"Plan leave\" to see exactly how many classes you can skip.",
+                    active = true
+                )
+            )
+            return
+        }
         val remoteConfig = com.google.firebase.remoteconfig.FirebaseRemoteConfig.getInstance()
         // No setDefaultsAsync here — the bundled remote_config_defaults.xml is
         // already loaded by MainActivity's earlier LaunchedEffect. fetchAndActivate
