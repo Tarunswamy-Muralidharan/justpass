@@ -1187,12 +1187,9 @@ private fun LichessGameScreen(
             }
         }
 
-        // WebView takes the remaining space; a "Joining game…" overlay covers it
-        // ONLY while we're not yet seated (isLoading), then leaves the tree so the
-        // live board is fully touchable.
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        // WebView takes remaining space — no overlays on top of it
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
             factory = { ctx ->
                 WebView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(
@@ -1241,8 +1238,6 @@ private fun LichessGameScreen(
                     val jpWebView = this
                     var jpLoaded = false
                     var seatRetries = 0   // self-healing reload count if the seat doesn't take
-                    var seatAttempts = 0  // total seat-check polls (hard cap so we never spin forever)
-                    var joinPageSeen = 0  // consecutive "still on the Join form" polls before forcing a reload
                     // SEQUENTIAL SEATING. A fresh Lichess session AUTO-SEATS on the
                     // `?color=X` GET (no "Join the game" form), so if both phones load
                     // their colour URL at the same instant they race on the open
@@ -1312,15 +1307,6 @@ private fun LichessGameScreen(
                     // waits ~2s so white is seated first. Colour is read from the form's
                     // action (/challenge/{id}/accept?color=white|black).
                     val joinJs = "javascript:(function(){if(window._jpJoin)return;var f=document.querySelector('form.accept');if(!f)return;window._jpJoin=1;var blk=(f.getAttribute('action')||'').indexOf('color=black')>=0;setTimeout(function(){var g=document.querySelector('form.accept');if(g)g.submit();},blk?2000:0);})()"
-                    // Reports whether THIS WebView is actually SEATED as a player, used to
-                    // drive the auto-join retry below. Returns one of:
-                    //   "joinpage"  — still on the open-challenge "Join the game" form
-                    //   "loading"   — page not rendered yet (no board)
-                    //   "seated"    — board + a player-only signal ("You play the … pieces"
-                    //                 banner, or the abort/resign controls spectators never get)
-                    //   "spectator" — board present but none of the player signals → seat
-                    //                 didn't take (the intermittent open-challenge race)
-                    val seatedCheckJs = "(function(){try{if(document.querySelector('form.accept'))return 'joinpage';if(!document.querySelector('cg-board'))return 'loading';var t=document.body?document.body.innerText:'';if(/You play the (white|black) pieces/i.test(t))return 'seated';if(document.querySelector('.rcontrols .abort,.rcontrols .resign,.rcontrols .fbt.abort,.rcontrols .fbt.resign,.ricons .abort,.ricons .resign'))return 'seated';return 'spectator';}catch(e){return 'loading';}})()"
                     // Hide Lichess chrome (header/footer/site nav) but KEEP .mchat,
                     // .clinput, and the in-game chat tabs so the in-app chat works.
                     // Avoid bare `nav` — Lichess uses <nav> for the chat tab strip.
@@ -1634,63 +1620,26 @@ private fun LichessGameScreen(
                             injectChrome(view)
                             if (!pageReady) {
                                 pageReady = true
-                                if (!isLiveGame) {
-                                    // Analysis / replay pages have no seat to claim —
-                                    // just drop the loader once the page renders.
-                                    view?.postDelayed({ isLoading = false }, 400)
-                                } else {
-                                    // ROBUST AUTO-JOIN. The loader overlay stays up (covering
-                                    // the WebView) until we are actually SEATED as our colour,
-                                    // so the Lichess "Join the game" landing page and any
-                                    // spectator flash are never visible — the user just sees
-                                    // "Joining game…" then the live board.
-                                    //
-                                    // We poll seatedCheckJs and self-heal:
-                                    //   seated     → drop the loader, done.
-                                    //   loading    → page not ready, poll again.
-                                    //   joinpage   → joinJs is (or will be) submitting the form
-                                    //                (white now, black staggered +2s). Give it a
-                                    //                few polls; only reload if it never submits.
-                                    //   spectator  → seat didn't take → reload to re-run joinJs.
-                                    // Capped on reloads (seatRetries) AND total polls
-                                    // (seatAttempts) so it always resolves rather than spin.
-                                    lateinit var seatWatch: Runnable
-                                    seatWatch = Runnable {
-                                        if (!webViewRef.alive) return@Runnable
-                                        seatAttempts++
-                                        jpWebView.evaluateJavascript(seatedCheckJs) { res ->
-                                            if (!webViewRef.alive) return@evaluateJavascript
-                                            val st = (res ?: "").trim('"')
-                                            when {
-                                                st == "seated" -> isLoading = false
-                                                seatAttempts >= 14 -> isLoading = false
-                                                st == "loading" -> jpWebView.postDelayed(seatWatch, 1500)
-                                                st == "joinpage" -> {
-                                                    joinPageSeen++
-                                                    if (joinPageSeen >= 3 && seatRetries < 5) {
-                                                        seatRetries++
-                                                        joinPageSeen = 0
-                                                        android.util.Log.d("ChessJS", "[JP] join form not submitting — reload ($seatRetries)")
-                                                        jpWebView.loadUrl(url)
-                                                    }
-                                                    jpWebView.postDelayed(seatWatch, 1500)
-                                                }
-                                                else -> { // "spectator"
-                                                    if (seatRetries < 5) {
-                                                        seatRetries++
-                                                        joinPageSeen = 0
-                                                        android.util.Log.d("ChessJS", "[JP] spectator — reload+resubmit ($seatRetries)")
-                                                        jpWebView.loadUrl(url)
-                                                    } else {
-                                                        isLoading = false
-                                                    }
-                                                    jpWebView.postDelayed(seatWatch, 2500)
-                                                }
-                                            }
-                                        }
+                                view?.postDelayed({ isLoading = false }, 400)
+                            }
+                            // SELF-HEALING SEAT-RETRY. A fresh-session auto-seat redirects
+                            // away from `?color=X` to the seated game URL. If we're still on
+                            // the `?color=` join landing after a few seconds, the seat didn't
+                            // take (the intermittent Lichess open-challenge race) — reload to
+                            // retry. On reload the session now exists, so Lichess shows the
+                            // "Join the game" form, which joinJs auto-submits → seats. Capped.
+                            // NOTE: only reload while still on the `?color=` landing. Reloading
+                            // an ALREADY-seated game strands chessground without its legal-move
+                            // data (`dests`) → a manipulable but unmovable board. (Regression
+                            // from an over-eager "spectator" reload — see 2026-06-09.)
+                            if ((pageUrl ?: "").contains("?color=") && seatRetries < 3) {
+                                view?.postDelayed({
+                                    if (webViewRef.alive && (view.url ?: "").contains("?color=")) {
+                                        seatRetries++
+                                        android.util.Log.d("ChessJS", "[JP] seat-retry $seatRetries — reloading (seat didn't take)")
+                                        view.loadUrl(url)
                                     }
-                                    view?.postDelayed(seatWatch, 1200)
-                                }
+                                }, 3500)
                             }
                         }
 
@@ -1716,6 +1665,50 @@ private fun LichessGameScreen(
                             }
                             return true
                         }
+
+                        // THE freeze fix. Lichess's round page registers a
+                        // `beforeunload` handler ("you'll abandon the game"). When the
+                        // chess WebView reloads/navigates a live game (seat-retry,
+                        // Play Again), that handler fires the WebView's DEFAULT modal
+                        // confirm dialog ("Confirm Navigation / Changes you made may
+                        // not be saved"). A native JS dialog BLOCKS the entire WebView
+                        // renderer thread — the round socket never finishes init, no
+                        // legal moves load, and every tap is a no-op: the "frozen
+                        // board" users saw after Play Again. We never want that prompt
+                        // (the app's own "Leave Game" button handles intent), so
+                        // auto-confirm it WITHOUT showing UI. Same for stray
+                        // alert/confirm/prompt so nothing can ever block the board.
+                        override fun onJsBeforeUnload(
+                            view: WebView?, url: String?, message: String?,
+                            result: android.webkit.JsResult?
+                        ): Boolean {
+                            result?.confirm()
+                            return true
+                        }
+
+                        override fun onJsConfirm(
+                            view: WebView?, url: String?, message: String?,
+                            result: android.webkit.JsResult?
+                        ): Boolean {
+                            result?.confirm()
+                            return true
+                        }
+
+                        override fun onJsAlert(
+                            view: WebView?, url: String?, message: String?,
+                            result: android.webkit.JsResult?
+                        ): Boolean {
+                            result?.confirm()
+                            return true
+                        }
+
+                        override fun onJsPrompt(
+                            view: WebView?, url: String?, message: String?,
+                            defaultValue: String?, result: android.webkit.JsPromptResult?
+                        ): Boolean {
+                            result?.confirm(defaultValue ?: "")
+                            return true
+                        }
                     }
                     webViewRef.view = this
                     // NOTE: loadUrl(url) is intentionally NOT called here. It is deferred
@@ -1725,24 +1718,6 @@ private fun LichessGameScreen(
                 }
             }
         )
-            if (isLoading) {
-                Box(
-                    modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A2E)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        RoseFourLoader(modifier = Modifier.size(48.dp))
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            if (isLiveGame) "Joining game…" else "Loading…",
-                            color = Color.White.copy(alpha = 0.85f),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-        }
         // AdBanner removed from inside the live game — its auto-refresh cycle
         // (every 60s) plus the WebView's running Lichess page caused enough
         // memory pressure to crash long games (bug report: "crash in 5 min").
