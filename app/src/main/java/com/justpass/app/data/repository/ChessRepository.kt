@@ -89,11 +89,15 @@ class ChessRepository {
                 // across loads. Stats/leaderboard/history are keyed by id, never
                 // by the name, so this never affects any of them.
                 val storedName = doc.getString("displayName") ?: ""
-                if (storedName != realName) {
-                    profileCollection.document(playerId).update(
-                        mapOf("displayName" to realName)
-                    ).await()
-                }
+                // Always stamp lastOnline on lobby entry — the V2 lobby
+                // (ChessRepositoryV2) keeps presence on the Cloudflare WS and
+                // never touches Firestore, so without this the friends-list
+                // "Last seen" froze at whatever the old V1 goOnline last wrote.
+                val updates = mutableMapOf<String, Any>(
+                    "lastOnline" to System.currentTimeMillis()
+                )
+                if (storedName != realName) updates["displayName"] = realName
+                profileCollection.document(playerId).update(updates).await()
                 ChessProfile(
                     id = doc.id,
                     displayName = realName,
