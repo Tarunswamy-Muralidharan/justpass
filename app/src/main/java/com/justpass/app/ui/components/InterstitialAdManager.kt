@@ -44,7 +44,7 @@ object InterstitialAdManager {
         )
     }
 
-    fun show(activity: Activity, onDismissed: () -> Unit = {}) {
+    fun show(activity: Activity, screenName: String = "Bunkometer", onDismissed: () -> Unit = {}) {
         if (!AdConfig.adsEnabled) { onDismissed(); return }
         val ad = interstitialAd
         if (ad == null) {
@@ -67,7 +67,7 @@ object InterstitialAdManager {
             }
         }
 
-        Analytics.logAdImpression("Bunkometer", "interstitial")
+        Analytics.logAdImpression(screenName, "interstitial")
         ad.show(activity)
     }
 }

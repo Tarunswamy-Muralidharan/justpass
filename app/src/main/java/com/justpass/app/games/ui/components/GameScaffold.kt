@@ -44,6 +44,7 @@ import com.justpass.app.games.data.model.Game
 import com.justpass.app.games.ui.theme.BBInk
 import com.justpass.app.games.ui.theme.DisplayFont
 import com.justpass.app.games.ui.theme.MonoFont
+import com.justpass.app.ui.components.AdBanner
 
 @Composable
 fun GameScaffold(
@@ -76,6 +77,11 @@ fun GameScaffold(
                 onBack = onBack,
                 onHow = { showInstructions = true }
             )
+            // Banner anchored at the top, under the toolbar — kept out of the
+            // play area below so fast tap-games (Reaction, Aim, Chimp) can't
+            // generate accidental ad clicks. Renders zero-height when ads are
+            // off (AdConfig gate inside AdBanner), so layout is unaffected.
+            AdBanner(screenName = "game_${game.code}")
             content(0.dp)
         }
     }

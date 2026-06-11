@@ -996,7 +996,21 @@ fun AttendanceApp() {
                             onBack = { currentScreen = Screen.Dashboard; selectedTabIndex = 0 },
                             onLeaderboard = { g ->
                                 leaderboardGame = g
-                                currentScreen = Screen.GamesLeaderboard
+                                // Interstitial gate on entering the leaderboard.
+                                // show() navigates via the dismiss callback when
+                                // an ad runs, or fires it immediately when ads are
+                                // off / nothing is loaded — so it never blocks.
+                                val act = context as? android.app.Activity
+                                if (act != null) {
+                                    com.justpass.app.ui.components.InterstitialAdManager.show(
+                                        act,
+                                        screenName = "games_leaderboard"
+                                    ) {
+                                        currentScreen = Screen.GamesLeaderboard
+                                    }
+                                } else {
+                                    currentScreen = Screen.GamesLeaderboard
+                                }
                             },
                             // The pixel-wipe overlay's copy already played the
                             // card stagger — this instance mounts behind the

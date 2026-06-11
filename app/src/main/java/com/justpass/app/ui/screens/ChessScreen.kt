@@ -363,6 +363,12 @@ fun ChessScreen(
             }
         }
 
+        // Lobby banner — top placement under the header. Bottom is unusable
+        // here because the floating bump bar overlaps the bottom ~160dp.
+        // Never shown during a live game: the Lichess WebView is a full-screen
+        // Dialog and this lobby Column early-returns before composing.
+        AdBanner(screenName = "chess_lobby")
+
         // ── Action bar — Friends, Theme, History, Leaderboard, Edit Name ──
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
