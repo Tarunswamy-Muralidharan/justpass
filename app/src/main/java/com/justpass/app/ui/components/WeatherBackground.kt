@@ -517,8 +517,10 @@ private fun Cloudscape(
     BlobCloudscape(tint, density, layers, baseDurSec)
 }
 
-// AGSL fragment shader: value-noise fBm → threshold silhouette → soft edge →
-// vertical gradient body × wisp detail. All 4 layers composited in one pass.
+// AGSL fragment shader — iOS-Weather-style soft cumulus. Wide smoothstep
+// density (no hard threshold), mild horizontal stretch (clouds are wider
+// than tall, not streaks), and top-lit shading from an offset density
+// sample. Three parallax billow layers composited premultiplied.
 private const val CLOUD_AGSL = """
 uniform float2 uSize;
 uniform float uTime;
@@ -538,7 +540,8 @@ float hash(float2 p) {
 float vnoise(float2 p) {
     float2 i = floor(p);
     float2 f = fract(p);
-    float2 u = f * f * (3.0 - 2.0 * f);
+    // quintic fade — smoother than cubic, kills the grid-line artifact
+    float2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     float a = hash(i);
     float b = hash(i + float2(1.0, 0.0));
     float c = hash(i + float2(0.0, 1.0));
@@ -548,21 +551,16 @@ float vnoise(float2 p) {
 float fbm(float2 p) {
     float v = 0.0;
     float amp = 0.5;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
         v += amp * vnoise(p);
-        p = p * 2.04 + float2(17.3, 9.1);
+        p = p * 2.02 + float2(17.3, 9.1);
         amp *= 0.5;
     }
     return v;
 }
-// One cloud layer: silhouette alpha at this fragment.
-float cloudLayer(float2 uv, float fx, float fy, float drift, float lo, float hi, float seed) {
-    float2 p = float2(uv.x * fx + drift, uv.y * fy + seed);
-    float n = fbm(p);
-    float a = smoothstep(lo, hi, n);
-    // internal wisp texture — higher-frequency noise modulating the body
-    float wisp = fbm(p * 3.1 + float2(seed * 1.7, 4.2));
-    return a * (0.62 + 0.38 * wisp);
+// Soft cloud density 0..1 at noise-space point p.
+float dens(float2 p, float lo, float hi) {
+    return smoothstep(lo, hi, fbm(p));
 }
 
 half4 main(float2 frag) {
@@ -572,21 +570,29 @@ half4 main(float2 frag) {
     float3 col = float3(0.0);
     float alpha = 0.0;
 
-    // per-layer: featureScaleX, featureScaleY, opacity, speed sign, duration mul
-    for (int i = 0; i < 4; i++) {
-        float fx; float fy; float op; float sgn; float durMul; float seed;
-        if (i == 0)      { fx =  7.6; fy = 21.6; op = 0.95; sgn = -1.0; durMul = 1.00; seed = 11.0; }
-        else if (i == 1) { fx = 11.9; fy = 32.4; op = 0.85; sgn =  1.0; durMul = 0.72; seed = 37.0; }
-        else if (i == 2) { fx = 19.4; fy = 49.7; op = 0.70; sgn = -1.0; durMul = 0.52; seed = 73.0; }
-        else             { fx = 28.1; fy = 69.1; op = 0.55; sgn =  1.0; durMul = 0.40; seed = 91.0; }
+    // Per-layer: feature scale (mildly anisotropic: billows ~1.8x wider than
+    // tall), opacity, drift direction, speed, vertical seed offset.
+    for (int i = 0; i < 3; i++) {
+        float fx; float op; float sgn; float durMul; float seed;
+        if (i == 0)      { fx = 2.6; op = 0.92; sgn = -1.0; durMul = 1.00; seed = 11.0; }
+        else if (i == 1) { fx = 4.1; op = 0.78; sgn =  1.0; durMul = 0.66; seed = 37.0; }
+        else             { fx = 6.3; op = 0.60; sgn = -1.0; durMul = 0.45; seed = 73.0; }
         // branchless layer-count mask (break is not allowed in AGSL runtime effects)
         float on = step(float(i) + 0.5, uLayers);
-        float drift = sgn * uTime / (uBaseDur * durMul) * fx * 0.5;
-        float a = cloudLayer(uv, fx, fy, drift, uLo, uHi, seed) * op * uOpacity * on;
+        float drift = sgn * uTime / (uBaseDur * durMul);
+        float2 p = float2(uv.x * fx + drift, uv.y * fx * 1.8 + seed);
+
+        float d = dens(p, uLo, uHi);
+        // Top-lit shading: sample the density a little "above" this point.
+        // Where the sky above is emptier than here, we're on a sunlit crown;
+        // where it's denser, we're under the cloud's belly — shade it.
+        float dUp = dens(p + float2(0.0, -0.42), uLo, uHi);
+        float lit = clamp(0.60 + 0.85 * (d - dUp), 0.30, 1.0);
+        float3 body = mix(uBot.rgb, uTop.rgb, lit);
+
+        float a = d * op * uOpacity * on;
         // clouds thin out toward the very bottom so the sky horizon shows
         a *= smoothstep(1.08, 0.62, yFrac);
-        // vertical body gradient: lit tops, shaded bottoms (per-fragment proxy)
-        float3 body = mix(uTop.rgb, uBot.rgb, clamp(yFrac * 1.5, 0.0, 1.0));
         col = body * a + col * (1.0 - a);
         alpha = a + alpha * (1.0 - a);
     }
@@ -623,14 +629,16 @@ private fun ShaderCloudscape(
             }
         }
     }
-    // Threshold band by density per HANDOFF: 0.5→0.46, 1.0→0.37, 1.4→0.27.
-    val lo = (0.555f - 0.20f * density).coerceIn(0.10f, 0.50f)
+    // Density shifts the soft band down (denser sky = more cloud coverage).
+    // The band itself is WIDE (0.42) — that width is what makes the edges
+    // read as soft vapour instead of hard threshold streaks.
+    val lo = (0.46f - 0.18f * density).coerceIn(0.08f, 0.46f)
     Canvas(Modifier.fillMaxSize()) {
         shader.setFloatUniform("uSize", size.width, size.height)
         shader.setFloatUniform("uTime", timeSec)
         shader.setFloatUniform("uLo", lo)
-        shader.setFloatUniform("uHi", lo + 0.07f)
-        shader.setFloatUniform("uLayers", layers.coerceIn(1, 4).toFloat())
+        shader.setFloatUniform("uHi", lo + 0.42f)
+        shader.setFloatUniform("uLayers", layers.coerceIn(1, 3).toFloat())
         shader.setFloatUniform("uBaseDur", baseDurSec.toFloat())
         shader.setFloatUniform("uOpacity", (density.coerceIn(0.4f, 1.6f) / 1.2f).coerceAtMost(1f))
         shader.setColorUniform("uTop", tint.top.toArgb())
