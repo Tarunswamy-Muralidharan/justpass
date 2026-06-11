@@ -64,6 +64,10 @@ fun PixelWipeOverlay(
     val spread = 0.55f
     val cellDur = if (contracting) 0.30f else 0.32f
 
+    // Reused across frames (rewind keeps the internal storage) — the mask is
+    // rebuilt ~60×/s, so per-frame Path allocation churn shows up as jank.
+    val maskPath = remember { Path() }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // ── Reveal layer ── destination clipped to the union of all visible
         // cells. Outside the cells the parent screen shows through.
@@ -72,8 +76,17 @@ fun PixelWipeOverlay(
                 .fillMaxSize()
                 .drawWithCache {
                     onDrawWithContent {
-                        val maskPath = buildCellMask(
-                            progress = progress.value,
+                        val p = progress.value
+                        // Every cell settled (expanding endgame) → mask covers
+                        // the whole screen; skip the clip entirely.
+                        if (!contracting && p >= spread + cellDur) {
+                            this@onDrawWithContent.drawContent()
+                            return@onDrawWithContent
+                        }
+                        maskPath.rewind()
+                        buildCellMask(
+                            path = maskPath,
+                            progress = p,
                             cols = cols,
                             rows = rows,
                             originX = originX,
@@ -114,7 +127,8 @@ fun PixelWipeOverlay(
 
 // ── Mask construction ────────────────────────────────────────────────────────
 
-private fun DrawScope.buildCellMask(
+private fun buildCellMask(
+    path: Path,
     progress: Float,
     cols: Int,
     rows: Int,
@@ -124,8 +138,7 @@ private fun DrawScope.buildCellMask(
     spread: Float,
     cellDur: Float,
     canvasSize: Size,
-): Path {
-    val path = Path()
+) {
     val cellW = canvasSize.width / cols
     val cellH = canvasSize.height / rows
     val originCol = originX * cols
@@ -135,71 +148,71 @@ private fun DrawScope.buildCellMask(
         max(originRow, rows - originRow),
     )
 
+    // Per-frame cost lives here: the path is fed to clipPath, and Skia's clip
+    // cost scales with subpath count. Two reductions vs the naive 760-cell
+    // version:
+    //  1. Fully-on cells (settled at scale 1.05 / corner 0) are merged into a
+    //     single rect per contiguous run in each row. Within a row the fully-
+    //     on set {dist ≤ threshold} is one contiguous span, and 1.05-scaled
+    //     neighbours overlap, so the union is exactly one rect.
+    //  2. Transitioning cells use a plain rect once the corner radius decays
+    //     below visibility (< 4% of a ~25 px cell ≈ 1 px) — rounded corners
+    //     are conic subpaths and dominate clip cost.
     for (r in 0 until rows) {
+        var runStart = -1 // first column of the current fully-on run
         for (c in 0 until cols) {
-            val dist = hypot(c - originCol.toFloat(), r - originRow.toFloat())
+            val dist = hypot(c - originCol, r - originRow)
             val ratio = dist / maxDist
             val phaseStart = if (contracting) (1f - ratio) * spread else ratio * spread
             val rawP = (progress - phaseStart) / cellDur
 
-            // For contracting we mirror the timeline: cells start "fully on"
-            // and finish "off". For expanding they start off and finish on.
-            // Cells outside the active window contribute the relevant edge
-            // state to the mask so the union covers everything that should
-            // be visible right now.
-            val maskOn: Boolean
-            val scale: Float
-            val corner: Float
-            if (contracting) {
-                when {
-                    rawP < 0f -> {            // not yet started — still fully on
-                        maskOn = true
-                        scale = 1.05f
-                        corner = 0f
-                    }
-                    rawP >= 1f -> {           // already finished — nothing to draw
-                        maskOn = false; scale = 0f; corner = 0f
-                    }
-                    else -> {
-                        val p = rawP
-                        val shape = cellShape(p, contracting = true)
-                        scale = shape.first
-                        corner = shape.second
-                        maskOn = scale > 0f
-                    }
-                }
-            } else {
-                if (rawP <= 0f) {
-                    maskOn = false; scale = 0f; corner = 0f
-                } else {
-                    val p = rawP.coerceAtMost(1f)
-                    val shape = cellShape(p, contracting = false)
-                    scale = shape.first
-                    corner = shape.second
-                    maskOn = scale > 0f
-                }
+            // Fully on: expanding cells that finished, contracting cells that
+            // haven't started. Both sit at scale 1.05 / corner 0.
+            val fullyOn = if (contracting) rawP < 0f else rawP >= 1f
+            if (fullyOn) {
+                if (runStart < 0) runStart = c
+                continue
+            }
+            if (runStart >= 0) {
+                addFullRun(path, runStart, c - 1, r, cellW, cellH)
+                runStart = -1
             }
 
-            if (!maskOn) continue
+            // Off: expanding not started / contracting finished.
+            val transitioning = if (contracting) rawP < 1f else rawP > 0f
+            if (!transitioning) continue
+
+            val shape = cellShape(rawP.coerceIn(0f, 1f), contracting)
+            val scale = shape.first
+            val corner = shape.second
+            if (scale <= 0f) continue
             val cx = c * cellW + cellW / 2f
             val cy = r * cellH + cellH / 2f
-            val drawW = cellW * scale
-            val drawH = cellH * scale
-            val cornerPx = max(drawW, drawH) * corner
-            path.addRoundRect(
-                RoundRect(
-                    rect = Rect(
-                        left = cx - drawW / 2f,
-                        top = cy - drawH / 2f,
-                        right = cx + drawW / 2f,
-                        bottom = cy + drawH / 2f,
-                    ),
-                    cornerRadius = CornerRadius(cornerPx, cornerPx),
-                )
-            )
+            val halfW = cellW * scale / 2f
+            val halfH = cellH * scale / 2f
+            val rect = Rect(cx - halfW, cy - halfH, cx + halfW, cy + halfH)
+            if (corner < 0.04f) {
+                path.addRect(rect)
+            } else {
+                val cornerPx = max(halfW, halfH) * 2f * corner
+                path.addRoundRect(RoundRect(rect, CornerRadius(cornerPx, cornerPx)))
+            }
         }
+        if (runStart >= 0) addFullRun(path, runStart, cols - 1, r, cellW, cellH)
     }
-    return path
+}
+
+/** One rect covering columns [c0..c1] of row [r] at the settled 1.05 scale. */
+private fun addFullRun(path: Path, c0: Int, c1: Int, r: Int, cellW: Float, cellH: Float) {
+    val overhang = 0.05f / 2f // settled cells render at scale 1.05, centred
+    path.addRect(
+        Rect(
+            left = c0 * cellW - cellW * overhang,
+            top = r * cellH - cellH * overhang,
+            right = (c1 + 1) * cellW + cellW * overhang,
+            bottom = (r + 1) * cellH + cellH * overhang,
+        )
+    )
 }
 
 /**
