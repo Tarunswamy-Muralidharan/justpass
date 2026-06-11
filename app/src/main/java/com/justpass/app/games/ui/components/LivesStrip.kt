@@ -50,7 +50,9 @@ fun LivesStrip(
                 @Suppress("DEPRECATION")
                 context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
             }
-            if (vibrator.hasVibrator()) {
+            // runCatching: a SecurityException here (permission stripped by an
+            // OEM or profile policy) must cost the buzz, not the game session.
+            if (vibrator.hasVibrator()) runCatching {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     // 150ms strong pulse, 80ms gap, 150ms strong pulse
                     vibrator.vibrate(

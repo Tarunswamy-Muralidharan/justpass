@@ -1,5 +1,6 @@
 package com.justpass.app.games.ui.screens
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -37,6 +39,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -215,32 +218,42 @@ private fun GamePoster(
                     }
                 }
             }
-            Column(
+            // Box-anchored bottom row: the score/Play pill is pinned to the
+            // card's bottom edge regardless of how many lines the title or
+            // tagline wrap to (or the user's font scale) — SpaceBetween let
+            // long text push it around, so pills sat at different heights
+            // across tiles.
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(12.dp)
-                    .weight(1f),
-                verticalArrangement = Arrangement.SpaceBetween
+                    .weight(1f)
             ) {
-                Column {
+                Column(modifier = Modifier.align(Alignment.TopStart)) {
                     Text(
                         game.title,
                         color = Color.White,
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = (-0.2).sp,
-                        lineHeight = 16.sp
+                        lineHeight = 16.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         game.tagline,
                         color = Color.White.copy(alpha = 0.5f),
                         fontSize = 11.sp,
                         lineHeight = 13.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 1.dp)
                     )
                 }
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomStart),
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -278,7 +291,19 @@ private fun GamePoster(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text("▶", color = BBInk, fontSize = 9.sp)
+                            // Canvas triangle, not the "▶" glyph — OEM fonts
+                            // render that char with wildly different metrics
+                            // (some promote it to emoji), which made the icon
+                            // sit off-centre in the pill on some devices.
+                            Canvas(modifier = Modifier.size(8.dp)) {
+                                val path = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(0f, 0f)
+                                    lineTo(size.width, size.height / 2f)
+                                    lineTo(0f, size.height)
+                                    close()
+                                }
+                                drawPath(path, BBInk)
+                            }
                             Text(
                                 "Play",
                                 color = BBInk,
