@@ -584,13 +584,11 @@ fun DashboardScreen(
             }
         }
 
-        // 3.0.5: Human Benchmark tile hidden (saved for 3.0.6). Restore the
-        // Spacer + HumanBenchmarkTile(...) below to bring it back.
-        // Spacer(modifier = Modifier.height(12.dp))
-        // HumanBenchmarkTile(
-        //     onClick = onHumanBenchmarkClick,
-        //     modifier = Modifier.padding(bottom = 12.dp)
-        // )
+        Spacer(modifier = Modifier.height(12.dp))
+        HumanBenchmarkTile(
+            onClick = onHumanBenchmarkClick,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
 
         Spacer(modifier = Modifier.height(10.dp))
 

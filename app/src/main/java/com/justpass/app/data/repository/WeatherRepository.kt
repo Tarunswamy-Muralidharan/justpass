@@ -30,7 +30,7 @@ object WeatherRepository {
             prefs.weatherSunsetMin = isoTimeToMinutes(response.daily?.sunset?.firstOrNull())
             // Reflect the live clock immediately in case the fetched scene's
             // day/night no longer matches "now" (e.g. fetch happened at dusk).
-            dayNightAdjusted(scene, isDayNow(context))
+            dayNightAdjusted(scene, dayPhaseNow(context))
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -42,7 +42,7 @@ object WeatherRepository {
         val lastFetch = prefs.lastWeatherFetchTime
         val cachedName = prefs.lastWeatherScene
         return if (cachedName.isNotEmpty() && (System.currentTimeMillis() - lastFetch) < CACHE_DURATION_MS) {
-            dayNightAdjusted(WeatherScene.fromString(cachedName), isDayNow(context))
+            dayNightAdjusted(WeatherScene.fromString(cachedName), dayPhaseNow(context))
         } else null
     }
 
@@ -57,33 +57,59 @@ object WeatherRepository {
         val prefs = SecurePreferences.getInstance(context)
         val name = prefs.lastWeatherScene
         if (name.isEmpty()) return null
-        return dayNightAdjusted(WeatherScene.fromString(name), isDayNow(context))
+        return dayNightAdjusted(WeatherScene.fromString(name), dayPhaseNow(context))
     }
 
-    /** Swap a scene's day/night variant; scenes without a variant pass through. */
-    private fun dayNightAdjusted(scene: WeatherScene, isDay: Boolean): WeatherScene = when (scene) {
-        WeatherScene.CLEAR_DAY, WeatherScene.CLEAR_NIGHT ->
-            if (isDay) WeatherScene.CLEAR_DAY else WeatherScene.CLEAR_NIGHT
-        WeatherScene.PARTLY_DAY, WeatherScene.PARTLY_NIGHT ->
-            if (isDay) WeatherScene.PARTLY_DAY else WeatherScene.PARTLY_NIGHT
+    /** Where we are in the solar day. SUNSET/SUNRISE are the magic-hour windows. */
+    enum class DayPhase { DAY, NIGHT, SUNRISE, SUNSET }
+
+    /**
+     * Swap a scene's variant per the solar phase. During the magic-hour windows
+     * the clear/partly skies become the SUNSET/SUNRISE scenes, so the app's sky
+     * tracks the real one through dusk and dawn instead of jumping day→night.
+     */
+    private fun dayNightAdjusted(scene: WeatherScene, phase: DayPhase): WeatherScene = when (scene) {
+        WeatherScene.CLEAR_DAY, WeatherScene.CLEAR_NIGHT,
+        WeatherScene.PARTLY_DAY, WeatherScene.PARTLY_NIGHT -> when (phase) {
+            DayPhase.SUNSET -> WeatherScene.SUNSET
+            DayPhase.SUNRISE -> WeatherScene.SUNRISE
+            DayPhase.DAY ->
+                if (scene == WeatherScene.CLEAR_DAY || scene == WeatherScene.CLEAR_NIGHT)
+                    WeatherScene.CLEAR_DAY else WeatherScene.PARTLY_DAY
+            DayPhase.NIGHT ->
+                if (scene == WeatherScene.CLEAR_DAY || scene == WeatherScene.CLEAR_NIGHT)
+                    WeatherScene.CLEAR_NIGHT else WeatherScene.PARTLY_NIGHT
+        }
         WeatherScene.OVERCAST, WeatherScene.OVERCAST_NIGHT ->
-            if (isDay) WeatherScene.OVERCAST else WeatherScene.OVERCAST_NIGHT
-        else -> scene // CLOUDY, RAIN, SNOW, FOG, THUNDERSTORM… have no time variant
+            if (phase == DayPhase.DAY || phase == DayPhase.SUNRISE) WeatherScene.OVERCAST
+            else WeatherScene.OVERCAST_NIGHT
+        else -> scene // CLOUDY, RAIN, SNOW, FOG, THUNDERSTORM… render night via palette swap
     }
 
     /** Public: is it night right now (device clock vs stored sunrise/sunset)? */
-    fun isNightNow(context: Context): Boolean = !isDayNow(context)
+    fun isNightNow(context: Context): Boolean = dayPhaseNow(context) == DayPhase.NIGHT
 
-    /** Is it daytime per the device clock vs the stored sunrise/sunset? */
-    private fun isDayNow(context: Context): Boolean {
+    /**
+     * Solar phase per the device clock vs stored sunrise/sunset. Magic-hour
+     * windows: 35 min before sunset → 10 min after (then NIGHT — truly dark),
+     * 15 min before sunrise → 30 min after.
+     */
+    fun dayPhaseNow(context: Context): DayPhase {
         val prefs = SecurePreferences.getInstance(context)
         val sunrise = prefs.weatherSunriseMin
         val sunset = prefs.weatherSunsetMin
         val now = java.time.LocalTime.now()
         val nowMin = now.hour * 60 + now.minute
         // No stored sun times yet → fall back to a simple 6am–6pm heuristic.
-        if (sunrise < 0 || sunset < 0) return nowMin in (6 * 60) until (18 * 60)
-        return nowMin in sunrise until sunset
+        if (sunrise < 0 || sunset < 0) {
+            return if (nowMin in (6 * 60) until (18 * 60)) DayPhase.DAY else DayPhase.NIGHT
+        }
+        return when {
+            nowMin in (sunrise - 15)..(sunrise + 30) -> DayPhase.SUNRISE
+            nowMin in (sunset - 35)..(sunset + 10) -> DayPhase.SUNSET
+            nowMin in sunrise until sunset -> DayPhase.DAY
+            else -> DayPhase.NIGHT
+        }
     }
 
     /** "2026-06-01T06:05" → 365 (minutes after local midnight); -1 if unparseable. */

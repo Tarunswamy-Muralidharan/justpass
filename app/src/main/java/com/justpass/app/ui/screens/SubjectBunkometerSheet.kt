@@ -1,12 +1,16 @@
 package com.justpass.app.ui.screens
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,11 +30,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -317,7 +329,31 @@ private fun GaugeHeader(
         }
     }
     Spacer(Modifier.height(16.dp))
-    BunkGauge(projection.projectedPercentage, attendanceTarget, resultColor, periods)
+
+    // ── Switchable gauge styles ──
+    val context = LocalContext.current
+    val prefs = remember { com.justpass.app.data.local.SecurePreferences.getInstance(context) }
+    var gaugeStyle by remember { mutableStateOf(BunkGaugeStyle.fromString(prefs.bunkGaugeStyle)) }
+    val haptics = LocalHapticFeedback.current
+
+    Crossfade(
+        targetState = gaugeStyle,
+        animationSpec = tween(350, easing = FastOutSlowInEasing),
+        label = "gaugeStyle"
+    ) { style ->
+        when (style) {
+            BunkGaugeStyle.CLASSIC -> ClassicGauge(projection.projectedPercentage, attendanceTarget, resultColor)
+            BunkGaugeStyle.NEON -> NeonGauge(projection.projectedPercentage, attendanceTarget, resultColor)
+            BunkGaugeStyle.LIQUID -> LiquidGauge(projection.projectedPercentage, attendanceTarget, resultColor)
+            BunkGaugeStyle.COMET -> CometGauge(projection.projectedPercentage, attendanceTarget, resultColor)
+        }
+    }
+    Spacer(Modifier.height(6.dp))
+    GaugeStyleSelector(gaugeStyle, accent) { picked ->
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        gaugeStyle = picked
+        prefs.bunkGaugeStyle = picked.name
+    }
     Spacer(Modifier.height(8.dp))
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically) {
@@ -339,91 +375,392 @@ private fun GaugeHeader(
     }
 }
 
-/**
- * Full 270° speedometer: ticks, sweeping value arc, target marker + label, and a
- * needle from a center hub. Animates 0 → projected on open and on every change.
- */
+/* ═══════════════════════════ Gauge styles ═══════════════════════════ */
+
+enum class BunkGaugeStyle(val label: String) {
+    CLASSIC("Classic"), NEON("Neon"), LIQUID("Liquid"), COMET("Comet");
+
+    companion object {
+        fun fromString(s: String): BunkGaugeStyle = entries.firstOrNull { it.name == s } ?: CLASSIC
+    }
+}
+
+/** Pill row to switch gauge styles. Selection persists across opens. */
 @Composable
-private fun BunkGauge(projected: Double, target: Double, color: Color, periods: Int) {
+private fun GaugeStyleSelector(selected: BunkGaugeStyle, accent: Color, onPick: (BunkGaugeStyle) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        BunkGaugeStyle.entries.forEach { style ->
+            val isSel = style == selected
+            val bg by animateFloatAsState(if (isSel) 1f else 0f, tween(250), label = "selBg")
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 4.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(accent.copy(alpha = 0.10f + bg * 0.85f))
+                    .clickable { if (!isSel) onPick(style) }
+                    .padding(horizontal = 14.dp, vertical = 7.dp)
+            ) {
+                Text(
+                    style.label, fontSize = 11.sp,
+                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isSel) Color.Black else accent
+                )
+            }
+        }
+    }
+}
+
+/** Shared spring-physics gauge value: overshoots slightly then settles — feels mechanical. */
+@Composable
+private fun rememberGaugeValue(projected: Double): Animatable<Float, *> {
     val anim = remember { Animatable(0f) }
     LaunchedEffect(projected) {
-        anim.animateTo(projected.toFloat().coerceIn(0f, 100f),
-            animationSpec = tween(850, easing = FastOutSlowInEasing))
+        anim.animateTo(
+            projected.toFloat().coerceIn(0f, 100f),
+            animationSpec = spring(dampingRatio = 0.58f, stiffness = 65f)
+        )
     }
-    val track = Color.White.copy(alpha = 0.14f)
-    val dimTick = Color.White.copy(alpha = 0.22f)
+    return anim
+}
+
+/** Spectrum used by the dials: danger red → caution amber → safe green. */
+private val GaugeSpectrum = listOf(Color(0xFFFF1744), Color(0xFFFF9100), Color(0xFFFFC400), Color(0xFF00E676))
+
+private fun spectrumAt(frac: Float): Color {
+    val f = frac.coerceIn(0f, 1f) * (GaugeSpectrum.size - 1)
+    val i = f.toInt().coerceAtMost(GaugeSpectrum.size - 2)
+    return lerp(GaugeSpectrum[i], GaugeSpectrum[i + 1], f - i)
+}
+
+/**
+ * Style 1 — CLASSIC+: the original 270° speedometer, refined. Sweep-gradient
+ * spectrum dial, spring needle with overshoot, glowing arc tip, illuminated ticks.
+ */
+@Composable
+private fun ClassicGauge(projected: Double, target: Double, color: Color) {
+    val anim = rememberGaugeValue(projected)
+    val track = Color.White.copy(alpha = 0.12f)
+    val dimTick = Color.White.copy(alpha = 0.20f)
     val labelArgb = Color.White.copy(alpha = 0.65f).toArgb()
 
     Box(modifier = Modifier.fillMaxWidth().height(200.dp)) {
         Box(modifier = Modifier.fillMaxSize().drawBehind {
-            val start = 135f          // bottom-left
-            val total = 270f          // 90° gap at the bottom
+            val start = 135f
+            val total = 270f
             val cx = size.width / 2f
             val cy = size.height * 0.54f
             val R = minOf(size.width / 2f, cy) - 30f
-            val arcStroke = 11f
+            val arcStroke = 12f
             val frac = (anim.value / 100f).coerceIn(0f, 1f)
             val valAngle = start + total * frac
-
+            val center = androidx.compose.ui.geometry.Offset(cx, cy)
             val topLeft = androidx.compose.ui.geometry.Offset(cx - R, cy - R)
             val box = androidx.compose.ui.geometry.Size(R * 2, R * 2)
 
-            // base + value arcs
+            // Spectrum sweep brush — canvas rotated so sweep 0° aligns with arc start.
+            val sweepBrush = Brush.sweepGradient(
+                0.00f to GaugeSpectrum[0], 0.28f to GaugeSpectrum[1],
+                0.50f to GaugeSpectrum[2], 0.75f to GaugeSpectrum[3],
+                center = center
+            )
             drawArc(track, start, total, false, topLeft, box, style = Stroke(arcStroke, cap = StrokeCap.Round))
-            drawArc(color, start, total * frac, false, topLeft, box, style = Stroke(arcStroke, cap = StrokeCap.Round))
+            rotate(degrees = start, pivot = center) {
+                // soft bloom underneath, then crisp arc
+                drawArc(sweepBrush, 0f, total * frac, false, topLeft, box,
+                    style = Stroke(arcStroke * 2.4f, cap = StrokeCap.Round), alpha = 0.18f)
+                drawArc(sweepBrush, 0f, total * frac, false, topLeft, box,
+                    style = Stroke(arcStroke, cap = StrokeCap.Round))
+            }
 
-            // ticks (inside the ring)
+            // ticks
             val ticks = 40
             for (i in 0..ticks) {
-                val a = start + total * (i / ticks.toFloat())
+                val tFrac = i / ticks.toFloat()
+                val a = start + total * tFrac
                 val major = i % 4 == 0
                 val len = if (major) 14f else 7f
                 val rOut = R - arcStroke / 2 - 6f
                 val rIn = rOut - len
                 val rad = Math.toRadians(a.toDouble())
-                val tc = if (i / ticks.toFloat() <= frac) color else dimTick
+                val tc = if (tFrac <= frac) spectrumAt(tFrac) else dimTick
                 drawLine(tc,
                     androidx.compose.ui.geometry.Offset((cx + rIn * Math.cos(rad)).toFloat(), (cy + rIn * Math.sin(rad)).toFloat()),
                     androidx.compose.ui.geometry.Offset((cx + rOut * Math.cos(rad)).toFloat(), (cy + rOut * Math.sin(rad)).toFloat()),
                     strokeWidth = if (major) 3f else 2f, cap = StrokeCap.Round)
             }
 
-            // target marker (white) + number label outside
+            // glowing tip
+            val tipRad = Math.toRadians(valAngle.toDouble())
+            val tipPos = androidx.compose.ui.geometry.Offset(
+                (cx + R * Math.cos(tipRad)).toFloat(), (cy + R * Math.sin(tipRad)).toFloat())
+            val tipColor = spectrumAt(frac)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(tipColor.copy(alpha = 0.75f), Color.Transparent),
+                    center = tipPos, radius = 30f),
+                radius = 30f, center = tipPos)
+            drawCircle(Color.White, radius = 4.5f, center = tipPos)
+
+            // target marker + label
             val ta = start + total * (target / 100f).toFloat()
             val tRad = Math.toRadians(ta.toDouble())
-            val tIn = R - arcStroke / 2 - 18f
-            val tOut = R + 5f
             drawLine(Color.White,
-                androidx.compose.ui.geometry.Offset((cx + tIn * Math.cos(tRad)).toFloat(), (cy + tIn * Math.sin(tRad)).toFloat()),
-                androidx.compose.ui.geometry.Offset((cx + tOut * Math.cos(tRad)).toFloat(), (cy + tOut * Math.sin(tRad)).toFloat()),
+                androidx.compose.ui.geometry.Offset((cx + (R - arcStroke / 2 - 18f) * Math.cos(tRad)).toFloat(), (cy + (R - arcStroke / 2 - 18f) * Math.sin(tRad)).toFloat()),
+                androidx.compose.ui.geometry.Offset((cx + (R + 5f) * Math.cos(tRad)).toFloat(), (cy + (R + 5f) * Math.sin(tRad)).toFloat()),
                 strokeWidth = 4f, cap = StrokeCap.Round)
-            val lblR = R + 24f
             val paint = android.graphics.Paint().apply {
                 this.color = labelArgb; textSize = 27f
                 textAlign = android.graphics.Paint.Align.CENTER; isAntiAlias = true
             }
             drawContext.canvas.nativeCanvas.drawText("${target.roundToInt()}",
-                (cx + lblR * Math.cos(tRad)).toFloat(), (cy + lblR * Math.sin(tRad)).toFloat() + 9f, paint)
+                (cx + (R + 24f) * Math.cos(tRad)).toFloat(), (cy + (R + 24f) * Math.sin(tRad)).toFloat() + 9f, paint)
 
             // needle + hub
             val nLen = R - arcStroke - 16f
-            val nRad = Math.toRadians(valAngle.toDouble())
-            val tip = androidx.compose.ui.geometry.Offset((cx + nLen * Math.cos(nRad)).toFloat(), (cy + nLen * Math.sin(nRad)).toFloat())
-            val tail = androidx.compose.ui.geometry.Offset((cx - 20f * Math.cos(nRad)).toFloat(), (cy - 20f * Math.sin(nRad)).toFloat())
-            drawLine(color, tail, tip, strokeWidth = 6f, cap = StrokeCap.Round)
-            drawCircle(color, radius = 13f, center = androidx.compose.ui.geometry.Offset(cx, cy))
-            drawCircle(Color(0xFF15202E), radius = 7.5f, center = androidx.compose.ui.geometry.Offset(cx, cy))
-            drawCircle(color, radius = 3.5f, center = androidx.compose.ui.geometry.Offset(cx, cy))
+            val tip = androidx.compose.ui.geometry.Offset((cx + nLen * Math.cos(tipRad)).toFloat(), (cy + nLen * Math.sin(tipRad)).toFloat())
+            val tail = androidx.compose.ui.geometry.Offset((cx - 20f * Math.cos(tipRad)).toFloat(), (cy - 20f * Math.sin(tipRad)).toFloat())
+            drawLine(tipColor, tail, tip, strokeWidth = 6f, cap = StrokeCap.Round)
+            drawCircle(tipColor, radius = 13f, center = center)
+            drawCircle(Color(0xFF15202E), radius = 7.5f, center = center)
+            drawCircle(tipColor, radius = 3.5f, center = center)
         })
-        // Readout in the lower half
+        GaugeReadout(anim.value, target, color, Modifier.align(Alignment.BottomCenter))
+    }
+}
+
+/**
+ * Style 2 — NEON: minimal full ring with a cyan→violet→pink gradient sweep,
+ * triple-pass bloom, and a pulsing orb riding the leading edge.
+ */
+@Composable
+private fun NeonGauge(projected: Double, target: Double, color: Color) {
+    val anim = rememberGaugeValue(projected)
+    val pulse by rememberInfiniteTransition(label = "neonPulse").animateFloat(
+        initialValue = 0.80f, targetValue = 1.25f,
+        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "pulse"
+    )
+    val neon = listOf(Color(0xFF00E5FF), Color(0xFF7C4DFF), Color(0xFFFF4081))
+
+    Box(modifier = Modifier.fillMaxWidth().height(210.dp)) {
+        Box(modifier = Modifier.fillMaxSize().drawBehind {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val R = minOf(cx, cy) - 26f
+            val center = androidx.compose.ui.geometry.Offset(cx, cy)
+            val frac = (anim.value / 100f).coerceIn(0f, 1f)
+            val topLeft = androidx.compose.ui.geometry.Offset(cx - R, cy - R)
+            val box = androidx.compose.ui.geometry.Size(R * 2, R * 2)
+            val brush = Brush.sweepGradient(
+                0.00f to neon[0], 0.45f to neon[1], 0.90f to neon[2], 1.00f to neon[0],
+                center = center
+            )
+            // track
+            drawCircle(Color.White.copy(alpha = 0.08f), radius = R, center = center, style = Stroke(13f))
+            rotate(degrees = -90f, pivot = center) {
+                // bloom passes widest→core
+                drawArc(brush, 0f, 360f * frac, false, topLeft, box, style = Stroke(34f, cap = StrokeCap.Round), alpha = 0.13f)
+                drawArc(brush, 0f, 360f * frac, false, topLeft, box, style = Stroke(22f, cap = StrokeCap.Round), alpha = 0.28f)
+                drawArc(brush, 0f, 360f * frac, false, topLeft, box, style = Stroke(11f, cap = StrokeCap.Round))
+            }
+            // target tick on the ring
+            val tRad = Math.toRadians((-90f + 360f * (target / 100f)).toDouble())
+            drawLine(Color.White.copy(alpha = 0.85f),
+                androidx.compose.ui.geometry.Offset((cx + (R - 12f) * Math.cos(tRad)).toFloat(), (cy + (R - 12f) * Math.sin(tRad)).toFloat()),
+                androidx.compose.ui.geometry.Offset((cx + (R + 12f) * Math.cos(tRad)).toFloat(), (cy + (R + 12f) * Math.sin(tRad)).toFloat()),
+                strokeWidth = 3.5f, cap = StrokeCap.Round)
+            // pulsing orb at leading edge
+            val oRad = Math.toRadians((-90f + 360f * frac).toDouble())
+            val orb = androidx.compose.ui.geometry.Offset((cx + R * Math.cos(oRad)).toFloat(), (cy + R * Math.sin(oRad)).toFloat())
+            val orbColor = lerp(neon[0], neon[2], frac)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(orbColor.copy(alpha = 0.8f), Color.Transparent),
+                    center = orb, radius = 26f * pulse),
+                radius = 26f * pulse, center = orb)
+            drawCircle(Color.White, radius = 5f, center = orb)
+        })
         Column(
-            modifier = Modifier.fillMaxSize().padding(bottom = 12.dp),
-            verticalArrangement = Arrangement.Bottom,
+            modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("${String.format("%.1f", anim.value)}%", fontSize = 38.sp, fontWeight = FontWeight.Black, color = color)
-            Text("target ${target.roundToInt()}%", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+            Text("${String.format("%.1f", anim.value)}%", fontSize = 36.sp, fontWeight = FontWeight.Black, color = color)
+            Text("target ${target.roundToInt()}%", fontSize = 11.sp, color = Color.White.copy(alpha = 0.5f))
         }
+    }
+}
+
+/**
+ * Style 3 — LIQUID: circular vessel filling to the projected %. Two offset sine
+ * waves slosh continuously; bubbles rise through the fill; dashed target line.
+ */
+@Composable
+private fun LiquidGauge(projected: Double, target: Double, color: Color) {
+    val anim = rememberGaugeValue(projected)
+    val transition = rememberInfiniteTransition(label = "liquid")
+    val phase by transition.animateFloat(
+        initialValue = 0f, targetValue = (2 * Math.PI).toFloat(),
+        animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing), RepeatMode.Restart),
+        label = "wavePhase"
+    )
+    val bubbleT by transition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(4200, easing = LinearEasing), RepeatMode.Restart),
+        label = "bubbles"
+    )
+
+    Box(modifier = Modifier.fillMaxWidth().height(210.dp)) {
+        Box(modifier = Modifier.fillMaxSize().drawBehind {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val R = minOf(cx, cy) - 20f
+            val center = androidx.compose.ui.geometry.Offset(cx, cy)
+            val frac = (anim.value / 100f).coerceIn(0f, 1f)
+            val levelY = cy + R - 2 * R * frac
+
+            val vessel = Path().apply {
+                addOval(androidx.compose.ui.geometry.Rect(cx - R, cy - R, cx + R, cy + R))
+            }
+            clipPath(vessel) {
+                // back wave (lighter, phase-shifted)
+                drawWave(levelY + 4f, phase + 2.2f, 7f, size.width,
+                    color.copy(alpha = 0.35f), cy + R)
+                // front wave
+                drawWave(levelY, phase, 9f, size.width,
+                    color.copy(alpha = 0.85f), cy + R, gradient = true, deepColor = color)
+                // bubbles inside the fill
+                for (i in 0 until 6) {
+                    val seedX = (i * 0.37f + 0.13f) % 1f
+                    val p = (bubbleT + i * 0.167f) % 1f
+                    val bx = cx - R + seedX * 2 * R + kotlin.math.sin(p * 9f + i) * 8f
+                    val byStart = cy + R - 6f
+                    val by = byStart - p * (byStart - levelY - 8f)
+                    if (by > levelY + 6f) {
+                        drawCircle(Color.White.copy(alpha = (1f - p) * 0.35f),
+                            radius = 2.5f + (i % 3), center = androidx.compose.ui.geometry.Offset(bx, by))
+                    }
+                }
+                // dashed target line inside vessel
+                val targetY = cy + R - 2 * R * (target / 100f).toFloat()
+                drawLine(Color.White.copy(alpha = 0.55f),
+                    androidx.compose.ui.geometry.Offset(cx - R, targetY),
+                    androidx.compose.ui.geometry.Offset(cx + R, targetY),
+                    strokeWidth = 2f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f)))
+            }
+            // vessel rim
+            drawCircle(Color.White.copy(alpha = 0.20f), radius = R, center = center, style = Stroke(3f))
+            drawCircle(color.copy(alpha = 0.45f), radius = R + 5f, center = center, style = Stroke(1.5f))
+        })
+        Column(
+            modifier = Modifier.align(Alignment.Center).graphicsLayer { translationY = -10f },
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("${String.format("%.1f", anim.value)}%", fontSize = 34.sp, fontWeight = FontWeight.Black, color = Color.White)
+            Text("target ${target.roundToInt()}%", fontSize = 11.sp, color = Color.White.copy(alpha = 0.6f))
+        }
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
+    levelY: Float, phase: Float, amp: Float, width: Float,
+    waveColor: Color, bottomY: Float, gradient: Boolean = false, deepColor: Color = waveColor,
+) {
+    val path = Path()
+    path.moveTo(0f, levelY)
+    var x = 0f
+    while (x <= width) {
+        path.lineTo(x, levelY + kotlin.math.sin(x / width * 2f * Math.PI.toFloat() * 1.6f + phase) * amp)
+        x += 8f
+    }
+    path.lineTo(width, bottomY + 20f)
+    path.lineTo(0f, bottomY + 20f)
+    path.close()
+    if (gradient) {
+        drawPath(path, Brush.verticalGradient(
+            listOf(waveColor, deepColor.copy(alpha = 0.55f)),
+            startY = levelY, endY = bottomY))
+    } else {
+        drawPath(path, waveColor)
+    }
+}
+
+/**
+ * Style 4 — COMET: 270° dial of discrete segments lighting along the spectrum,
+ * with a glowing comet head at the leading edge and a fading trail behind it.
+ */
+@Composable
+private fun CometGauge(projected: Double, target: Double, color: Color) {
+    val anim = rememberGaugeValue(projected)
+    val shimmer by rememberInfiniteTransition(label = "cometShimmer").animateFloat(
+        initialValue = 0f, targetValue = (2 * Math.PI).toFloat(),
+        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Restart),
+        label = "shimmer"
+    )
+
+    Box(modifier = Modifier.fillMaxWidth().height(200.dp)) {
+        Box(modifier = Modifier.fillMaxSize().drawBehind {
+            val start = 135f
+            val total = 270f
+            val cx = size.width / 2f
+            val cy = size.height * 0.54f
+            val R = minOf(size.width / 2f, cy) - 28f
+            val frac = (anim.value / 100f).coerceIn(0f, 1f)
+            val segments = 36
+            val segSweep = total / segments
+
+            for (i in 0 until segments) {
+                val segFrac = (i + 0.5f) / segments
+                val a0 = start + i * segSweep + 1.2f
+                val lit = segFrac <= frac
+                val headDist = (frac - segFrac) * segments     // segments behind head
+                // trail boost: segments just behind the head glow brighter
+                val trail = if (lit) kotlin.math.exp(-headDist.coerceAtLeast(0f) * 0.30f) else 0f
+                val twinkle = 0.92f + 0.08f * kotlin.math.sin(shimmer + i * 0.7f)
+                val segColor = if (lit) spectrumAt(segFrac) else Color.White
+                val alpha = if (lit) ((0.55f + 0.45f * trail) * twinkle) else 0.10f
+                drawArc(
+                    segColor.copy(alpha = alpha.coerceIn(0f, 1f)),
+                    a0, segSweep - 2.4f, false,
+                    topLeft = androidx.compose.ui.geometry.Offset(cx - R, cy - R),
+                    size = androidx.compose.ui.geometry.Size(R * 2, R * 2),
+                    style = Stroke(if (lit) 14f + 6f * trail else 10f, cap = StrokeCap.Round)
+                )
+            }
+
+            // comet head — glow at leading edge
+            val headRad = Math.toRadians((start + total * frac).toDouble())
+            val head = androidx.compose.ui.geometry.Offset(
+                (cx + R * Math.cos(headRad)).toFloat(), (cy + R * Math.sin(headRad)).toFloat())
+            val headColor = spectrumAt(frac)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(Color.White.copy(alpha = 0.9f), headColor.copy(alpha = 0.55f), Color.Transparent),
+                    center = head, radius = 34f),
+                radius = 34f, center = head)
+
+            // target marker
+            val tRad = Math.toRadians((start + total * (target / 100f)).toDouble())
+            drawLine(Color.White.copy(alpha = 0.9f),
+                androidx.compose.ui.geometry.Offset((cx + (R - 16f) * Math.cos(tRad)).toFloat(), (cy + (R - 16f) * Math.sin(tRad)).toFloat()),
+                androidx.compose.ui.geometry.Offset((cx + (R + 12f) * Math.cos(tRad)).toFloat(), (cy + (R + 12f) * Math.sin(tRad)).toFloat()),
+                strokeWidth = 3.5f, cap = StrokeCap.Round)
+        })
+        GaugeReadout(anim.value, target, color, Modifier.align(Alignment.BottomCenter))
+    }
+}
+
+@Composable
+private fun GaugeReadout(value: Float, target: Double, color: Color, modifier: Modifier) {
+    Column(
+        modifier = modifier.padding(bottom = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("${String.format("%.1f", value)}%", fontSize = 38.sp, fontWeight = FontWeight.Black, color = color)
+        Text("target ${target.roundToInt()}%", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
     }
 }
 
