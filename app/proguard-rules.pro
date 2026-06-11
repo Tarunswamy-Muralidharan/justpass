@@ -32,6 +32,16 @@
 -keepattributes Signature
 -keepattributes Exceptions
 
+# Retrofit service interfaces — R8 full mode shrinks/merges the interfaces,
+# making Proxy.newProxyInstance's cast fail with ClassCastException inside
+# NetworkModule.<clinit> (crashed the app the moment auto-weather was enabled
+# in 4.0 — first release path that ever touched NetworkModule).
+-keep interface com.justpass.app.data.network.** { *; }
+-keepattributes RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations, AnnotationDefault
+-keep,allowobfuscation,allowshrinking interface retrofit2.Call
+-keep,allowobfuscation,allowshrinking class retrofit2.Response
+-keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
+
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
