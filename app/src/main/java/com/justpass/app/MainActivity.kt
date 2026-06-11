@@ -609,6 +609,7 @@ fun AttendanceApp() {
                 (qpapersEnabledRC || BuildConfig.DEBUG)
 
             fun launchHB(ox: Float = 0.5f, oy: Float = 0.5f) {
+                if (wipeState != 0) return // wipe already running — ignore double-taps
                 wipeOriginX = ox
                 wipeOriginY = oy
                 wipeState = 1
@@ -953,9 +954,7 @@ fun AttendanceApp() {
                                 currentScreen = Screen.Chess
                             },
                             onHumanBenchmarkClick = {
-                                wipeOriginX = 0.5f
-                                wipeOriginY = 0.32f
-                                launchHB()
+                                launchHB(ox = 0.5f, oy = 0.32f)
                             },
                             onLiteRtClick = {
                                 currentScreen = Screen.LiteRt
@@ -998,7 +997,12 @@ fun AttendanceApp() {
                             onLeaderboard = { g ->
                                 leaderboardGame = g
                                 currentScreen = Screen.GamesLeaderboard
-                            }
+                            },
+                            // The pixel-wipe overlay's copy already played the
+                            // card stagger — this instance mounts behind the
+                            // mask mid-wipe and must hand off pixel-identical,
+                            // not replay the entrance (the "opens twice" bug).
+                            playEntrance = false,
                         )
                         Screen.GamesLeaderboard.name -> com.justpass.app.games.ui.screens.LeaderboardScreen(
                             onBack = { currentScreen = Screen.Games },
@@ -1061,10 +1065,14 @@ fun AttendanceApp() {
                 ) {
                     // Destination screen rendered inside the cell mask. We
                     // pass no-op handlers — the real interactive Games screen
-                    // comes from the Crossfade once the wipe lands.
+                    // comes from the Crossfade once the wipe lands. On open
+                    // this copy plays the card stagger (timed to finish before
+                    // the overlay unmounts); on close it must show the settled
+                    // grid instantly so the shrinking cells reveal a full page.
                     com.justpass.app.games.ui.screens.GamesNav(
                         onBack = {},
                         onLeaderboard = { _ -> },
+                        playEntrance = wipeState == 1,
                     )
                 }
             }

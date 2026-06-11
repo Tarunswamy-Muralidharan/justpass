@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,6 +56,7 @@ fun HomeScreen(
     onPlay: (Game) -> Unit,
     onLeaderboard: () -> Unit,
     modifier: Modifier = Modifier,
+    playEntrance: Boolean = true,
 ) {
     val context = LocalContext.current
     val prefs = remember { ScorePrefs.getInstance(context) }
@@ -124,10 +126,13 @@ fun HomeScreen(
                 )
             }
 
-            // Poster grid. Each card stagger-rises after the pixel-wipe
-            // curtain settles — see TRANSITION_SPEC.md / SPEC_FOR_KIMI § 6
-            // (`card-rise`: opacity 0→1, translateY 20px → 0, +60 ms per card
-            // starting 650 ms after composition).
+            // Poster grid. Each card stagger-rises while the pixel-wipe
+            // reveals the page (card-rise: opacity 0→1, translateY 20px → 0,
+            // +45 ms per card from 300 ms). Timed so the LAST card settles at
+            // ~1035 ms — before the wipe overlay unmounts at 1100 ms — so the
+            // handoff to the real (already-settled) instance is seamless.
+            // playEntrance=false skips it entirely: cards are settled on
+            // first frame (used for the instance mounted behind the wipe).
             val riseDistPx = with(LocalDensity.current) { 20.dp.toPx() }
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
@@ -140,10 +145,12 @@ fun HomeScreen(
                 userScrollEnabled = false
             ) {
                 itemsIndexed(games) { idx, g ->
-                    val progress = remember(g) { Animatable(0f) }
+                    val progress = remember(g) { Animatable(if (playEntrance) 0f else 1f) }
                     LaunchedEffect(g) {
-                        delay(650L + idx * 60L)
-                        progress.animateTo(1f, tween(500))
+                        if (progress.value < 1f) {
+                            delay(300L + idx * 45L)
+                            progress.animateTo(1f, tween(420, easing = FastOutSlowInEasing))
+                        }
                     }
                     Box(
                         modifier = Modifier.graphicsLayer {

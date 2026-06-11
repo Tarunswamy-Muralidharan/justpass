@@ -42,7 +42,8 @@ private sealed class GameRoute {
 @Composable
 fun GamesNav(
     onBack: () -> Unit,
-    onLeaderboard: (Game?) -> Unit
+    onLeaderboard: (Game?) -> Unit,
+    playEntrance: Boolean = true,
 ) {
     var route by remember { mutableStateOf<GameRoute>(GameRoute.Home) }
 
@@ -68,7 +69,8 @@ fun GamesNav(
             when (current) {
                 GameRoute.Home -> HomeScreen(
                     onPlay = { game -> route = GameRoute.Play(game) },
-                    onLeaderboard = { onLeaderboard(null) }
+                    onLeaderboard = { onLeaderboard(null) },
+                    playEntrance = playEntrance,
                 )
                 is GameRoute.Play -> {
                     val gameOnBack: () -> Unit = { route = GameRoute.Home }
