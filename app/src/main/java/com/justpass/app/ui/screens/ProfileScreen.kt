@@ -554,9 +554,6 @@ fun ProfileScreen(
                     modifier = Modifier.clickable { Analytics.logProfileAction("attendance_target"); showTargetDialog = true },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
-                // 3.0.5: Weather settings hidden (saved for 3.0.6). Restore by removing
-                // this `if (false) {` wrapper and its matching close `}` below.
-                if (false) {
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 // Auto weather toggle — fetches real Neelambur weather from Open-Meteo
                 ListItem(
@@ -630,7 +627,6 @@ fun ProfileScreen(
                         containerColor = Color(0xFF1E2A3A),
                     )
                 }
-                } // end 3.0.5 weather-hidden block (restore for 3.0.6)
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
                 // Class compare: delete my data — only shown when the feature
                 // flag is on. Wipes the user's row on the Worker D1 + clears
@@ -784,14 +780,44 @@ fun ProfileScreen(
                     durationMillis = 2000
                     0f at 0
                     0f at 680
-                    3f at 720       // shake on impact
-                    -2f at 760
-                    1f at 800
+                    5f at 715       // violent shake on impact
+                    -4f at 750
+                    2.5f at 790
+                    -1.5f at 830
                     0f at 900
                     0f at 2000
                 },
                 repeatMode = RepeatMode.Restart
             ), label = "chompShake"
+        )
+        // Crumb burst progress — crumbs fly out right after impact, fade as they travel
+        val crumbBurst by biteTransition.animateFloat(
+            initialValue = 0f, targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = keyframes {
+                    durationMillis = 2000
+                    0f at 0
+                    0f at 690
+                    1f at 1500
+                    1f at 2000
+                },
+                repeatMode = RepeatMode.Restart
+            ), label = "crumbBurst"
+        )
+        // White impact flash at the moment the jaws slam shut
+        val impactFlash by biteTransition.animateFloat(
+            initialValue = 0f, targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = keyframes {
+                    durationMillis = 2000
+                    0f at 0
+                    0f at 670
+                    1f at 720
+                    0f at 860
+                    0f at 2000
+                },
+                repeatMode = RepeatMode.Restart
+            ), label = "impactFlash"
         )
         Box(
             modifier = Modifier.fillMaxWidth()
@@ -808,9 +834,11 @@ fun ProfileScreen(
             GlassListCard(
                 modifier = Modifier.fillMaxWidth()
                     .graphicsLayer {
-                        scaleY = 1f - chomp * 0.2f
-                        scaleX = 1f + chomp * 0.03f
-                        translationX = chompShake * 2f
+                        // deeper squish + slight bulge + impact wobble
+                        scaleY = 1f - chomp * 0.30f
+                        scaleX = 1f + chomp * 0.05f
+                        translationX = chompShake * 2.4f
+                        rotationZ = chompShake * 0.45f
                     }
             ) {
                 Row(
@@ -823,33 +851,101 @@ fun ProfileScreen(
                         color = Color(0xFFFF1744))
                 }
             }
-            // Top jaw — triangle teeth dropping down
-            val jawDrop = chomp * 10f
-            Canvas(modifier = Modifier.fillMaxWidth().height(48.dp).align(Alignment.TopCenter)) {
-                val teethCount = 7
+            // Jaws + impact effects. Tooth lengths vary per tooth so the bite reads
+            // organic instead of a perfect zigzag; each tooth has a shaded inner
+            // wedge for depth and a gum bar anchoring the row.
+            val jawDrop = chomp * 12f
+            Canvas(modifier = Modifier.fillMaxWidth().height(52.dp).align(Alignment.TopCenter)) {
+                val teethCount = 9
                 val teethWidth = size.width / teethCount
+                val jawAlpha = (chomp * 0.95f).coerceIn(0f, 1f)
+                if (jawAlpha > 0.01f) {
+                    drawRect(
+                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                            listOf(Color(0xFFEFD5D5).copy(alpha = jawAlpha), Color.Transparent)),
+                        size = androidx.compose.ui.geometry.Size(size.width, 7f))
+                }
                 for (i in 0 until teethCount) {
+                    val lenMul = 1f + 0.35f * kotlin.math.sin(i * 2.7f)
+                    val tipY = jawDrop * 3.4f * lenMul
+                    val x0 = i * teethWidth
                     val path = androidx.compose.ui.graphics.Path().apply {
-                        moveTo(i * teethWidth, 0f)
-                        lineTo(i * teethWidth + teethWidth / 2, jawDrop * 3f)
-                        lineTo((i + 1) * teethWidth, 0f)
+                        moveTo(x0, 0f)
+                        lineTo(x0 + teethWidth / 2, tipY)
+                        lineTo(x0 + teethWidth, 0f)
                         close()
                     }
-                    drawPath(path, Color.White.copy(alpha = chomp * 0.9f))
+                    drawPath(path, Color.White.copy(alpha = jawAlpha))
+                    // shaded right face for 3D depth
+                    val shade = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(x0 + teethWidth / 2, tipY)
+                        lineTo(x0 + teethWidth, 0f)
+                        lineTo(x0 + teethWidth * 0.72f, 0f)
+                        close()
+                    }
+                    drawPath(shade, Color(0xFFB9C4D4).copy(alpha = jawAlpha * 0.8f))
                 }
             }
-            // Bottom jaw — triangle teeth rising up
-            Canvas(modifier = Modifier.fillMaxWidth().height(48.dp).align(Alignment.BottomCenter)) {
-                val teethCount = 7
+            Canvas(modifier = Modifier.fillMaxWidth().height(52.dp).align(Alignment.BottomCenter)) {
+                val teethCount = 9
                 val teethWidth = size.width / teethCount
+                val jawAlpha = (chomp * 0.95f).coerceIn(0f, 1f)
+                if (jawAlpha > 0.01f) {
+                    drawRect(
+                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                            listOf(Color.Transparent, Color(0xFFEFD5D5).copy(alpha = jawAlpha)),
+                            startY = size.height - 7f, endY = size.height),
+                        topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - 7f),
+                        size = androidx.compose.ui.geometry.Size(size.width, 7f))
+                }
                 for (i in 0 until teethCount) {
+                    val lenMul = 1f + 0.35f * kotlin.math.sin(i * 1.9f + 1.3f)
+                    val tipY = size.height - jawDrop * 3.4f * lenMul
+                    val x0 = i * teethWidth
                     val path = androidx.compose.ui.graphics.Path().apply {
-                        moveTo(i * teethWidth, size.height)
-                        lineTo(i * teethWidth + teethWidth / 2, size.height - jawDrop * 3f)
-                        lineTo((i + 1) * teethWidth, size.height)
+                        moveTo(x0, size.height)
+                        lineTo(x0 + teethWidth / 2, tipY)
+                        lineTo(x0 + teethWidth, size.height)
                         close()
                     }
-                    drawPath(path, Color.White.copy(alpha = chomp * 0.9f))
+                    drawPath(path, Color.White.copy(alpha = jawAlpha))
+                    val shade = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(x0 + teethWidth / 2, tipY)
+                        lineTo(x0 + teethWidth, size.height)
+                        lineTo(x0 + teethWidth * 0.72f, size.height)
+                        close()
+                    }
+                    drawPath(shade, Color(0xFFB9C4D4).copy(alpha = jawAlpha * 0.8f))
+                }
+            }
+            // Impact flash + crumbs flying out of the bite
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                if (impactFlash > 0.01f) {
+                    // white shockwave ring expanding from center
+                    val ringR = 30f + (1f - impactFlash) * size.width * 0.28f
+                    drawCircle(Color.White.copy(alpha = impactFlash * 0.55f),
+                        radius = ringR, center = androidx.compose.ui.geometry.Offset(cx, cy),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f * impactFlash + 1f))
+                }
+                if (crumbBurst > 0.02f && crumbBurst < 0.98f) {
+                    val t = crumbBurst
+                    for (i in 0 until 12) {
+                        // deterministic per-crumb kinematics — no allocation, no Random
+                        val angle = (i / 12f) * 2f * Math.PI.toFloat() +
+                            0.45f * kotlin.math.sin(i * 12.9898f)
+                        val speed = 90f + 70f * (0.5f + 0.5f * kotlin.math.sin(i * 78.233f))
+                        val px = cx + kotlin.math.cos(angle) * speed * t
+                        val py = cy + kotlin.math.sin(angle) * speed * t * 0.6f + 160f * t * t
+                        val alpha = ((1f - t) * 0.9f).coerceIn(0f, 1f)
+                        val r = 2f + (i % 3) * 1.4f
+                        drawCircle(
+                            if (i % 4 == 0) Color(0xFFFF1744).copy(alpha = alpha)
+                            else Color.White.copy(alpha = alpha * 0.85f),
+                            radius = r * (1f - t * 0.4f),
+                            center = androidx.compose.ui.geometry.Offset(px, py))
+                    }
                 }
             }
         }

@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
@@ -168,27 +169,10 @@ fun WeatherBackgroundLayer(
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
-            SceneRenderer(current)
-            // Full-screen night veil over the variant-less scenes. Heavier on the
-            // bright skies (fog/haze/windy/snow), lighter on the already-dark ones
-            // (heavy rain/storm). Scenes that own a night variant, plus the
-            // inherently-dark/transitional ones, get nothing here.
-            val nightDim = if (isNight) when (current) {
-                WeatherScene.FOG,
-                WeatherScene.HAZE,
-                WeatherScene.WINDY,
-                WeatherScene.SNOW -> 0.52f
-                WeatherScene.CLOUDY -> 0.42f
-                WeatherScene.RAIN -> 0.34f
-                WeatherScene.HEAVY_RAIN -> 0.18f
-                WeatherScene.THUNDERSTORM -> 0.12f
-                else -> 0f
-            } else 0f
-            if (nightDim > 0f) {
-                Canvas(Modifier.fillMaxSize()) {
-                    drawRect(Color.Black.copy(alpha = nightDim))
-                }
-            }
+            // Variant-less scenes (CLOUDY, RAIN, FOG, …) render real night
+            // palettes — dark skies, night cloud tints, no warm sun glow —
+            // instead of a flat black veil over a daylight scene.
+            SceneRenderer(current, isNight)
             // Readability scrim — darkens lower 75% so tile text contrasts against
             // bright daytime gradients (clear/partly/sunrise/sunset/haze/etc).
             // Strength scales by scene: bright daytime = heavier, dark scenes
@@ -234,7 +218,7 @@ fun WeatherBackgroundLayer(
 }
 
 @Composable
-private fun SceneRenderer(scene: WeatherScene) {
+private fun SceneRenderer(scene: WeatherScene, isNight: Boolean = false) {
     when (scene) {
         WeatherScene.OFF -> Unit
         WeatherScene.CLEAR_DAY -> {
@@ -261,9 +245,16 @@ private fun SceneRenderer(scene: WeatherScene) {
             Cloudscape(tint = CloudTint.NIGHT, density = 0.7f, layers = 3, baseDurSec = 300)
         }
         WeatherScene.CLOUDY -> {
-            SkyGradient(listOf(Color(0xFF6A93C0), Color(0xFFC2D7E8)))
-            CornerGlow(0.78f, 0.20f, Color(0xFFFFE9C0).copy(alpha = 0.32f), radiusFrac = 0.38f)
-            Cloudscape(tint = CloudTint.WHITE, density = 1.0f, layers = 4, baseDurSec = 260)
+            if (isNight) {
+                SkyGradient(listOf(Color(0xFF0B1220), Color(0xFF1D2940)))
+                // Cool moonlight instead of the warm cloud-backed sun
+                CornerGlow(0.78f, 0.20f, Color(0xFFC9D8FF).copy(alpha = 0.14f), radiusFrac = 0.38f)
+                Cloudscape(tint = CloudTint.NIGHT, density = 1.0f, layers = 4, baseDurSec = 280)
+            } else {
+                SkyGradient(listOf(Color(0xFF6A93C0), Color(0xFFC2D7E8)))
+                CornerGlow(0.78f, 0.20f, Color(0xFFFFE9C0).copy(alpha = 0.32f), radiusFrac = 0.38f)
+                Cloudscape(tint = CloudTint.WHITE, density = 1.0f, layers = 4, baseDurSec = 260)
+            }
         }
         WeatherScene.OVERCAST -> {
             SkyGradient(listOf(Color(0xFF4A5460), Color(0xFF7A8390)))
@@ -290,38 +281,53 @@ private fun SceneRenderer(scene: WeatherScene) {
             Cloudscape(tint = CloudTint.SUNSET, density = 0.9f, layers = 3, baseDurSec = 280)
         }
         WeatherScene.RAIN -> {
-            SkyGradient(listOf(Color(0xFF2C3744), Color(0xFF4D5868)))
+            if (isNight) SkyGradient(listOf(Color(0xFF161D27), Color(0xFF2A3342)))
+            else SkyGradient(listOf(Color(0xFF2C3744), Color(0xFF4D5868)))
             Cloudscape(tint = CloudTint.STORM, density = 1.4f, layers = 3, baseDurSec = 220)
             RainCanvas(intensity = 1.2f)
         }
         WeatherScene.HEAVY_RAIN -> {
-            SkyGradient(listOf(Color(0xFF1A2230), Color(0xFF2E3A4A)))
+            if (isNight) SkyGradient(listOf(Color(0xFF101620), Color(0xFF202B38)))
+            else SkyGradient(listOf(Color(0xFF1A2230), Color(0xFF2E3A4A)))
             Cloudscape(tint = CloudTint.STORM, density = 1.5f, layers = 4, baseDurSec = 200)
             RainCanvas(intensity = 2.6f, dropColor = Color(0xFFB4C3DC), fallSpeedMul = 1.45f)
             MistyBottomSpray()
         }
         WeatherScene.THUNDERSTORM -> {
+            // Already near-black — same palette day and night.
             SkyGradient(listOf(Color(0xFF14181F), Color(0xFF28303C)))
             Cloudscape(tint = CloudTint.STORM, density = 1.6f, layers = 4, baseDurSec = 180)
             RainCanvas(intensity = 2.8f, dropColor = Color(0xFFC8D7F0), fallSpeedMul = 1.9f)
             LightningCanvas()
         }
         WeatherScene.SNOW -> {
-            SkyGradient(listOf(Color(0xFF5A6878), Color(0xFFA4AFBE)))
-            Cloudscape(tint = CloudTint.OVERCAST, density = 1.2f, layers = 3, baseDurSec = 280)
+            if (isNight) {
+                SkyGradient(listOf(Color(0xFF1C232E), Color(0xFF39414E)))
+                Cloudscape(tint = CloudTint.NIGHT, density = 1.2f, layers = 3, baseDurSec = 300)
+            } else {
+                SkyGradient(listOf(Color(0xFF5A6878), Color(0xFFA4AFBE)))
+                Cloudscape(tint = CloudTint.OVERCAST, density = 1.2f, layers = 3, baseDurSec = 280)
+            }
             SnowCanvas(density = 1.4f)
         }
         WeatherScene.FOG -> {
-            SkyGradient(listOf(Color(0xFF788490), Color(0xFFB8C0C9)))
-            FogBands()
+            if (isNight) SkyGradient(listOf(Color(0xFF232A33), Color(0xFF454D58)))
+            else SkyGradient(listOf(Color(0xFF788490), Color(0xFFB8C0C9)))
+            FogBands(dim = if (isNight) 0.45f else 1f)
         }
         WeatherScene.HAZE -> {
-            SkyGradient(listOf(Color(0xFF8A7A64), Color(0xFFD4BA94)))
-            HazyClouds()
+            if (isNight) {
+                SkyGradient(listOf(Color(0xFF221F18), Color(0xFF453A2A)))
+                HazyClouds(isNight = true)
+            } else {
+                SkyGradient(listOf(Color(0xFF8A7A64), Color(0xFFD4BA94)))
+                HazyClouds()
+            }
         }
         WeatherScene.WINDY -> {
-            SkyGradient(listOf(Color(0xFF6A8AA6), Color(0xFFB4C6D8)))
-            WindyStreaks()
+            if (isNight) SkyGradient(listOf(Color(0xFF18222E), Color(0xFF324356)))
+            else SkyGradient(listOf(Color(0xFF6A8AA6), Color(0xFFB4C6D8)))
+            WindyStreaks(dim = if (isNight) 0.45f else 1f)
         }
         WeatherScene.AURORA -> {
             SkyGradient(listOf(Color(0xFF030519), Color(0xFF1A2660)))
@@ -484,8 +490,157 @@ private data class CloudLayer(
     val yBand: Float,                 // 0..1 center band
 )
 
+/**
+ * Photographic fractal-noise clouds (HANDOFF section 1) on Android 13+ via an
+ * AGSL RuntimeShader: 4 parallax layers of thresholded fBm with internal wisp
+ * detail and a vertical body gradient. Pre-33 devices fall back to the soft
+ * blob approximation.
+ */
 @Composable
 private fun Cloudscape(
+    tint: CloudTint,
+    density: Float,
+    layers: Int,
+    baseDurSec: Int,
+) {
+    if (android.os.Build.VERSION.SDK_INT >= 33) {
+        // RuntimeShader compiles the AGSL at construction — if the driver
+        // rejects it for any reason, fall back to blobs instead of crashing.
+        val shader = remember {
+            runCatching { android.graphics.RuntimeShader(CLOUD_AGSL) }.getOrNull()
+        }
+        if (shader != null) {
+            ShaderCloudscape(shader, tint, density, layers, baseDurSec)
+            return
+        }
+    }
+    BlobCloudscape(tint, density, layers, baseDurSec)
+}
+
+// AGSL fragment shader: value-noise fBm → threshold silhouette → soft edge →
+// vertical gradient body × wisp detail. All 4 layers composited in one pass.
+private const val CLOUD_AGSL = """
+uniform float2 uSize;
+uniform float uTime;
+uniform float uLo;
+uniform float uHi;
+uniform float uLayers;
+uniform float uBaseDur;
+uniform float uOpacity;
+layout(color) uniform half4 uTop;
+layout(color) uniform half4 uBot;
+
+float hash(float2 p) {
+    p = fract(p * float2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+float vnoise(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + float2(1.0, 0.0));
+    float c = hash(i + float2(0.0, 1.0));
+    float d = hash(i + float2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+float fbm(float2 p) {
+    float v = 0.0;
+    float amp = 0.5;
+    for (int i = 0; i < 4; i++) {
+        v += amp * vnoise(p);
+        p = p * 2.04 + float2(17.3, 9.1);
+        amp *= 0.5;
+    }
+    return v;
+}
+// One cloud layer: silhouette alpha at this fragment.
+float cloudLayer(float2 uv, float fx, float fy, float drift, float lo, float hi, float seed) {
+    float2 p = float2(uv.x * fx + drift, uv.y * fy + seed);
+    float n = fbm(p);
+    float a = smoothstep(lo, hi, n);
+    // internal wisp texture — higher-frequency noise modulating the body
+    float wisp = fbm(p * 3.1 + float2(seed * 1.7, 4.2));
+    return a * (0.62 + 0.38 * wisp);
+}
+
+half4 main(float2 frag) {
+    float2 uv = frag / uSize.x;          // width-normalized
+    float yFrac = frag.y / uSize.y;
+    // premultiplied back-to-front accumulation
+    float3 col = float3(0.0);
+    float alpha = 0.0;
+
+    // per-layer: featureScaleX, featureScaleY, opacity, speed sign, duration mul
+    for (int i = 0; i < 4; i++) {
+        float fx; float fy; float op; float sgn; float durMul; float seed;
+        if (i == 0)      { fx =  7.6; fy = 21.6; op = 0.95; sgn = -1.0; durMul = 1.00; seed = 11.0; }
+        else if (i == 1) { fx = 11.9; fy = 32.4; op = 0.85; sgn =  1.0; durMul = 0.72; seed = 37.0; }
+        else if (i == 2) { fx = 19.4; fy = 49.7; op = 0.70; sgn = -1.0; durMul = 0.52; seed = 73.0; }
+        else             { fx = 28.1; fy = 69.1; op = 0.55; sgn =  1.0; durMul = 0.40; seed = 91.0; }
+        // branchless layer-count mask (break is not allowed in AGSL runtime effects)
+        float on = step(float(i) + 0.5, uLayers);
+        float drift = sgn * uTime / (uBaseDur * durMul) * fx * 0.5;
+        float a = cloudLayer(uv, fx, fy, drift, uLo, uHi, seed) * op * uOpacity * on;
+        // clouds thin out toward the very bottom so the sky horizon shows
+        a *= smoothstep(1.08, 0.62, yFrac);
+        // vertical body gradient: lit tops, shaded bottoms (per-fragment proxy)
+        float3 body = mix(uTop.rgb, uBot.rgb, clamp(yFrac * 1.5, 0.0, 1.0));
+        col = body * a + col * (1.0 - a);
+        alpha = a + alpha * (1.0 - a);
+    }
+    float3 outRgb = alpha > 0.001 ? col / alpha : float3(0.0);
+    return half4(half3(outRgb), half(alpha));
+}
+"""
+
+@androidx.annotation.RequiresApi(33)
+@Composable
+private fun ShaderCloudscape(
+    shader: android.graphics.RuntimeShader,
+    tint: CloudTint,
+    density: Float,
+    layers: Int,
+    baseDurSec: Int,
+) {
+    val brush = remember(shader) {
+        androidx.compose.ui.graphics.ShaderBrush(shader)
+    }
+    // ~24fps time uniform — cloud drift is slow, full 60fps would waste battery.
+    var timeSec by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        var startNs = -1L
+        var lastPushed = 0f
+        while (true) {
+            withFrameNanos { now ->
+                if (startNs < 0) startNs = now
+                val t = (now - startNs) / 1_000_000_000f
+                if (t - lastPushed > 0.042f) {
+                    lastPushed = t
+                    timeSec = t
+                }
+            }
+        }
+    }
+    // Threshold band by density per HANDOFF: 0.5→0.46, 1.0→0.37, 1.4→0.27.
+    val lo = (0.555f - 0.20f * density).coerceIn(0.10f, 0.50f)
+    Canvas(Modifier.fillMaxSize()) {
+        shader.setFloatUniform("uSize", size.width, size.height)
+        shader.setFloatUniform("uTime", timeSec)
+        shader.setFloatUniform("uLo", lo)
+        shader.setFloatUniform("uHi", lo + 0.07f)
+        shader.setFloatUniform("uLayers", layers.coerceIn(1, 4).toFloat())
+        shader.setFloatUniform("uBaseDur", baseDurSec.toFloat())
+        shader.setFloatUniform("uOpacity", (density.coerceIn(0.4f, 1.6f) / 1.2f).coerceAtMost(1f))
+        shader.setColorUniform("uTop", tint.top.toArgb())
+        shader.setColorUniform("uBot", tint.bottom.toArgb())
+        drawRect(brush = brush)
+    }
+}
+
+@Composable
+private fun BlobCloudscape(
     tint: CloudTint,
     density: Float,
     layers: Int,
@@ -1129,7 +1284,7 @@ private fun MistyBottomSpray() {
 }
 
 @Composable
-private fun FogBands() {
+private fun FogBands(dim: Float = 1f) {
     // Continuous atmospheric fog — single soft full-screen veil + 3 very wide
     // slow-drifting density blobs that vary local thickness. No discrete
     // banded geometry; nothing reads as a "bar".
@@ -1169,11 +1324,11 @@ private fun FogBands() {
         drawRect(
             brush = Brush.verticalGradient(
                 colors = listOf(
-                    Color.White.copy(alpha = 0.06f),
-                    Color.White.copy(alpha = 0.22f),
-                    Color.White.copy(alpha = 0.25f),
-                    Color.White.copy(alpha = 0.18f),
-                    Color.White.copy(alpha = 0.05f),
+                    Color.White.copy(alpha = 0.06f * dim),
+                    Color.White.copy(alpha = 0.22f * dim),
+                    Color.White.copy(alpha = 0.25f * dim),
+                    Color.White.copy(alpha = 0.18f * dim),
+                    Color.White.copy(alpha = 0.05f * dim),
                 ),
             ),
         )
@@ -1196,8 +1351,8 @@ private fun FogBands() {
             drawRect(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = b.alphaScale * 0.22f),
-                        Color.White.copy(alpha = b.alphaScale * 0.10f),
+                        Color.White.copy(alpha = b.alphaScale * 0.22f * dim),
+                        Color.White.copy(alpha = b.alphaScale * 0.10f * dim),
                         Color.Transparent,
                     ),
                     center = Offset(cx, cy),
@@ -1213,7 +1368,7 @@ private fun FogBands() {
 private data class BlobDrift(val drift: Float, val yFrac: Float, val alphaScale: Float)
 
 @Composable
-private fun HazyClouds() {
+private fun HazyClouds(isNight: Boolean = false) {
     val transition = rememberInfiniteTransition(label = "haze")
     val pulse by transition.animateFloat(
         initialValue = 0.92f,
@@ -1230,13 +1385,17 @@ private fun HazyClouds() {
     Canvas(Modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
-        // Diffused warm sun disc top-right
+        // Diffused warm sun disc top-right (replaced by a faint moon glow at night)
         val sunCx = w * 0.62f
         val sunCy = h * 0.22f
         val sunR = w * 0.35f * pulse
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(
+                colors = if (isNight) listOf(
+                    Color(0xFFD8E0F0).copy(alpha = 0.14f),
+                    Color(0xFFAAB6CC).copy(alpha = 0.06f),
+                    Color.Transparent,
+                ) else listOf(
                     Color(0xFFFFE4B5).copy(alpha = 0.50f),
                     Color(0xFFFFB76E).copy(alpha = 0.20f),
                     Color.Transparent,
@@ -1247,7 +1406,8 @@ private fun HazyClouds() {
             radius = sunR,
             center = Offset(sunCx, sunCy),
         )
-        // 4 large warm soft cloud blobs
+        // 4 large warm soft cloud blobs (cool + dimmer at night)
+        val dimMul = if (isNight) 0.35f else 1f
         repeat(4) { i ->
             val phase = (drift + i * 0.31f) % 1f
             val bw = w * (0.5f + i * 0.08f)
@@ -1256,8 +1416,8 @@ private fun HazyClouds() {
             drawRect(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color(0xFFE9C8A6).copy(alpha = 0.40f),
-                        Color(0xFFB89060).copy(alpha = 0.18f),
+                        (if (isNight) Color(0xFF8E96A8) else Color(0xFFE9C8A6)).copy(alpha = 0.40f * dimMul),
+                        (if (isNight) Color(0xFF5A6172) else Color(0xFFB89060)).copy(alpha = 0.18f * dimMul),
                         Color.Transparent,
                     ),
                     center = Offset(cx, cy),
@@ -1271,7 +1431,7 @@ private fun HazyClouds() {
 }
 
 @Composable
-private fun WindyStreaks() {
+private fun WindyStreaks(dim: Float = 1f) {
     val transition = rememberInfiniteTransition(label = "windy")
     val streakConfigs = listOf(
         WindyConfig(0.22f, 0.16f, +1, 32),
@@ -1303,8 +1463,8 @@ private fun WindyStreaks() {
             drawRect(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.45f),
-                        Color.White.copy(alpha = 0.18f),
+                        Color.White.copy(alpha = 0.45f * dim),
+                        Color.White.copy(alpha = 0.18f * dim),
                         Color.Transparent,
                     ),
                     center = Offset(cx, cy),
