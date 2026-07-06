@@ -164,87 +164,12 @@ class AttendanceRepository(private val context: Context) {
         }
     }
 
+    // Attendance fetching has been permanently DISCONTINUED at the college's
+    // request. This no longer contacts the LAUDEA SIS, refreshes tokens, or
+    // falls back to WebView/login — it returns the discontinued state directly.
+    // The dashboard/widget render a "feature discontinued" notice instead of data.
     suspend fun refreshAttendance(): Result<AttendanceData> {
-        val rollNumber = securePrefs.rollNumber
-        val password = securePrefs.password
-
-        if (rollNumber.isNullOrEmpty() || password.isNullOrEmpty()) {
-            return Result.Error("Not logged in")
-        }
-
-        android.util.Log.d("AttendanceRepo", "Refreshing attendance for: $rollNumber")
-
-        // FAST PATH: Try direct HTTP with cached token (instant)
-        try {
-            val directResult = webViewAuthenticator.fetchAttendanceDirect(rollNumber)
-            if (directResult != null) {
-                if (directResult.isSuccess) {
-                    val attendanceData = directResult.getOrThrow()
-                    securePrefs.saveAttendanceData(attendanceData)
-                    try {
-                        com.justpass.app.widget.AttendanceWidgetReceiver.updateWidget(context)
-                    } catch (e: Exception) {}
-                    android.util.Log.d("AttendanceRepo", "Fast refresh successful: ${attendanceData.attendanceWithExemption}%")
-                    return Result.Success(attendanceData)
-                }
-                // Server is down (5xx) — skip all retry paths, show cached data
-                val failure = directResult.exceptionOrNull()
-                if (failure is WebViewAuthenticator.ServerDownException) {
-                    android.util.Log.w("AttendanceRepo", "LAUDEA server down (HTTP ${failure.statusCode})")
-                    return Result.Error("LAUDEA server is temporarily down. Showing cached data.")
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.d("AttendanceRepo", "Fast refresh failed, trying token renewal")
-        }
-
-        // MEDIUM PATH: Try refresh token, then password grant, then retry fetch
-        try {
-            val refreshed = webViewAuthenticator.refreshAccessToken()
-                || webViewAuthenticator.loginViaKeycloak(rollNumber!!, password!!)
-            if (refreshed) {
-                val retryResult = webViewAuthenticator.fetchAttendanceDirect(rollNumber)
-                if (retryResult != null && retryResult.isSuccess) {
-                    val attendanceData = retryResult.getOrThrow()
-                    securePrefs.saveAttendanceData(attendanceData)
-                    try {
-                        com.justpass.app.widget.AttendanceWidgetReceiver.updateWidget(context)
-                    } catch (e: Exception) {}
-                    android.util.Log.d("AttendanceRepo", "Token renewal refresh successful: ${attendanceData.attendanceWithExemption}%")
-                    return Result.Success(attendanceData)
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.d("AttendanceRepo", "All direct methods failed, falling back to WebView")
-        }
-
-        // SLOW PATH: Fall back to WebView (only if direct Keycloak grant is disabled)
-        return withContext(Dispatchers.Main) {
-            try {
-                android.util.Log.d("AttendanceRepo", "WebView refresh for: $rollNumber")
-
-                val result = webViewAuthenticator.fetchAttendanceOnly(rollNumber)
-
-                result.fold(
-                    onSuccess = { attendanceData ->
-                        securePrefs.saveAttendanceData(attendanceData)
-                        try {
-                            com.justpass.app.widget.AttendanceWidgetReceiver.updateWidget(context)
-                        } catch (e: Exception) {}
-                        android.util.Log.d("AttendanceRepo", "WebView refresh successful: ${attendanceData.attendanceWithExemption}%")
-                        Result.Success(attendanceData)
-                    },
-                    onFailure = { exception ->
-                        // Session might have expired, try full login
-                        android.util.Log.d("AttendanceRepo", "Session expired, re-logging in")
-                        login(rollNumber, password)
-                    }
-                )
-            } catch (e: Exception) {
-                android.util.Log.e("AttendanceRepo", "Refresh error: ${e.message}")
-                Result.Error("Refresh error: ${e.message}", e)
-            }
-        }
+        return Result.Error("Attendance fetching has been discontinued.")
     }
 
     fun getCachedAttendance(): AttendanceData {
