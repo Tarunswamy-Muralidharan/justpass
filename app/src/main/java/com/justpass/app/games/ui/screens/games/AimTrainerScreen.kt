@@ -1,6 +1,7 @@
 package com.justpass.app.games.ui.screens.games
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -183,8 +184,13 @@ fun AimTrainerScreen(onBack: () -> Unit, onLeaderboard: () -> Unit = {}) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        // detectTapGestures fires on UP and yields when a child
+                        // (the Leaderboard button) consumes the tap — unlike the
+                        // custom detectFirstTap, which fired on DOWN and stole the
+                        // press before the button's click could complete, so tapping
+                        // Leaderboard restarted the run instead of opening it.
                         .pointerInput(Unit) {
-                            detectFirstTap { _, _ ->
+                            detectTapGestures {
                                 hits = 0
                                 totalMs = 0
                                 targetX = Random.nextFloat() * 0.8f + 0.1f
