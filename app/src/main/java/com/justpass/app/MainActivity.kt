@@ -47,6 +47,7 @@ import com.justpass.app.ui.components.LiquidGlassBottomBar
 import com.justpass.app.ui.components.LiquidGlassScaffold
 import com.justpass.app.ui.components.PixelWipeOverlay
 import com.justpass.app.ui.components.TabItemData
+import com.justpass.app.ui.components.WeatherScene
 import com.justpass.app.ui.screens.AbsentDaysScreen
 import com.justpass.app.ui.screens.CAMarksScreen
 import com.justpass.app.ui.screens.DashboardScreen
@@ -666,7 +667,7 @@ fun AttendanceApp() {
             }
             // Dual-state: cardState for card refraction, barState for bottom bar blur
             var weatherScene by remember {
-                mutableStateOf(com.justpass.app.ui.components.WeatherScene.fromString(securePrefs.weatherScene))
+                mutableStateOf(WeatherScene.fromString(securePrefs.weatherScene))
             }
             var autoWeatherEnabled by remember {
                 mutableStateOf(securePrefs.autoWeatherEnabled)

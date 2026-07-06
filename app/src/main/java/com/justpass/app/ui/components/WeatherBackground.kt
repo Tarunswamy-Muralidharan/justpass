@@ -9,9 +9,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
@@ -27,20 +31,25 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.justpass.app.R
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -491,10 +500,9 @@ private data class CloudLayer(
 )
 
 /**
- * Photographic fractal-noise clouds (HANDOFF section 1) on Android 13+ via an
- * AGSL RuntimeShader: 4 parallax layers of thresholded fBm with internal wisp
- * detail and a vertical body gradient. Pre-33 devices fall back to the soft
- * blob approximation.
+ * Photographic cumulus clouds rendered from Blender and layered with parallax.
+ * Replaces the previous AGSL RuntimeShader approach because procedural noise
+ * could not match real iOS Weather clouds.
  */
 @Composable
 private fun Cloudscape(
@@ -503,24 +511,18 @@ private fun Cloudscape(
     layers: Int,
     baseDurSec: Int,
 ) {
-    if (android.os.Build.VERSION.SDK_INT >= 33) {
-        // RuntimeShader compiles the AGSL at construction — if the driver
-        // rejects it for any reason, fall back to blobs instead of crashing.
-        val shader = remember {
-            runCatching { android.graphics.RuntimeShader(CLOUD_AGSL) }.getOrNull()
-        }
-        if (shader != null) {
-            ShaderCloudscape(shader, tint, density, layers, baseDurSec)
-            return
-        }
-    }
-    BlobCloudscape(tint, density, layers, baseDurSec)
+    ImageCloudscape(tint, density, layers, baseDurSec)
 }
 
-// AGSL fragment shader — iOS-Weather-style soft cumulus. Wide smoothstep
-// density (no hard threshold), mild horizontal stretch (clouds are wider
-// than tall, not streaks), and top-lit shading from an offset density
-// sample. Three parallax billow layers composited premultiplied.
+// AGSL fragment shader — iOS-Weather-style stratocumulus with SKY SHOWING
+// THROUGH. Key properties vs. the old version:
+//  - Dave-Hoskins hash (no `p.x*p.y`) → no diagonal streak artifacts.
+//  - Per-octave rotation in fBm → breaks axis-aligned grid structure.
+//  - NARROW smoothstep band (set from Kotlin) → real cloud silhouettes with
+//    gaps of sky between billows, instead of a flat opaque grey wall.
+//  - Strong top-lit shading → bright sunlit crowns + shaded bellies = depth.
+//  - DOMAIN WARPING → organic turbulent cloud structure, not blobby noise.
+// Three parallax billow layers composited premultiplied, back-to-front.
 private const val CLOUD_AGSL = """
 uniform float2 uSize;
 uniform float uTime;
@@ -532,10 +534,11 @@ uniform float uOpacity;
 layout(color) uniform half4 uTop;
 layout(color) uniform half4 uBot;
 
+// Artifact-free 2D hash (Dave Hoskins). No diagonal banding.
 float hash(float2 p) {
-    p = fract(p * float2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
+    float3 p3 = fract(float3(p.x, p.y, p.x) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
 }
 float vnoise(float2 p) {
     float2 i = floor(p);
@@ -548,19 +551,19 @@ float vnoise(float2 p) {
     float d = hash(i + float2(1.0, 1.0));
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
+// fBm with a fixed ~28.6 degree rotation per octave so successive octaves
+// don't stack on the same axes (another source of visible streaking).
 float fbm(float2 p) {
     float v = 0.0;
     float amp = 0.5;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 4; i++) {
         v += amp * vnoise(p);
-        p = p * 2.02 + float2(17.3, 9.1);
+        float2 r = float2(p.x * 0.8776 - p.y * 0.4794,
+                          p.x * 0.4794 + p.y * 0.8776);
+        p = r * 2.02 + float2(17.3, 9.1);
         amp *= 0.5;
     }
     return v;
-}
-// Soft cloud density 0..1 at noise-space point p.
-float dens(float2 p, float lo, float hi) {
-    return smoothstep(lo, hi, fbm(p));
 }
 
 half4 main(float2 frag) {
@@ -570,29 +573,39 @@ half4 main(float2 frag) {
     float3 col = float3(0.0);
     float alpha = 0.0;
 
-    // Per-layer: feature scale (mildly anisotropic: billows ~1.8x wider than
-    // tall), opacity, drift direction, speed, vertical seed offset.
+    // Per-layer: feature scale (mildly anisotropic: billows wider than tall),
+    // opacity, drift direction, speed, vertical seed offset. 3 layers keeps
+    // the (expensive) domain warp affordable on mid-tier GPUs.
     for (int i = 0; i < 3; i++) {
         float fx; float op; float sgn; float durMul; float seed;
-        if (i == 0)      { fx = 2.6; op = 0.92; sgn = -1.0; durMul = 1.00; seed = 11.0; }
-        else if (i == 1) { fx = 4.1; op = 0.78; sgn =  1.0; durMul = 0.66; seed = 37.0; }
-        else             { fx = 6.3; op = 0.60; sgn = -1.0; durMul = 0.45; seed = 73.0; }
+        if (i == 0)      { fx = 2.3; op = 0.95; sgn = -1.0; durMul = 1.00; seed = 11.0; }
+        else if (i == 1) { fx = 3.6; op = 0.80; sgn =  1.0; durMul = 0.70; seed = 37.0; }
+        else             { fx = 5.6; op = 0.64; sgn = -1.0; durMul = 0.48; seed = 73.0; }
         // branchless layer-count mask (break is not allowed in AGSL runtime effects)
         float on = step(float(i) + 0.5, uLayers);
         float drift = sgn * uTime / (uBaseDur * durMul);
-        float2 p = float2(uv.x * fx + drift, uv.y * fx * 1.8 + seed);
+        float2 p = float2(uv.x * fx + drift, uv.y * fx * 1.65 + seed);
 
-        float d = dens(p, uLo, uHi);
-        // Top-lit shading: sample the density a little "above" this point.
-        // Where the sky above is emptier than here, we're on a sunlit crown;
-        // where it's denser, we're under the cloud's belly — shade it.
-        float dUp = dens(p + float2(0.0, -0.42), uLo, uHi);
-        float lit = clamp(0.60 + 0.85 * (d - dUp), 0.30, 1.0);
+        // DOMAIN WARP — distort the sample point by a low-frequency noise field
+        // before sampling density. This is what turns uniform "blobby" fBm into
+        // organic, turbulent, real-looking cloud structure with wisps and
+        // billows instead of fake lumps.
+        float2 q = float2(fbm(p + float2(1.7, 9.2)),
+                          fbm(p + float2(8.3, 2.8)));
+        float2 wp = p + 0.9 * q;
+
+        float n = fbm(wp);
+        // Top-lit shading from the warped-noise gradient: sample a little
+        // "above" — brighter where the sky above is emptier (sunlit crown),
+        // darker under the cloud belly → volumetric depth.
+        float nUp = fbm(wp + float2(0.0, -0.55));
+        float d = smoothstep(uLo, uHi, n);
+        float lit = clamp(0.44 + 1.7 * (n - nUp), 0.14, 1.0);
         float3 body = mix(uBot.rgb, uTop.rgb, lit);
 
         float a = d * op * uOpacity * on;
         // clouds thin out toward the very bottom so the sky horizon shows
-        a *= smoothstep(1.08, 0.62, yFrac);
+        a *= smoothstep(1.05, 0.55, yFrac);
         col = body * a + col * (1.0 - a);
         alpha = a + alpha * (1.0 - a);
     }
@@ -629,18 +642,20 @@ private fun ShaderCloudscape(
             }
         }
     }
-    // Density shifts the soft band down (denser sky = more cloud coverage).
-    // The band itself is WIDE (0.42) — that width is what makes the edges
-    // read as soft vapour instead of hard threshold streaks.
-    val lo = (0.46f - 0.18f * density).coerceIn(0.08f, 0.46f)
+    // Threshold band slides down with density (more cloud coverage), but we
+    // keep a higher floor so plenty of sky gradient shows through even on
+    // overcast. Narrow band (0.11) → defined silhouettes, not a flat wall.
+    val lo = (0.62f - 0.16f * density).coerceIn(0.36f, 0.54f)
     Canvas(Modifier.fillMaxSize()) {
         shader.setFloatUniform("uSize", size.width, size.height)
         shader.setFloatUniform("uTime", timeSec)
         shader.setFloatUniform("uLo", lo)
-        shader.setFloatUniform("uHi", lo + 0.42f)
+        shader.setFloatUniform("uHi", lo + 0.11f)
         shader.setFloatUniform("uLayers", layers.coerceIn(1, 3).toFloat())
         shader.setFloatUniform("uBaseDur", baseDurSec.toFloat())
-        shader.setFloatUniform("uOpacity", (density.coerceIn(0.4f, 1.6f) / 1.2f).coerceAtMost(1f))
+        // Moderate opacity (~0.28 ceiling) — visible enough to read the new
+        // domain-warped cloud structure, light enough not to wash out the UI.
+        shader.setFloatUniform("uOpacity", (0.14f + 0.10f * density).coerceIn(0.12f, 0.30f))
         shader.setColorUniform("uTop", tint.top.toArgb())
         shader.setColorUniform("uBot", tint.bottom.toArgb())
         drawRect(brush = brush)
@@ -727,6 +742,143 @@ private fun BlobCloudscape(
             }
         }
     }
+}
+
+/* ---------- Image-based Cloudscape ----------
+ *
+ * Photographic cumulus puffs rendered in Blender, exported as transparent
+ * RGBA PNGs, layered with parallax and slow horizontal drift. Replaces the
+ * procedural AGSL shader for the cloudy / partly / overcast scenes so the
+ * clouds look like real iOS Weather cumulus rather than CGI noise.
+ */
+
+private data class ImageCloudSlot(
+    val drawableId: Int,
+    val xFrac: Float,      // 0..1 within the layer strip
+    val yFrac: Float,      // vertical position on screen
+    val scale: Float,      // width as fraction of screen width
+    val alpha: Float,
+)
+
+private data class ImageCloudLayerSpec(
+    val slots: List<ImageCloudSlot>,
+    val durationSec: Int,
+    val speed: Float,      // +1 drifts left, -1 drifts right
+)
+
+@Composable
+private fun ImageCloudscape(
+    tint: CloudTint,
+    density: Float,
+    layers: Int,
+    baseDurSec: Int,
+) {
+    // WHITE tint is effectively a no-op; for other tints modulate the cloud
+    // colour so highlights pick up the scene tint while internal shadows stay
+    // relatively darker.
+    val colorFilter = remember(tint) {
+        if (tint == CloudTint.WHITE) null
+        else ColorFilter.tint(tint.top, BlendMode.Modulate)
+    }
+
+    val layerSpecs = remember(tint, density, layers, baseDurSec) {
+        buildImageCloudLayers(density, layers, baseDurSec)
+    }
+
+    val transition = rememberInfiniteTransition(label = "image-cloudscape")
+    Box(Modifier.fillMaxSize()) {
+        layerSpecs.forEachIndexed { idx, layer ->
+            val anim by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(layer.durationSec * 1000, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart,
+                ),
+                label = "img-layer-$idx",
+            )
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val w = maxWidth
+                val h = maxHeight
+                val stripW = w * IMAGE_CLOUD_STRIP_WIDTH
+                val delta = stripW * anim
+
+                // Draw the layer strip twice so it can wrap seamlessly.
+                repeat(2) { copy ->
+                    val copyShift = stripW * copy * (if (layer.speed > 0) 1f else -1f)
+                    val layerX = if (layer.speed > 0) -delta + copyShift else delta + copyShift
+
+                    layer.slots.forEach { slot ->
+                        val size = w * slot.scale
+                        // Global lightener so clouds blend into the sky instead of
+                        // standing out as solid shapes (user: "more blended in").
+                        val cloudAlpha = (slot.alpha * density.coerceIn(0.35f, 1.5f) *
+                            IMAGE_CLOUD_OPACITY).coerceIn(0f, 1f)
+                        Image(
+                            painter = painterResource(slot.drawableId),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(size)
+                                .offset(
+                                    x = layerX + stripW * slot.xFrac - size / 2f,
+                                    y = h * slot.yFrac - size / 2f,
+                                )
+                                .alpha(cloudAlpha),
+                            colorFilter = colorFilter,
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private const val IMAGE_CLOUD_STRIP_WIDTH = 2.6f
+// Master cloud opacity multiplier — lower = lighter / more blended into the sky.
+private const val IMAGE_CLOUD_OPACITY = 0.5f
+
+private fun buildImageCloudLayers(
+    density: Float,
+    layers: Int,
+    baseDurSec: Int,
+): List<ImageCloudLayerSpec> {
+    // Pre-baked layout that frames the screen like iOS Weather f_029.png:
+    // clouds at top-left/top-right and bottom, clear blue sky in the middle.
+    val allLayers = listOf(
+        // Back layer: big, slow, translucent.
+        ImageCloudLayerSpec(
+            slots = listOf(
+                ImageCloudSlot(R.drawable.cloud_1, 0.12f, 0.10f, 1.35f, 0.55f),
+                ImageCloudSlot(R.drawable.cloud_2, 0.72f, 0.08f, 1.20f, 0.50f),
+                ImageCloudSlot(R.drawable.cloud_3, 0.42f, 0.14f, 1.05f, 0.45f),
+                ImageCloudSlot(R.drawable.cloud_4, 0.92f, 0.82f, 1.25f, 0.50f),
+            ),
+            durationSec = (baseDurSec * 1.25f).toInt(),
+            speed = +1f,
+        ),
+        // Mid layer.
+        ImageCloudLayerSpec(
+            slots = listOf(
+                ImageCloudSlot(R.drawable.cloud_2, 0.82f, 0.18f, 1.05f, 0.70f),
+                ImageCloudSlot(R.drawable.cloud_4, 0.22f, 0.80f, 1.20f, 0.65f),
+                ImageCloudSlot(R.drawable.cloud_1, 0.55f, 0.85f, 1.05f, 0.60f),
+            ),
+            durationSec = baseDurSec,
+            speed = -1f,
+        ),
+        // Front layer: smaller, faster, more opaque.
+        ImageCloudLayerSpec(
+            slots = listOf(
+                ImageCloudSlot(R.drawable.cloud_3, 0.08f, 0.22f, 0.90f, 0.80f),
+                ImageCloudSlot(R.drawable.cloud_4, 0.88f, 0.76f, 1.10f, 0.75f),
+                ImageCloudSlot(R.drawable.cloud_1, 0.35f, 0.78f, 0.85f, 0.70f),
+            ),
+            durationSec = (baseDurSec * 0.72f).toInt(),
+            speed = +1f,
+        ),
+    )
+    return allLayers.take(layers.coerceAtLeast(1))
 }
 
 /* ---------- Rain ---------- */
