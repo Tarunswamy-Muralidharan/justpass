@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.EventSeat
@@ -592,155 +593,42 @@ fun DashboardScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        val effectivePct = uiState.attendanceData.attendanceWithExemption
-
-        // Attendance % — real liquid glass with color tint
-        val attendanceTint = getAttendanceTintColor(effectivePct)
-        // Spring-coupled water surface that rests at attendance% and tilts
-        // with gravity. Idle ripple keeps it gently wavy. Drawn into the
-        // inner Column's drawBehind so it's part of the same draw pass as
-        // the LiquidGlass refraction layer — no Canvas/Box overlay collisions.
-        val waterState = rememberWaterState(
-            fillFraction = (effectivePct / 100.0).toFloat(),
-            scrollOffsetPx = dashboardScrollState.value.toFloat(),
-        )
-        LiquidGlassCard(cardState = cardState,
-            modifier = Modifier.fillMaxWidth()
-                .registerAsSplashTarget()
-                .clickable { Analytics.logTileClicked("attendance"); onSubjectAttendanceClick() },
-            tintColor = attendanceTint) {
+        // Attendance fetching has been DISCONTINUED at the college's request —
+        // the app no longer retrieves any attendance data from the SIS. A
+        // permanent notice replaces the old attendance summary card (percentage,
+        // water gauge, present/exempt/absent stats, subject-wise link).
+        LiquidGlassCard(
+            cardState = cardState,
+            modifier = Modifier.fillMaxWidth(),
+            tintColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .drawBehind {
-                        drawWater(waterState)
-                    }
                     .padding(horizontal = 24.dp, vertical = 28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Servers-down fallback: triggered when attendance + enteredTillDate
-                // both zero — happens when SIS API is offline or the user just
-                // logged in with no cached data. Replaces the percentage display
-                // with a toolkit icon + reassurance message.
-                val serversDown = effectivePct == 0.0
-                    && uiState.attendanceData.enteredTillDate == 0
-                if (serversDown) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Icon(
-                        Icons.Default.Build,
-                        contentDescription = "Servers down",
-                        tint = Color(0xFFFFC107),
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        "College servers down",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        "Pull down to retry — we'll grab your attendance the moment SIS is back.",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        textAlign = TextAlign.Center
-                    )
-                    return@Column
-                }
-                Text("Attendance (with exemption)", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-                Spacer(modifier = Modifier.height(8.dp))
-                SlotMachineNumber(
-                    value = "${String.format("%.1f", effectivePct)}%",
-                    fontSize = 52.sp,
-                    color = MaterialTheme.colorScheme.onSurface
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    modifier = Modifier.size(48.dp)
                 )
-                if (uiState.attendanceData.attendanceWithExemption != uiState.attendanceData.attendancePercentage) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Without exemption: ${String.format("%.1f", uiState.attendanceData.attendancePercentage)}%",
-                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                }
-                // Warning: hours needed for target %
-                val targetPct = attendanceTarget / 100.0
-                if (uiState.attendanceData.attendanceWithExemption < attendanceTarget && uiState.attendanceData.enteredTillDate > 0) {
-                    val present = uiState.attendanceData.presentWithExemptionCount
-                    val total = uiState.attendanceData.enteredTillDate
-                    val hoursNeeded = kotlin.math.ceil((targetPct * total - present) / (1.0 - targetPct)).toInt()
-                    if (hoursNeeded > 0) {
-                        val approxDays = kotlin.math.ceil(hoursNeeded / 6.0).toInt()
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text("Attend $hoursNeeded more hours (~$approxDays days) to reach $attendanceTarget%",
-                            fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                            color = Color(0xFFFF8A80))
-                    }
-                }
-
-                // Stats inside the main card
-                if (uiState.attendanceData.enteredTillDate > 0) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.weight(1f, fill = false).padding(horizontal = 4.dp, vertical = 6.dp)) {
-                            Text(uiState.attendanceData.presentWithExemptionCount.toString(),
-                                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676), maxLines = 1)
-                            Text("Present", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                        }
-                        GlassListSurface(
-                            shape = RoundedCornerShape(12.dp),
-                            tintColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.10f),
-                            modifier = Modifier.weight(1f, fill = false).clickable { onExemptionsClick() }
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                            ) {
-                                Text(uiState.attendanceData.exemptionCount.toString(),
-                                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary, maxLines = 1)
-                                Text("Exempt", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f), maxLines = 1)
-                            }
-                        }
-                        GlassListSurface(
-                            shape = RoundedCornerShape(12.dp),
-                            tintColor = Color(0xFFFF5252).copy(alpha = 0.12f),
-                            modifier = Modifier.weight(1f, fill = false).clickable { onAbsentDaysClick() }
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                            ) {
-                                Text(uiState.attendanceData.absentCount.toString(),
-                                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5252), maxLines = 1)
-                                Text("Absent", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Color(0xFFFF5252).copy(alpha = 0.85f), maxLines = 1)
-                            }
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.weight(1f, fill = false).padding(horizontal = 4.dp, vertical = 6.dp)) {
-                            Text(uiState.attendanceData.enteredTillDate.toString(),
-                                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
-                            Text("Total", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                        }
-                        if (uiState.attendanceData.notEnteredTillDate > 0) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.weight(1f, fill = false).padding(horizontal = 4.dp, vertical = 6.dp)) {
-                                Text(uiState.attendanceData.notEnteredTillDate.toString(),
-                                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                                Text("Pending", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                            }
-                        }
-                    }
-                }
-
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "Attendance unavailable",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center
+                )
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("Tap for subject-wise details →",
-                    fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f))
+                Text(
+                    "The in-app attendance feature has been discontinued. Please check your attendance directly on the college SIS portal.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    textAlign = TextAlign.Center
+                )
             }
         }
 

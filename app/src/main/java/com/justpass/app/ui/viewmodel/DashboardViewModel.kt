@@ -104,25 +104,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Silently refresh attendance every 8 minutes while the app is open.
-     * Keeps the token alive so manual refresh is always instant.
+     * Attendance auto-refresh has been DISCONTINUED (college request), so the
+     * former 8-minute foreground keep-alive poll is disabled — no attendance is
+     * fetched in the background while the app is open.
      */
     private fun startBackgroundRefresh() {
-        viewModelScope.launch {
-            while (true) {
-                delay(8 * 60 * 1000L) // 8 minutes
-                android.util.Log.d("DashboardVM", "Background token keep-alive refresh")
-                repository.refreshAttendance() // Silent — don't update UI loading state
-                    .let { result ->
-                        if (result is Result.Success) {
-                            _uiState.value = _uiState.value.copy(
-                                attendanceData = result.data,
-                                rollNumber = repository.getRollNumber() ?: ""
-                            )
-                        }
-                    }
-            }
-        }
+        // No-op: attendance polling discontinued.
     }
 
     private fun loadInitialData() {
@@ -186,40 +173,25 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         } catch (_: Exception) {}
     }
 
+    // Attendance fetching is DISCONTINUED (college request). This no longer
+    // fetches attendance or surfaces an attendance error; pull-to-refresh simply
+    // re-warms the still-supported tiles (timetable session counts, holidays,
+    // target CGPA). The dashboard renders a "discontinued" notice in place of the
+    // attendance card.
     fun refreshAttendance() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isRefreshing = true, errorMessage = null)
-
-            when (val result = repository.refreshAttendance()) {
-                is Result.Success -> {
-                    com.justpass.app.data.analytics.Analytics.logRefresh(success = true, method = "manual")
-                    _uiState.value = _uiState.value.copy(
-                        isRefreshing = false,
-                        attendanceData = result.data,
-                        rollNumber = repository.getRollNumber() ?: ""
-                    )
-                    // Load timetable session counts after token is ready
-                    if (_uiState.value.sessionsPerDay == listOf(6, 6, 6, 6, 6, 6)) {
-                        loadTimetableSessionCounts()
-                    }
-                    // Reload holidays if not yet loaded (retry on each refresh)
-                    if (_uiState.value.holidays.isEmpty()) {
-                        loadHolidayDates()
-                    }
-                    // Prefetch all tile data for AI advisor (background, silent)
-                    launch { repository.prefetchForAI() }
-                    // Load target CGPA now — token is warm, CA marks fetch will be fast
-                    loadTargetCgpa()
-                }
-                is Result.Error -> {
-                    com.justpass.app.data.analytics.Analytics.logRefresh(success = false, method = "manual")
-                    _uiState.value = _uiState.value.copy(
-                        isRefreshing = false,
-                        errorMessage = result.message
-                    )
-                }
-                is Result.Loading -> {}
+            // Load timetable session counts (uses cache + registrations; the
+            // attendance-based elective detection inside is a no-op now).
+            if (_uiState.value.sessionsPerDay == listOf(6, 6, 6, 6, 6, 6)) {
+                loadTimetableSessionCounts()
             }
+            if (_uiState.value.holidays.isEmpty()) {
+                loadHolidayDates()
+            }
+            launch { try { repository.prefetchForAI() } catch (_: Exception) {} }
+            loadTargetCgpa()
+            _uiState.value = _uiState.value.copy(isRefreshing = false)
         }
     }
 

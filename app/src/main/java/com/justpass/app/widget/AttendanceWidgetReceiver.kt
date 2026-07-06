@@ -48,10 +48,6 @@ class AttendanceWidgetReceiver : AppWidgetProvider() {
             appWidgetManager: AppWidgetManager,
             appWidgetId: Int
         ) {
-            val prefs = SecurePreferences.getInstance(context)
-            val attendanceData = prefs.getAttendanceData()
-            val isLoggedIn = prefs.isLoggedIn()
-
             val views = RemoteViews(context.packageName, R.layout.widget_attendance)
 
             // Set click listener to open app
@@ -76,64 +72,23 @@ class AttendanceWidgetReceiver : AppWidgetProvider() {
             )
             views.setOnClickPendingIntent(R.id.btn_refresh, refreshPendingIntent)
 
-            if (isLoggedIn) {
-                // Show attendance data
-                views.setViewVisibility(R.id.dot_matrix_container, View.VISIBLE)
-                views.setViewVisibility(R.id.text_percentage, View.VISIBLE)
-                views.setViewVisibility(R.id.text_decimal, View.VISIBLE)
-                views.setViewVisibility(R.id.text_percent_sign, View.VISIBLE)
-                views.setViewVisibility(R.id.text_label, View.VISIBLE)
-                views.setViewVisibility(R.id.stats_container, View.VISIBLE)
-                views.setViewVisibility(R.id.btn_refresh, View.VISIBLE)
-                views.setViewVisibility(R.id.progress_loading, View.GONE)
-                views.setViewVisibility(R.id.text_last_refreshed, View.VISIBLE)
-                views.setViewVisibility(R.id.text_not_logged_in, View.GONE)
-
-                // Update percentage with decimal - use attendance WITH exemption as main
-                val percentage = attendanceData.attendanceWithExemption
-                val formatted = String.format(Locale.US, "%.1f", percentage)
-                val parts = formatted.split(".")
-                views.setTextViewText(R.id.text_percentage, parts[0])
-                views.setTextViewText(R.id.text_decimal, ".${parts[1]}")
-
-                // Set color based on attendance (red if below 75%)
-                val textColor = if (percentage < 75) {
-                    android.graphics.Color.parseColor("#FF5252") // Red
-                } else {
-                    android.graphics.Color.parseColor("#00E676") // Green
-                }
-                views.setTextColor(R.id.text_percentage, textColor)
-                views.setTextColor(R.id.text_decimal, textColor)
-                views.setTextColor(R.id.text_percent_sign, textColor)
-
-                // Update present/absent/exemption
-                views.setTextViewText(R.id.text_present, "P: ${attendanceData.presentCount}")
-                views.setTextViewText(R.id.text_absent, "A: ${attendanceData.absentCount}")
-
-                // Update last refreshed time
-                val lastRefreshedText = if (attendanceData.lastUpdated > 0) {
-                    val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
-                    "Updated: ${dateFormat.format(Date(attendanceData.lastUpdated))}"
-                } else {
-                    "Updated: --:--"
-                }
-                views.setTextViewText(R.id.text_last_refreshed, lastRefreshedText)
-
-                // Update dot matrix - use attendance with exemption
-                updateDotMatrix(context, views, attendanceData.attendanceWithExemption)
-            } else {
-                // Show login prompt
-                views.setViewVisibility(R.id.dot_matrix_container, View.GONE)
-                views.setViewVisibility(R.id.text_percentage, View.GONE)
-                views.setViewVisibility(R.id.text_decimal, View.GONE)
-                views.setViewVisibility(R.id.text_percent_sign, View.GONE)
-                views.setViewVisibility(R.id.text_label, View.GONE)
-                views.setViewVisibility(R.id.stats_container, View.GONE)
-                views.setViewVisibility(R.id.btn_refresh, View.GONE)
-                views.setViewVisibility(R.id.progress_loading, View.GONE)
-                views.setViewVisibility(R.id.text_last_refreshed, View.GONE)
-                views.setViewVisibility(R.id.text_not_logged_in, View.VISIBLE)
-            }
+            // Attendance fetching has been DISCONTINUED at the college's request.
+            // The widget no longer displays (or fetches) attendance data — reuse
+            // the notice TextView for a permanent message and hide everything else.
+            views.setViewVisibility(R.id.dot_matrix_container, View.GONE)
+            views.setViewVisibility(R.id.text_percentage, View.GONE)
+            views.setViewVisibility(R.id.text_decimal, View.GONE)
+            views.setViewVisibility(R.id.text_percent_sign, View.GONE)
+            views.setViewVisibility(R.id.text_label, View.GONE)
+            views.setViewVisibility(R.id.stats_container, View.GONE)
+            views.setViewVisibility(R.id.btn_refresh, View.GONE)
+            views.setViewVisibility(R.id.progress_loading, View.GONE)
+            views.setViewVisibility(R.id.text_last_refreshed, View.GONE)
+            views.setViewVisibility(R.id.text_not_logged_in, View.VISIBLE)
+            views.setTextViewText(
+                R.id.text_not_logged_in,
+                "Attendance discontinued.\nCheck the college SIS portal."
+            )
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
         }
@@ -190,10 +145,8 @@ class AttendanceWidgetReceiver : AppWidgetProvider() {
         super.onReceive(context, intent)
 
         if (intent.action == ACTION_REFRESH) {
-            // Show loading state immediately
-            showLoadingState(context)
-            // Trigger refresh via WorkManager
-            com.justpass.app.worker.AttendanceRefreshWorker.refreshNow(context)
+            // Attendance fetching is discontinued — just re-render the notice.
+            updateWidget(context)
         }
     }
 

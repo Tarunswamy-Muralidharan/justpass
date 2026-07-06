@@ -1149,37 +1149,20 @@ class WebViewAuthenticator(private val context: Context) {
      * Fast refresh using cached auth token - no WebView needed.
      * Returns null if token is missing or expired (caller should fall back to WebView).
      */
-    suspend fun fetchAttendanceDirect(rollNumber: String): Result<AttendanceData>? = withContext(Dispatchers.IO) {
-        val token = cachedAuthToken ?: return@withContext null
-        android.util.Log.d("WebViewAuth", "Fast refresh with cached token")
-        val response = authenticatedGet("${ATTENDANCE_API_BASE}$rollNumber", token) ?: return@withContext null
-        try {
-            val responseCode = response.code
-            android.util.Log.d("WebViewAuth", "Fast refresh response: $responseCode")
-            when {
-                responseCode == 200 -> {
-                    val jsonData = response.body?.string() ?: ""
-                    val r = gson.fromJson(jsonData, AttendanceResponse::class.java)
-                    Result.success(AttendanceData.fromResponse(r))
-                }
-                responseCode == 401 -> { cachedAuthToken = null; null }
-                responseCode in 500..599 -> {
-                    val errBody = try { response.body?.string() ?: "" } catch (_: Exception) { "" }
-                    if (errBody.contains("401") || errBody.contains("unauthorized", ignoreCase = true)) {
-                        android.util.Log.d("WebViewAuth", "Fast refresh 500 is proxied 401 — token expired")
-                        cachedAuthToken = null
-                        null
-                    } else Result.failure(ServerDownException(responseCode))
-                }
-                else -> Result.failure(Exception("HTTP $responseCode"))
-            }
-        } finally {
-            runCatching { response.close() }
-        }
+    // Attendance fetching has been permanently DISCONTINUED at the college's
+    // request (they observed automated polling of their SIS). This method no
+    // longer contacts the LAUDEA SIS under any circumstances — it returns a
+    // discontinued failure without performing any network I/O. Do not re-enable.
+    suspend fun fetchAttendanceDirect(rollNumber: String): Result<AttendanceData>? {
+        return Result.failure(AttendanceDiscontinuedException())
     }
 
     /** Thrown when the LAUDEA server returns a 5xx error. */
     class ServerDownException(val statusCode: Int) : Exception("Server returned HTTP $statusCode")
+
+    /** Thrown by the (now disabled) attendance fetchers; the feature is discontinued. */
+    class AttendanceDiscontinuedException :
+        Exception("Attendance fetching has been discontinued.")
 
     /**
      * Fetch CA marks using cached auth token (fast direct HTTP).
@@ -1217,68 +1200,14 @@ class WebViewAuthenticator(private val context: Context) {
     /**
      * Fetch absent days details using cached auth token.
      */
-    suspend fun fetchAbsentDays(rollNumber: String): Result<List<AbsentDay>>? = withContext(Dispatchers.IO) {
-        val token = cachedAuthToken ?: return@withContext null
-        android.util.Log.d("WebViewAuth", "Fetching absent days for: $rollNumber")
-        val response = authenticatedGet("https://laudea.psgitech.ac.in/sis/Attendance/absent/$rollNumber", token)
-            ?: return@withContext Result.failure(Exception("Network error fetching absent days"))
-        try {
-            val responseCode = response.code
-            android.util.Log.d("WebViewAuth", "Absent days response: $responseCode")
-            when {
-                responseCode == 200 -> {
-                    val jsonData = response.body?.string() ?: ""
-                    val listType = object : TypeToken<List<AbsentDay>>() {}.type
-                    val absentDays: List<AbsentDay> = gson.fromJson(jsonData, listType)
-                    Result.success(absentDays)
-                }
-                responseCode == 401 -> { cachedAuthToken = null; null }
-                responseCode in 500..599 -> {
-                    val errBody = try { response.body?.string() ?: "" } catch (_: Exception) { "" }
-                    if (errBody.contains("401") || errBody.contains("unauthorized", ignoreCase = true)) {
-                        cachedAuthToken = null
-                        null
-                    } else Result.failure(ServerDownException(responseCode))
-                }
-                else -> Result.failure(Exception("HTTP $responseCode"))
-            }
-        } finally {
-            runCatching { response.close() }
-        }
+    // Discontinued — see fetchAttendanceDirect. No SIS /Attendance/absent call.
+    suspend fun fetchAbsentDays(rollNumber: String): Result<List<AbsentDay>>? {
+        return Result.failure(AttendanceDiscontinuedException())
     }
 
-    /**
-     * Fetch present days using cached auth token (fast direct HTTP).
-     * Response format is identical to absent days.
-     */
-    suspend fun fetchPresentDays(rollNumber: String): Result<List<AbsentDay>>? = withContext(Dispatchers.IO) {
-        val token = cachedAuthToken ?: return@withContext null
-        android.util.Log.d("WebViewAuth", "Fetching present days for: $rollNumber")
-        val response = authenticatedGet("https://laudea.psgitech.ac.in/sis/Attendance/present/$rollNumber", token)
-            ?: return@withContext Result.failure(Exception("Network error fetching present days"))
-        try {
-            val responseCode = response.code
-            android.util.Log.d("WebViewAuth", "Present days response: $responseCode")
-            when {
-                responseCode == 200 -> {
-                    val jsonData = response.body?.string() ?: ""
-                    val listType = object : TypeToken<List<AbsentDay>>() {}.type
-                    val presentDays: List<AbsentDay> = gson.fromJson(jsonData, listType)
-                    Result.success(presentDays)
-                }
-                responseCode == 401 -> { cachedAuthToken = null; null }
-                responseCode in 500..599 -> {
-                    val errBody = try { response.body?.string() ?: "" } catch (_: Exception) { "" }
-                    if (errBody.contains("401") || errBody.contains("unauthorized", ignoreCase = true)) {
-                        cachedAuthToken = null
-                        null
-                    } else Result.failure(ServerDownException(responseCode))
-                }
-                else -> Result.failure(Exception("HTTP $responseCode"))
-            }
-        } finally {
-            runCatching { response.close() }
-        }
+    // Discontinued — see fetchAttendanceDirect. No SIS /Attendance/present call.
+    suspend fun fetchPresentDays(rollNumber: String): Result<List<AbsentDay>>? {
+        return Result.failure(AttendanceDiscontinuedException())
     }
 
     /**
