@@ -39,3 +39,14 @@ chess-lobby/.wrangler/
 .playwright-mcp/
 .claude/scheduled_tasks.lock
 build_log.txt
+
+# Debug/scratch screenshots dumped in the repo root during development.
+# (Real app art lives under app/src/main/res/ and is NOT matched by these root-only globs.)
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
+/*.webp
+/*.bmp
+/*.mp4
+/*.mov
