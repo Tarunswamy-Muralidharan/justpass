@@ -1,231 +1,225 @@
-# JustPass - PSG iTech Attendance App
+<div align="center">
 
-> *"Bro enakku topper venam... just pass podhum da."*
+# 🎓 JustPass
 
-An Android app and home screen widget for PSG iTech LAUDEA Student Information System. Track your attendance, timetable, CA marks, semester results, chess matchmaking, and more -- wrapped in an iOS-inspired liquid glass UI.
+### PSG iTech Attendance — reimagined as a fast, native Android app + home-screen widget
 
-## Features
+*"Bro enakku topper venam… just pass podhum da."*
 
-### Core
-- **Attendance Dashboard** -- Overall attendance percentage (with/without exemption), present/absent counts, total classes, configurable target (default 75%)
-- **Subject-wise Attendance** -- Per-subject breakdown with color-coded progress bars. Tap to see day-by-day session timeline
-- **Leave Calculator** -- "What if I take leave?" simulator with holiday calendar integration and actual missed working days count
-- **Semester Results** -- Exam grades per semester with letter grade, grade point, SGPA via semester tabs
-- **Timetable** -- Daily schedule with day tabs, "NOW" badge, period progress overlay, auto-detected honours courses
-- **CA Marks** -- Continuous assessment with color-coded expandable breakdown
-- **GPA Calculator** -- R2021 + R2025 curriculum support, auto-detects department, elective dropdown, OCR grade import via camera
-- **Exemptions** -- View all exemption applications with status tracking
+A native Android client for the PSG iTech **LAUDEA** Student Information System — attendance, timetable, CA marks, results, and more — wrapped in an iOS-inspired **liquid-glass** UI, with real-time chess, mini-games, and a fully **on-device** AI study advisor.
 
-### Social
-- **Chess Lobby** -- Real-time matchmaking with PSG iTech students via Firestore + Lichess
-  - Time controls: Bullet (1min, 1+1), Blitz (3/5min), Rapid (10/15min), Classical (30min)
-  - Auto-detect game results from Lichess API
-  - SR rating system, leaderboard, friend system, match history
-  - Animated isometric 3D chessboard icon with randomized piece movement
-  - "Chess" label in Great Vibes calligraphy font
+![Platform](https://img.shields.io/badge/Platform-Android_8.0%2B-3DDC84?logo=android&logoColor=white)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.3.0-7F52FF?logo=kotlin&logoColor=white)
+![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack_Compose-4285F4?logo=jetpackcompose&logoColor=white)
+![Version](https://img.shields.io/badge/Release-v4.0.1-00E676)
+![Users](https://img.shields.io/badge/Students-~1.4k-FF5252)
+![License](https://img.shields.io/badge/Distribution-Google_Play_%2B_APK-FFB300)
 
-### Utilities
-- **College Circulars** -- In-app PDF viewer with pinch-to-zoom
-- **Academic Calendar** -- Google Calendar integration, color-coded events, holiday notifications
-- **Exam Seat Finder** -- Import Excel seating chart via share intent / file picker
-- **Offline Syllabus** -- Bundled R2021 + R2025 syllabus viewer with search
-- **Profile** -- SIS profile picture, biodata, attendance overview, APK sharing, bug report
+</div>
 
-### System
-- **Home Screen Widget** -- Quick attendance glance, auto-refreshes every 8 minutes
-- **4-Tier Auto Refresh** -- Cached token, offline refresh, password grant, WebView fallback
-- **Push Notifications** -- New circulars (every 3h), upcoming holidays (every 6h), app updates
-- **Pull-to-Refresh** -- Comet light animation along glass header border
+---
 
-## Glass UI
+## 📖 Table of Contents
 
-The app uses an iOS-style liquid glass design powered by [FletchMcKee/liquid](https://github.com/FletchMcKee/liquid):
+- [Why it exists](#-why-it-exists)
+- [Architecture at a glance](#-architecture-at-a-glance)
+- [Features](#-features)
+- [Tech stack](#-tech-stack)
+- [Engineering highlights](#-engineering-highlights)
+- [Building](#-building)
+- [Project structure](#-project-structure)
+- [Development log](#-development-log)
 
-- GPU-accelerated frosted glass with real AGSL shaders (refraction, edge reflections, chromatic dispersion)
-- Floating bottom navigation bar with center bump for Chess, pill-to-circle morph animation
-- Custom animated icons for all 5 nav tabs (Home, CA Marks, Chess, GPA, Timetable)
-- Comet light animation on glass headers during refresh
-- Crossfade transitions (200ms) between all screens
-- Dark/light glass color schemes with translucent surfaces
+---
 
-## Tech Stack
+## 💡 Why it exists
 
-- **Language:** Kotlin 2.3.0
-- **UI:** Jetpack Compose + Material 3 (BOM 2025.10.00)
-- **Glass Effects:** [FletchMcKee/liquid](https://github.com/FletchMcKee/liquid) (v1.1.1)
-- **Widget:** Glance (home screen widget)
-- **Auth:** WebView-based Keycloak SSO with XHR interception
-- **Storage:** EncryptedSharedPreferences for secure credential and token storage
-- **Backend:** Firebase Firestore (chess lobby), Firebase Analytics
-- **Background:** WorkManager (refresh cycle, circular/holiday checks)
-- **Networking:** Direct HTTP with Bearer token authentication
-- **OCR:** ML Kit Text Recognition for grade import
+The official **LAUDEA SIS** portal is slow and desktop-oriented — logging in just to check whether you're above 75% attendance is a chore. JustPass turns that into a one-tap glance from your home screen, then keeps growing into a full academic companion: it calculates your CGPA, tells you exactly how many classes you can safely skip, finds your exam seat, and even lets you play a quick game of chess with a classmate between lectures.
 
-## Building
+It reaches students two ways — the **Google Play Store** and students **sharing the APK directly** with friends — a distribution reality that shaped a lot of the engineering decisions in this repo.
 
-**Requirements:**
+---
+
+## 🏗 Architecture at a glance
+
+```mermaid
+flowchart TD
+    U([Student]) --> APP[JustPass App<br/>Kotlin + Jetpack Compose]
+
+    subgraph AUTH[Authentication]
+        WV[WebView + Keycloak SSO]
+        XHR[XHR interception<br/>captures bearer token]
+        WV --> XHR
+    end
+
+    APP -->|first login| AUTH
+    XHR -->|token| ENC[(EncryptedSharedPreferences<br/>token + credentials)]
+
+    subgraph DATA[Data layer]
+        LADDER[4-tier refresh ladder<br/>cache → refresh → grant → WebView]
+        API[LAUDEA SIS REST APIs<br/>attendance · marks · timetable · results]
+        LADDER --> API
+    end
+
+    ENC --> LADDER
+    API -->|JSON| APP
+
+    subgraph BG[Background]
+        WM[WorkManager<br/>self-chaining refresh]
+        WM --> ENC
+        WIDGET[Home-screen widget<br/>Glance / RemoteViews]
+        ENC --> WIDGET
+    end
+
+    subgraph SOCIAL[Real-time + AI]
+        DO[Cloudflare Durable Object<br/>chess presence over WebSocket]
+        LICHESS[Lichess anonymous games]
+        AI[On-device LLM<br/>study advisor - no cloud]
+        DO --> LICHESS
+    end
+
+    APP --> DO
+    APP --> AI
+    APP -.->|chess, profiles, config| FB[(Firebase<br/>Firestore · Remote Config · Crashlytics)]
+```
+
+**In plain English:** the app logs in through an embedded browser, quietly captures the security token the portal's own JavaScript uses, and caches it encrypted on the device. From then on it talks to the college APIs directly over fast HTTP, climbing a ladder of fallbacks if a token expires. A background job keeps the home-screen widget fresh without it ever touching the network. Real-time chess presence lives on a single stateful edge server, and the AI advisor runs entirely on the phone.
+
+---
+
+## ✨ Features
+
+### 📊 Academics
+| Feature | What it does |
+|---|---|
+| **Attendance Dashboard** | Overall % (with/without exemption), present/absent counts, configurable target (default 75%) |
+| **Subject-wise Attendance** | Per-subject breakdown with color-coded bars; tap for a day-by-day session timeline |
+| **Leave Calculator** | *"What if I skip tomorrow?"* simulator, integrated with the holiday calendar to count real working days |
+| **CA Marks** | Continuous-assessment marks with color-coded, expandable breakdowns |
+| **Semester Results** | Grades, grade points, and SGPA per semester via tabs |
+| **GPA / CGPA Calculator** | R2021 + R2025 curricula, auto department detection, elective picker, OCR grade import via camera |
+| **Timetable** | Daily schedule, live **NOW** badge, period-progress overlay, auto-detected honours courses |
+| **Exemptions** | All exemption applications with live status tracking |
+
+### ♟ Social & fun
+| Feature | What it does |
+|---|---|
+| **Chess Lobby** | Real-time matchmaking with classmates over a Cloudflare edge backend + Lichess; bullet → classical time controls, ratings, leaderboard, match history |
+| **Mini-Games** | Reflex/memory games with a section leaderboard and rival HUD |
+| **On-Device AI Advisor** | A local LLM answers *"can I skip Friday and stay above 75%?"* — all math done in Kotlin, phrasing done on-device, **zero cloud calls** |
+| **Easter eggs** | Because a survival-themed student app should have a sense of humour |
+
+### 🧰 Utilities
+| Feature | What it does |
+|---|---|
+| **College Circulars** | In-app PDF viewer with pinch-to-zoom |
+| **Academic Calendar** | Color-coded events + day-before holiday notifications |
+| **Exam Seat Finder** | Import an Excel seating chart via share intent / file picker |
+| **Offline Syllabus** | Bundled R2021 + R2025 syllabus with search |
+| **Profile** | SIS profile picture, biodata, APK sharing, in-app bug reports |
+
+### ⚙️ System
+- **Home-screen widget** — quick attendance glance, auto-refreshing in the background
+- **4-tier auto-refresh** — cached token → offline refresh → password grant → WebView fallback
+- **Push notifications** — new circulars, upcoming holidays, app updates
+- **Pull-to-refresh** — comet-light animation tracing the glass header border
+
+<details>
+<summary><b>🎨 About the Liquid-Glass UI</b></summary>
+
+<br/>
+
+An iOS-style frosted-glass design powered by [FletchMcKee/liquid](https://github.com/FletchMcKee/liquid):
+
+- GPU-accelerated glass via real **AGSL shaders** — refraction, edge reflections, chromatic dispersion
+- Floating bottom nav with a center bump for Chess and a pill-to-circle morph animation
+- Custom animated icons for all five tabs (Home, CA Marks, Chess, GPA, Timetable)
+- Crossfade transitions (200 ms) between screens; dark/light glass color schemes
+- The widget stays dark and opaque on purpose — home-screen widgets use **RemoteViews**, which can't run GPU shaders
+
+</details>
+
+---
+
+## 🧱 Tech stack
+
+| Layer | Technology |
+|---|---|
+| **Language** | Kotlin 2.3.0 |
+| **UI** | Jetpack Compose + Material 3 (BOM 2025.10.00) |
+| **Glass effects** | [FletchMcKee/liquid](https://github.com/FletchMcKee/liquid) 1.1.1 (AGSL shaders) |
+| **Widget** | Jetpack Glance / RemoteViews |
+| **Auth** | WebView-based Keycloak SSO + XHR token interception |
+| **Networking** | Direct HTTP with bearer tokens; parallel coroutine fetches |
+| **Storage** | EncryptedSharedPreferences (tokens/credentials) |
+| **Background** | WorkManager (self-chaining refresh, notification workers) |
+| **Real-time backend** | Cloudflare Workers · Durable Objects · D1 (edge SQLite) |
+| **Mobile backend** | Firebase — Firestore, Remote Config, Crashlytics, Cloud Storage |
+| **On-device AI** | LiteRT-LM / llama.cpp running small Gemma/Qwen models |
+| **Chess engine** | Lichess.org public API (anonymous, no signup) |
+| **Leaderboards** | Supabase (Postgres) |
+| **OCR** | ML Kit Text Recognition |
+| **Build** | AGP 8.13.2 · minSdk 26 (Android 8.0) · target/compile SDK 36 · R8 minification |
+
+---
+
+## 🔬 Engineering highlights
+
+The interesting problems behind the feature list — each is written up in full in the [**Development Log**](DEVELOPMENT_LOG.md):
+
+- **No official API?** Drove a real browser session and read the network calls the portal's own JavaScript made, then hooked `XMLHttpRequest.prototype` inside a WebView to capture the bearer token — instead of reverse-engineering endpoints that kept changing.
+- **A 4-tier auth ladder** that degrades gracefully: cached token → refresh-token exchange → password grant → full WebView login, so no single server-side policy change can lock users out.
+- **Made a slow backend feel fast** — benchmarking showed firing independent API calls *in parallel* cut load time 75%, while swapping HTTP libraries made it *slower*; the bottleneck was the server, not connection setup.
+- **A production-only chess bug** where Cloudflare's WebSocket **Hibernation** wiped in-memory presence state — fixed by rebuilding state from each socket's attached metadata on wake.
+- **On-device AI that's actually reliable** — all arithmetic done in Kotlin, only final numbers handed to the LLM to phrase; prompt shrunk from ~500 to ~30 tokens via intent classification, which beat every engine optimization combined.
+- **A glass-shader rendering trap** — a Canvas animation placed as a sibling of a blur-shader component smeared across the whole screen, because the shader captured it as backdrop; fixed by drawing into the existing layout's own draw scope.
+
+---
+
+## 🛠 Building
+
+**Requirements**
 - Android Studio (latest stable)
-- Kotlin 2.3.0
-- Compose BOM 2025.10.00
+- JDK 17+ · Kotlin 2.3.0 · Compose BOM 2025.10.00
 
-**Steps:**
-1. Clone the repo
-2. Open in Android Studio
-3. Sync Gradle and let dependencies download
-4. Build and run (debug or release)
+**Steps**
+```bash
+git clone https://github.com/Tarunswamy-Muralidharan/-AttendanceWidgetLaudea.git
+cd -AttendanceWidgetLaudea
+# open in Android Studio, let Gradle sync, then Run
+```
 
-> **Note:** Release builds use R8 minification. ProGuard rules are pre-configured for Gson, JavascriptInterface, and Keycloak token handling.
+> **Release builds** use R8 minification. ProGuard keep-rules are pre-configured for Gson models, the `@JavascriptInterface` bridge, and Keycloak token handling — the classes reached via reflection that R8 would otherwise strip. Always test a **release** build before publishing; several bugs only appear once R8 runs.
 
-## Download
+---
 
-Check [Releases](../../releases) for the latest APK.
+## 📂 Project structure
 
-## Development Log
+```
+app/src/main/
+├── java/com/justpass/app/
+│   ├── auth/            # WebView login, XHR interception, 4-tier token refresh
+│   ├── data/            # API clients, repositories, models (Gson)
+│   ├── ui/              # Compose screens, liquid-glass components, animations
+│   ├── widget/          # Glance / RemoteViews home-screen widget
+│   ├── work/            # WorkManager refresh + notification workers
+│   └── ai/              # On-device LLM advisor (intent routing + inference)
+├── res/                 # Drawables, weather art, easter-egg assets
+└── assets/              # Bundled R2021/R2025 syllabus JSON
+chess-lobby/             # Cloudflare Worker + Durable Object (chess presence)
+DEVELOPMENT_LOG.md       # Full engineering journal (interview-ready)
+```
 
-### v1.0 -- Initial Release
-- Basic attendance dashboard + home screen widget
-- WebView-based Keycloak authentication
+---
 
-### v1.1 -- Analytics & Refresh
-- Firebase Analytics integration
-- 3-tier token refresh strategy
+## 📓 Development log
 
-### v1.2 -- Instant Refresh (2026-03-18)
-- 4-tier refresh (added password grant)
-- Background update check via GitHub API
-- Push notification when new version available
+The complete build story — every hard bug, root cause, fix, and lesson — lives in **[DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md)**, written to be readable start-to-finish and to double as interview prep. The original raw journal is preserved verbatim in `DEVELOPMENT_LOG_ARCHIVE.md`.
 
-### v2.0 -- Glass UI Overhaul (2026-03-20)
-- Complete redesign with liquid glass UI (real GPU shaders)
-- Subject-wise attendance with per-subject day-by-day timeline
-- Exemptions screen with semester filtering
-- SIS profile picture via S3 pre-signed URL
-- Semester results with grade cards and SGPA
-- Pull-to-refresh with comet glow animation
-- Responsive stat cards for all screen sizes
-- Chomping easter egg
+---
 
-**Obstacles:**
-- Glass on widgets is impossible (RemoteViews can't do GPU shaders) -- kept widget dark/opaque
-- Timetable nodeId was hardcoded for CSE -- made it dynamic per-user via `/sis/students/{rollNumber}`
+<div align="center">
 
-### v2.0.1 -- Hotfix (2026-03-20)
-- Fixed timetable showing wrong schedule for non-CSE users (nodeId was hardcoded)
-- Released same day as v2.0 after friends reported the bug
+**Built by Tarunswamy Muralidharan** · Found a bug? [Open an issue](../../issues/new/choose)
 
-### v2.1 -- Feature Explosion (2026-04-01, committed, not released)
-- **Exam Seat Finder** -- Import Excel via share intent, Apache POI parsing
-- **GPA Calculator** -- R2021 + R2025 curriculum for 7 departments, elective dropdowns, OCR grade import
-- **College Circulars** -- Meetings API integration, in-app PDF viewer (PdfRenderer + pinch-to-zoom)
-- **Academic Calendar** -- Google Calendar API, month grid, color-coded events
-- **Holiday Notifications** -- Background worker (every 6h), notifies day before holiday
-- **Circular Notifications** -- Background worker (every 3h), checks for new circulars
-- **Offline Syllabus** -- Bundled JSON for R2021 + R2025, search + semester filter
-- **Chess Lobby** -- Firestore presence, real-time challenges, Lichess open challenge API, auto-detect results
-- **5-Tab Navigation** -- Home / CA Marks / Chess / GPA / Timetable with animated icons
-- **Honours Detection** -- Registration API cross-ref, amber badge, excludes LIB/MM
-- **ProGuard/R8** -- Minification enabled with custom keep rules
-- **Glass Dashboard Tiles** -- Tappable feature tiles with glass effect
-- **Student Biodata** -- Collapsible profile card with personal/contact/family/admissions info
-
-**Obstacles:**
-- OCR grade import: ML Kit text blocks had wrong spatial ordering -- built order-preserving matching with fuzzy grade point lookup and 2x bitmap upscale
-- Honours detection: Gson crash on empty arrays + placeholder subjects in curriculum data + needed attendance API cross-reference
-- Timetable nodeId race: fetchStudentBiodata during login caused race condition -- NEVER call it during login/startup
-- CSBS department: API returns wrong dept field -- detect from programmeName instead
-- Circular auth: Needed separate meetings token (client_id=ies_meetings) with its own refresh flow
-
-### v2.1 WIP -- Nav Redesign + Polish (2026-04-02, uncommitted)
-- **Bump Bar Navigation** -- Chess tab elevated in center with pill-to-circle glass morph
-- **Leave Calculator v2** -- Holiday calendar picker, crossed-out holidays, actual missed working days
-- **Star Comet Animation** -- Diagonal behind/in-front orbit for CA Marks tab icon
-- **Exam Seat Arrow Fix** -- Corrected guide arrow positioning
-- **Removed Credit Text** -- No developer name/Discord in app UI
-
-### v2.1 WIP -- JustPass Rebrand + Chess Overhaul (2026-04-03, uncommitted)
-
-**App Rebrand:**
-- Renamed from "Laudea Attendance" to "JustPass" across all screens, strings, APK filename, share text, privacy policy
-- New logo: tilted graduation cap + green checkmark + sweat drop on dark navy background
-- "JustPass" -- relatable student survival branding that's meme-worthy and memorable
-
-**Animated Chess Icon (center nav tab):**
-- True isometric 3D chessboard drawn in Canvas with diamond-shaped tiles
-- Each tile has top face + right side face + front side face with ultra glossy effects (specular highlights, gradient shine bands, bright edge lines)
-- Thick platform base with 3D front-left and front-right faces
-- Default: dark slate/silver. Selected: smoothly animates to chess.com green (#739552) + cream (#EBECD0) via animateColorAsState
-- White knight + dark bishop slide randomly across the board (valid chess moves, random delays/durations)
-- "Chess" in Great Vibes calligraphy font (16sp bold), turns green when selected
-- Entire icon levitates up/down in infinite loop
-- Glass bubble expanded to 88dp to cover board + label
-
-**Obstacles overcome building the chess icon:**
-1. First attempt used flat rectangles -- looked horrible. Rewrote with true isometric diamond projection (parallelogram tiles)
-2. Second attempt had flat tiles with no depth -- added 3D side faces per tile with different shading
-3. Board not matching reference image -- studied the 3D render closely and matched the perspective exactly
-4. Pieces were bouncing (hop arcs) -- user wanted sliding, removed all sine-wave hop offsets
-5. Visible loop stutter at animation restart -- replaced fixed 6-move `infiniteRepeatable` with random `LaunchedEffect` coroutines that pick valid moves independently
-6. Orbiting sparkle stars were distracting -- removed entirely
-7. Green circle glow around board was ugly -- removed the `drawCircle` glow
-8. Calligraphy text bottom getting clipped -- pushed entire Column up with -12dp offset and reduced font
-9. Glass bubble too small -- increased `circleD` from 62dp to 88dp
-
-**Chess Time Controls:**
-- Added `TimeControl` enum with 10 presets (Bullet 1min to Classical 30min)
-- Time control picker dialog when tapping "Play" on any player
-- Stored in Firestore challenge doc, shown on incoming challenge popup
-- Passed to Lichess API `POST /api/challenge/open` with correct clock params
-
-**Match Result Bug Fix:**
-- `listenChallengeStatus` was NOT reading `fromColor`, `resultChecked`, `timeControl` from Firestore
-- `listenIncomingChallenges` was also missing most fields
-- Fixed both to read ALL fields -- this was why match results weren't showing after games
-- Added 3-second delayed result check after returning from Lichess
-- Added periodic 30s result polling while on chess screen
-- Added 90-second auto-expiry for unanswered challenges
-
-**Profile Discoverability:**
-- Pulsing double-ripple ring animation around profile picture in header
-- Ring expands 1x→1.6x and fades, with staggered second ring
-- Profile pic properly centered in 52dp Box
-
-**Bug Report / Feature Request:**
-- New "Report Bug / Feature Request" option in ProfileScreen
-- Opens GitHub Issues page directly
-- "Help us improve JustPass" subtitle
-
-**Chess Lobby Info Card:**
-- Collapsible "How does Chess Lobby work?" card
-- 7 sections covering getting started, challenges, ratings, friends, history, Lichess info
-
-**In-App Lichess WebView (replacing Chrome intent):**
-- Researched Lichess API extensively: Board API (requires OAuth2 for both players), spectator streaming (no auth, 3-move delay), game export (PGN/eval/opening, no auth), embed options
-- Evaluated 3 approaches:
-  1. **Native Canvas board + Board API** -- best UX but requires both players to have Lichess accounts with OAuth2 tokens. Massive friction for college students who just want to play
-  2. **WebView in-app** -- loads Lichess game URL inside the app. Zero auth needed, anonymous open challenges work as-is. Full interactive board with drag-drop, clock, resign, draw
-  3. **Hybrid spectate + WebView** -- spectate via API, play via WebView
-- Chose **Option 2 (WebView)** -- 90% of native experience with 10% of the effort
-- Full-screen WebView with dark `#1A1A2E` background matching JustPass theme
-- CSS injection hides Lichess header, footer, chat panel, and site chrome for clean board-only look
-- Re-injects CSS at 1.5s and 4s to catch Lichess's dynamic content loading
-- Loading overlay with spinner + "Loading game..." text that fades out
-- Close button (top-left, semi-transparent black) returns to lobby + auto-checks game results
-- Open in browser fallback (top-right) if WebView has issues
-- Back button handled via `BackHandler` composable
-- Non-Lichess URLs open externally for safety
-- Lichess mobile web is lightweight SVG-based (`chessground` library, 10KB gzipped), runs smooth even on low-end phones
-
-**Dark Mode Header Fixes:**
-- ChessScreen: "Chess Lobby", dialog titles, player names, name setup options -- all invisible in dark mode
-- SyllabusScreen: "Syllabus" header, credit numbers (L/T/P/C)
-- PrivacyPolicyScreen: "Privacy Policy" header
-- Screen headers now use `MaterialTheme.colorScheme.onSurface` (adapts to dark/light)
-- Dark dialog titles (`containerColor = #1E2A3A`) use explicit `Color.White`
-
-## Feedback
-
-Found a bug or have a feature request? [Open an issue](../../issues/new/choose)
-
-## Credits
-
-Built by **Tarunswamy Muralidharan**
+</div>

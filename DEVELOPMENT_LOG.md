@@ -87,7 +87,8 @@ On-device AI advisor:
 8. [Mini-Games, GPA Calculator & Academic Tools](#mini-games-gpa-calculator--academic-tools)
 9. [Release, Monetization & Publishing](#release-monetization--publishing)
 10. [Security Research (Authorized, On My Own College Account)](#security-research-authorized-on-my-own-college-account)
-11. [Interview Talking Points](#interview-talking-points)
+11. [Technical Deep-Dives](#technical-deep-dives)
+12. [Interview Talking Points](#interview-talking-points)
 
 ---
 
@@ -769,51 +770,479 @@ I shipped the capitalized path as a fix in the app so students' attendance would
 
 ---
 
+## Technical Deep-Dives
+
+The sections above are written to be readable end-to-end. This section exists for a different purpose: it's where I force myself to go one or two layers past the headline answer, for the specific topics I'd expect a technical interviewer to drill into. Each write-up assumes you've read the relevant theme section above and goes straight to the mechanism.
+
+#### 1. The 4-Tier Token Refresh Ladder
+
+The headline ("four fallback tiers, fastest first") hides a specific OAuth/Keycloak mechanism worth being able to draw on a whiteboard.
+
+Keycloak (the college's SSO server) issues two tokens on every successful login: a short-lived **access token** (the one sent as `Authorization: Bearer <token>` on every API call — logs showed it typically expiring in around 600 seconds) and a **refresh token** (a longer-lived credential whose only job is to mint a new access token without re-entering a password). A refresh token obtained through the normal browser login flow expired in about 1800 seconds (`refresh_expires_in=1800`) — fine for a session, useless for "the widget should still work three days from now."
+
+The tiers, and exactly what triggers the fall-through to the next one:
+
+```
+Tier 1 — cached access token, direct HttpURLConnection call (~200ms)
+   Trigger to fall through: HTTP 401 (token expired/invalid)
+
+Tier 2 — grant_type=refresh_token against Keycloak's token endpoint (~500ms)
+   Trigger to fall through: refresh token itself rejected/expired
+
+Tier 3 — grant_type=password, direct username+password POST to the token
+   endpoint, no browser involved (~500ms–1.5s)
+   Trigger to fall through: HTTP 400 body specifically containing
+   "unauthorized_client" (server disabled this grant type) — NOT any 400,
+   since "invalid_grant" (wrong password) must NOT fall through, it must
+   fail loudly.
+
+Tier 4 — full WebView OAuth Authorization Code flow, XHR-intercepted (~15-30s)
+   Always works if the college's identity server is up at all. True last resort.
+```
+
+The `scope=openid offline_access` discovery (Tier 3) was the single highest-leverage line of code in the project: adding that scope to the password-grant request made Keycloak return `refresh_expires_in=0`, which in Keycloak's protocol means "this refresh token does not expire." Before this, every fallback ladder eventually bottomed out in a login screen; after it, a refresh token obtained once could regenerate access tokens indefinitely, which is what let the WorkManager background sync run for days without a human touching the app. It also had a side effect that wasn't obvious up front: the SIS backend API had previously rejected password-grant tokens outright with HTTP 500, while accepting browser-flow tokens — adding the `offline_access` scope changed the token's claims/audience enough that the *same* backend started accepting password-grant tokens too. That was confirmed empirically, not derived from documentation: force an invalid cached token on a real device via ADB, watch the refresh chain execute through each tier, and confirm the final token actually works against the real attendance endpoint (not just that Keycloak accepted it).
+
+All tokens are cached in `EncryptedSharedPreferences` (AES-encrypted, backed by a key in the Android Keystore — see the dedicated Keystore deep-dive below for what that actually buys you and where it can bite you).
+
+```kotlin
+// Tier 3 request shape (simplified)
+POST https://accounts.psgitech.ac.in/realms/psgitech/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password
+&client_id=ies_sis
+&username=<rollNumber>
+&password=<password>
+&scope=openid%20offline_access
+```
+
+**Likely follow-up questions:**
+- Why is a direct `grant_type=password` request (the "resource owner password credentials" OAuth grant) considered legacy/discouraged, and what's the actual risk of using it in a mobile app?
+- How do you tell "the password is wrong" apart from "the server changed its policy" when both can return HTTP 400? What's the concrete signal you check?
+- What would happen to a device mid-chain if the *offline* refresh token itself got revoked server-side (e.g., an admin forced logout) — does the ladder recover, or does it need Tier 4?
+- Why cache the refresh token at all instead of just re-running the fast password grant every time?
+
+---
+
+#### 2. XHR Interception and the JavaScript-to-Kotlin Bridge
+
+This is the mechanism that made login possible at all once the fast password-grant path was disabled server-side, so it's worth being able to explain precisely, not just "we intercepted the token."
+
+**The JS side.** Every browser-based HTTP call the college's Angular app makes goes through the standard `XMLHttpRequest` object under the hood (even calls made via the newer `fetch` API can be normalized to also patch `fetch` for coverage). Before any page script runs, an injected script monkey-patches `XMLHttpRequest.prototype.setRequestHeader`, replacing it with a wrapper that inspects every header the *page's own code* sets, looks specifically for the `authorization` header, strips the `Bearer ` prefix, and hands the raw token to Kotlin — then calls through to the original implementation so the page's own request behaves completely normally:
+
+```javascript
+const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+    if (name.toLowerCase() === 'authorization') {
+        Android.onAuthToken(value.replace('Bearer ', ''));
+    }
+    return origSetHeader.apply(this, arguments);
+};
+```
+
+**The bridge.** `Android.onAuthToken(...)` only exists because the Kotlin side called `webView.addJavascriptInterface(bridgeObject, "Android")`, and `bridgeObject` has a method annotated `@JavascriptInterface`. That annotation is not decorative — since Android 4.2 (API 17), the WebView's JS engine will only expose methods explicitly marked with it; before that API level, `addJavascriptInterface` exposed the *entire* Java object via reflection, which was a real, actively-exploited vulnerability (arbitrary method invocation from any web content the WebView loaded, including `Runtime.exec`). Marshalling across this bridge is limited to primitive/string types — you cannot pass a JS object graph across it directly, only strings/numbers/booleans, which is exactly what a token is, so it's a good fit here. The callback also does not run on the main/UI thread by default, so anything the Kotlin side does with the token that touches UI state has to be dispatched back onto the main dispatcher.
+
+**Why this beats reverse-engineering the endpoints directly:** the token exchange during Keycloak's Authorization Code flow is a multi-step redirect dance with CSRF state parameters, PKCE-style nonces, and a code-for-token exchange that Keycloak's own JS adapter handles internally — replicating that by hand means re-implementing an OAuth client library and keeping it in sync with whatever Keycloak version the college runs. Intercepting the XHR instead means the app never needs to understand *how* the token was obtained — it just watches the page's own trusted client library do it correctly, and copies the result. When the login server's realm name changed (`itech` → `psgitech`) or the client ID changed (`sis_web` → `ies_sis`), this interception layer didn't need to change at all, because it was never hardcoding those details in the first place.
+
+**Likely follow-up questions:**
+- What thread does a `@JavascriptInterface` callback execute on, and what's the actual failure mode if you touch a `MutableState` from it directly?
+- Why hook `setRequestHeader` specifically instead of hooking `.open()` or `.send()`?
+- What's the security exposure of exposing a `JavascriptInterface` bridge to a WebView that also loads third-party content, and how would you scope it down?
+- The WebView lifecycle callback you inject the hook from (`onPageStarted` vs `shouldInterceptRequest`) mattered a lot here — why?
+
+---
+
+#### 3. WorkManager Self-Chaining Background Sync
+
+**Why a widget can't just fetch its own data.** A home-screen widget is drawn by a `RemoteViews`-based app-widget host process, not your app's normal running process — there's no guarantee it's ever "running" in a way that can safely make a blocking network call, and Android's Doze/App Standby power model is specifically designed to prevent background processes from waking the radio arbitrarily. The only supported pattern is: something with `WorkManager`'s guarantees does the network call, writes the result somewhere durable, and the widget's `onUpdate`/provider callback just reads that durable state and redraws — the widget never touches the network directly, ever.
+
+**Why `WorkManager` specifically, not a raw `AlarmManager` or a foreground `Service`.** `WorkManager` is Android's unified abstraction over `JobScheduler`, `AlarmManager`, and a persistent internal database of pending work — it survives process death, app kills by the user, and device reboots, because the scheduled work itself is durable (backed by WorkManager's own SQLite store), not just an in-memory timer. It also automatically respects battery/Doze constraints rather than fighting them.
+
+**The self-chaining trick.** `PeriodicWorkRequest`, Android's built-in "run this every N minutes" API, has a hard-enforced minimum interval of 15 minutes — that's a platform-level floor, not a WorkManager-specific limitation, and it exists specifically to stop apps from draining battery with frequent wake-ups. To get closer to real-time refresh without violating that floor, the refresh job is a `OneTimeWorkRequest` that, as the very last step of its own `doWork()`, enqueues *another* `OneTimeWorkRequest` with an 8-minute initial delay:
+
+```kotlin
+override fun doWork(): Result {
+    refreshAttendanceAndCache()
+    WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+        SYNC_WORK_NAME,
+        ExistingWorkPolicy.REPLACE,
+        OneTimeWorkRequestBuilder<AttendanceSyncWorker>()
+            .setInitialDelay(8, TimeUnit.MINUTES)
+            .build()
+    )
+    return Result.success()
+}
+```
+
+Because each link in the chain is a distinct one-time request, none of them are individually bound by the periodic-request floor — the chain, not any single request, defines the cadence. `enqueueUniqueWork` (or `enqueueUniquePeriodicWork` for the genuinely periodic jobs riding on the same mechanism, like circular/holiday checks) with a policy like `KEEP` or `REPLACE` matters for a second reason: without a *unique* work name, a reinstall or a duplicate scheduling call spawns a second, parallel chain running alongside the first, silently doubling network calls and battery cost.
+
+**Doze/battery-optimization handling.** Even a correctly-scheduled `WorkManager` job can be deferred or killed outright by OEM-specific battery managers (Samsung, Xiaomi, and others are notorious for going beyond stock Android's Doze restrictions). The practical fix is a one-time system dialog (`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) asking the user to exempt the app from battery optimization — this doesn't bypass Doze's network-batching entirely, but it stops the OEM layer from freezing the app's job scheduler outright.
+
+**Data flow, end to end:**
+```
+WorkManager (self-chaining OneTimeWorkRequest, ~8 min)
+   → AttendanceRepository (parallel API calls, see the "Parallel Fetching" deep-dive)
+   → EncryptedSharedPreferences / SecurePreferences (durable local cache)
+   → Widget provider's onUpdate() reads the cache, calls AppWidgetManager.updateAppWidget()
+```
+
+**Likely follow-up questions:**
+- Why is `PeriodicWorkRequest`'s 15-minute minimum a platform-enforced floor rather than a library choice, and what's Google's stated rationale?
+- What exactly does `enqueueUniqueWork` with `ExistingWorkPolicy.REPLACE` do if a new chain link is enqueued while the previous one is still mid-`doWork()`?
+- What happens to the chain if the process is killed by the OS in the middle of `doWork()` — does the chain resume, and from where?
+- Why not run this as a foreground `Service` with a persistent notification instead?
+
+---
+
+#### 4. Cloudflare Durable Objects and WebSocket Hibernation (Chess Presence)
+
+**What a Durable Object actually is.** A normal Cloudflare Worker is stateless — every incoming request can be routed to any edge location and gets a fresh execution context with no memory of any other request. A **Durable Object (DO)** is different: for a given DO *ID* (here, effectively "the lobby"), Cloudflare guarantees there is exactly one live instance of that JavaScript object in the entire world at a time, and every request/connection for that ID is routed to that same instance. That single-instance guarantee is what makes it usable as a coordination point — there's no distributed-consensus problem to solve for "who's online right now," because there's only ever one process that could know the answer.
+
+**Why "presence via an open WebSocket" beats "presence via a heartbeat document."** In the original Firestore-based lobby, every online player wrote a timestamped "heartbeat" document every 25–90 seconds, and every other connected client held a live listener on the whole collection — so every single heartbeat write fanned out as a change notification to every other listener. With N concurrently-online players, that's a read cost that scales roughly with **N²**, not N (`≈ N² × (86400 / heartbeat_interval_seconds)` reads/day) — a classic case where a general-purpose database's per-read billing model is the wrong primitive for the specific problem of "is this connection still alive." Moving presence onto a Durable Object over a WebSocket makes presence *identical to* the transport-layer connection state: a closed TCP socket (detected via the WS `close`/`error` event) **is** the "user went offline" signal, typically observed within about a second, with nothing to poll and nothing to write.
+
+**WebSocket Hibernation.** Normally, keeping a WebSocket open on a DO keeps that DO's JavaScript isolate resident (and billed) in memory indefinitely, even while nothing is happening. The Hibernation API lets Cloudflare's runtime detach the DO's in-memory JS state entirely while leaving the raw socket physically open at the edge — the DO effectively goes to sleep — and only re-instantiates the object (reruns its constructor) when an actual message arrives on one of its sockets. This is what makes idle lobby presence functionally free.
+
+**The bug this caused, and the fix.** Hibernation wipes ordinary JavaScript class fields (like an in-memory `Map<playerId, PlayerInfo>`) but does **not** close the sockets attached to the object — so after a hibernation cycle, the DO would wake up with a completely empty `players` map even though real clients were still connected. Two players would both show "online" locally, but neither ever appeared in the other's lobby list, because a new joiner's `handleJoin` broadcast against an empty map, and the existing (still-connected, but map-forgotten) peer was never in that map to be notified either.
+
+The fix rebuilds the map from the sockets themselves on every construction, using Cloudflare's own hibernation-aware APIs:
+
+```typescript
+// In the Durable Object's constructor
+for (const ws of this.state.getWebSockets()) {
+  const att = ws.deserializeAttachment() as { playerId: string; hintedName?: string };
+  if (!att?.playerId) continue;
+  this.players.set(att.playerId, {
+    ws,
+    id: att.playerId,
+    displayName: (att.hintedName ?? "").trim() || `Player-${att.playerId.slice(0, 6)}`,
+    joinedAt: Date.now(),
+  });
+}
+```
+
+`ws.serializeAttachment({ playerId, displayName })` is called when a player joins, stashing small metadata directly on the socket object itself (which Cloudflare's runtime *does* preserve through hibernation, unlike class fields) — and this had to be revisited once more, because the first version only stashed `playerId`, so a hibernated-and-rehydrated peer would show a generic placeholder name (`Player-abc123`) since the underlying Firebase anonymous auth token carries no display-name claim at all.
+
+**Why it couldn't be reproduced locally:** hibernation only triggers under real, sustained-idle runtime conditions at Cloudflare's actual edge; `wrangler dev --local` runs the identical code in an environment that never truly hibernates, so a locally-run copy looked completely correct. It was only found by authenticating against the real deployed Worker and tailing its live logs (`wrangler tail`), watching an actual production join sequence produce `liveSockets=0 mapPlayers=0`.
+
+**Likely follow-up questions:**
+- How is a Durable Object different from a stateless serverless function (a Lambda/Worker invocation) in terms of what state survives between calls?
+- What's the difference between the DO's in-memory class fields, a socket's `serializeAttachment`, and the DO's persistent `storage` API — when would you use each?
+- Why couldn't this bug be reproduced in local development, and what would you change about your dev/test setup to catch it earlier?
+- What would you have needed to add if you wanted match history or stats (not just ephemeral presence) to survive hibernation too?
+
+---
+
+#### 5. On-Device LLM: Prefill/Decode Economics and the "Compute vs. Phrase" Split
+
+**Two distinct costs in every LLM response.** Generating a reply from a language model has two phases with very different performance characteristics: **prefill** — processing every token of the input prompt to build up the model's internal attention state — which is parallelizable across the prompt's tokens but still has to happen in full before the *first* output token can be produced, and **decode** — generating the reply token-by-token, autoregressively, where each new token depends on every previous one and so cannot be parallelized across the output. On a mid-range phone CPU (no dedicated NPU/GPU acceleration for most students' devices), decode throughput measured at roughly 16 tokens/second. That means prefill latency is pure "the user is waiting and nothing is being generated yet" time, and it scales directly with prompt length.
+
+**Why cutting the prompt mattered more than cutting the reasoning.** Trimming ~500 tokens of context (full attendance numbers, five pre-computed skip-scenarios, marks, syllabus pointers, long instruction blocks) down to a per-intent minimal template (as little as ~25 tokens for a plain greeting) is a roughly 20x reduction in what has to be prefilled before *any* reply token appears — worth close to 3 seconds on every single message at this token rate. That's a larger, more consistent win than suppressing the model's own hidden "thinking" tokens (see below), because prefill happens on *every* message regardless of what's asked, while thinking-token volume varies per question.
+
+**The routing mechanism.** A message is never classified by asking the LLM itself "what is this about" (that would mean paying for a second full inference pass just to route the first one) — it's routed by plain deterministic Kotlin string/keyword matching into one of a small number of purpose-built context templates (greeting / "can I skip class" / attendance summary / marks, etc.), each carrying only the data that specific intent actually needs.
+
+**The architectural rule this all sits under: deterministic code computes, the model only phrases.** A sub-1B-parameter model reliably gets multi-step arithmetic wrong ("52/67, then 3 more absences, what's the new percentage, and is it above 75%?"). So ordinary Kotlin code computes every number first — current percentage, projected percentage after N absences, maximum safe skips — and only the *already-correct* final numbers are folded into the prompt; the model's only remaining job is turning `"52/70 = 74.3%, below 75% target, max 2 safe skips"` into a natural sentence. This isn't a workaround scoped to weak on-device models — it's presented as the correct architecture at any model size, since even large cloud models are unreliable at exact arithmetic; a model should never be the thing doing the math it's also being asked to report on.
+
+**Engine selection.** Three options were weighed: Google's **LiteRT-LM** (best acceleration *if* the phone has a capable NPU/GPU, which most mid-range student phones don't, making it unusably slow on CPU-only fallback), **Cactus** (a Kotlin-friendly wrapper around `llama.cpp`, a CPU-optimized inference engine with mature quantized-model support) — chosen because it's fast enough on ordinary CPUs with a simple SDK and small model download — and raw `llama.cpp` directly (maximum control, but requires hand-writing C++/JNI bindings, too much integration cost for the payoff over Cactus's ready-made wrapper).
+
+**Suppressing "thinking" tokens — a three-layer defense, because no single layer was reliable alone.** The chosen model (Qwen3) is a reasoning model trained to emit a `<think>...</think>` block of internal monologue before its real answer — useful for a developer building reasoning pipelines, actively wrong for a consumer chat UI, and *also* the majority of response latency (as much as ~100 hidden tokens versus ~30 visible ones). The fix stacks three independent layers:
+1. **Inference-engine stop sequences** — halting generation the instant `<think>` starts being produced, so those tokens are never generated at all (the cheapest layer, since it prevents the work rather than hiding the output).
+2. **A prompt-level `/no_think` directive** Qwen3 was specifically trained to honor — helps, but a small model doesn't obey every instruction every time.
+3. **A regex cleanup pass** on the final text as a last-resort net.
+
+A subtlety that made layer 1 alone insufficient: stop-sequence matching happens against generated *tokens*, and a phrase like `<think>` can be split across 2–3 tokens by the model's own tokenizer — so a couple of leading tokens of a thinking block could slip out before the full string matched. The fix was adding partial-match stop sequences (`"<think"` without the closing bracket, and `"\n<"`, since thinking blocks always start on a fresh line) to catch the pattern one token sooner. Net measured effect: ~130 generated tokens (100 hidden + 30 visible) down to ~30 (visible only), cutting response time from 8–10 seconds to 2–3 seconds — with zero change to the model itself.
+
+**Likely follow-up questions:**
+- Why does trimming prompt tokens save more wall-clock time than trimming output tokens, given decode is the slower per-token phase?
+- What would change about this architecture if the phone *did* have a capable NPU — would you still separate "compute" from "phrase"?
+- Why not have the model itself decide which screen to navigate to (tool-calling) instead of a separate keyword classifier?
+- What happens when the keyword-based intent classifier picks the wrong template — does the user get a wrong answer, or a generic one?
+
+---
+
+#### 6. Compose Glass Rendering: `graphicsLayer`, `RenderEffect`, and the Sibling-Canvas Bug
+
+**How the blur/refraction actually composites.** The "liquid glass" effect is built on `Modifier.graphicsLayer { renderEffect = RenderEffect.createBlurEffect(...) }` — a low-level Compose/Android API. Wrapping a composable in `graphicsLayer` promotes its drawing output to its own hardware-accelerated **RenderNode**, a separate GPU-backed drawing surface rather than being flattened directly into its parent's draw calls. A `RenderEffect` (Android's `android.graphics.RenderEffect`, exposed through Compose) is then applied to *that node's rasterized output* — for a blur/refraction shader, this means the library samples the pixels of whatever got composited *behind* the glass layer and re-projects them through a distortion/blur kernel, which is what produces the "you can see a warped version of what's underneath" look, not just a flat translucent overlay.
+
+**The bug.** An early implementation of the water/weather animation placed a plain `Canvas` composable as a sibling inside a `Box`, next to the glass card, using `Modifier.matchParentSize()`. The result: the water rendered as full-screen vertical stripes, smeared across the entire dashboard. The cause is that the graphics-layer's compositing pipeline doesn't distinguish "new decorative content someone just added to this subtree" from "the backdrop this layer is supposed to blur" — since the `Canvas` existed in the same composition subtree as content the glass layer treats as its backdrop source, its pixels got pulled into the same texture the refraction shader samples from, and the shader's own distortion field (built for blurring a static background, not a fast-drawing animation) smeared it according to that field's geometry.
+
+**The fix, and why it's structural rather than a parameter tweak.** Never add a *new* `Canvas`/`Box` layer as a sibling inside a glass-shader parent's composition subtree. Instead, expose the animation as a plain state-holder object and draw it via `Modifier.drawBehind { ... }` on the *existing* layout node — `drawBehind` executes extra draw calls within the same draw pass as its host composable, without creating a new compositing layer or RenderNode, so there's no separate "layer" for the compositor to mistake for backdrop.
+
+```kotlin
+// Wrong: a new Canvas sibling inside a glass-shader Box — gets captured as "backdrop"
+Box {
+    LiquidGlassCard(state = cardState) { /* card content */ }
+    Canvas(Modifier.matchParentSize()) { drawWaterSurface(waterState) } // smears
+}
+
+// Right: draw into the existing node's draw scope, same pass as the glass refraction
+Box(
+    Modifier.drawBehind { drawWaterSurface(waterState) } // no new layer, no smear
+) {
+    LiquidGlassCard(state = cardState) { /* card content */ }
+}
+```
+
+**Likely follow-up questions:**
+- What's the actual difference between a `Canvas` composable and a `Modifier.drawBehind` call in terms of Compose's layout/draw pass model?
+- Why does wrapping something in `graphicsLayer` force a separate `RenderNode`, and what does that cost in GPU terms versus flattening into the parent?
+- What Android API level does `RenderEffect`/AGSL blur require, and what would you do on older devices that don't support it?
+- How would you go about diagnosing "which layer is swallowing which" if you hit a similar compositing bug with a library you didn't write?
+
+---
+
+#### 7. Parallel Data Fetching: Coroutines, `async`/`await`, and Why Connection Pooling Didn't Help
+
+**The benchmark, and why it was run before touching any code.** Rather than assuming OkHttp (a well-known HTTP client with connection pooling) would obviously beat Android's built-in `HttpURLConnection`, a standalone test app ran 10-round timed comparisons:
+
+| Method | Average time |
+|---|---|
+| `HttpURLConnection`, sequential | 41.5s |
+| OkHttp, sequential (connection reuse) | 45.7s — *10% slower* |
+| OkHttp, parallel (all requests fired at once) | 10.1s — *75% faster* |
+
+The counterintuitive result: connection pooling — OkHttp's headline feature, which avoids repeating TCP/TLS handshake overhead across requests to the same host — provided **zero** benefit, because the college server's own request-processing time (15–25 seconds per call on a bad day) dwarfs any handshake savings a pooled connection could offer. The only variable that mattered was whether independent calls were issued concurrently or one after another.
+
+**The concurrency mechanism.** Kotlin's structured concurrency: `coroutineScope { async { ... } }` launches each independent API call (attendance, CA marks, results, present/absent days, timetable, circulars) as its own coroutine that starts running immediately against the given dispatcher, returning a `Deferred<T>` handle. Calling `.await()` on that handle suspends *only the caller waiting on that specific result* — it does not block a thread — and `coroutineScope` as the enclosing scope means the function as a whole only returns once every child coroutine has completed (and if one child throws, structured concurrency propagates that failure and can cancel the siblings, rather than leaving orphaned work running).
+
+```kotlin
+suspend fun prefetchForDashboard(): DashboardData = coroutineScope {
+    val attendance = async { fetchAttendance() }
+    val marks = async { fetchCAMarks() }
+    val timetable = async { fetchTimetable() }
+    val circulars = async { fetchCirculars() }
+    DashboardData(
+        attendance = attendance.await(),
+        marks = marks.await(),
+        timetable = timetable.await(),
+        circulars = circulars.await(),
+    )
+}
+```
+
+Total wall-clock time becomes "however long the single slowest call takes," not the sum of every call — a structural fix, not a library swap.
+
+**The decision explicitly *not* made:** migrate the whole app to OkHttp. The existing 4-tier authentication system was already battle-tested against 1,700+ real users on `HttpURLConnection`; since the benchmark proved the real win was architectural (parallelism), rewriting the networking layer to change client libraries would have meant re-testing a system that didn't need to change, for a benefit the benchmark had already shown didn't exist.
+
+**Likely follow-up questions:**
+- Why did connection pooling provide no measurable benefit here specifically, and under what workload *would* it matter?
+- What's the difference between `async { }` and `launch { }` in Kotlin coroutines, and why does fetching data (versus firing a side effect) call for the former?
+- If one of the four parallel calls in the snippet above throws, what happens to the other three, and why?
+- The college server has no visible rate limit in this account — how would firing five requests simultaneously interact with a server that *did* rate-limit per IP or per token?
+
+---
+
+#### 8. The Gson Silent Type-Mismatch Problem
+
+Two related but distinct failure modes showed up under the same library, and it's worth being able to tell them apart precisely:
+
+**Wrong shape entirely (HTML instead of JSON).** Pointing the WebView directly at what looked like a REST URL (`/sis/attendance/<rollNumber>`) didn't return JSON at all — it returned the HTML shell of the college's Angular single-page app, because that URL is a client-side route, not an API endpoint; the real data only gets fetched by JavaScript *after* Angular boots and does its own internal routing. Whatever fed that HTML string into the parsing path produced an all-default (zeroed) data object rather than a visible error reaching the UI — the practical lesson is the same regardless of the exact internal mechanism: a response that is the wrong *shape* entirely (a webpage instead of a data payload) can end up masquerading as "successfully parsed, just empty," which is far more dangerous than a loud crash, because it looks like legitimate — if wrong — data. The fix wasn't a parsing fix at all: it was triggering Angular's own internal navigation (`window.location.hash = '#!/attendanceStudentView'`) so the app fetched data itself, and catching that real request with the XHR interceptor described above.
+
+**Wrong field name (a typo baked into the server's own JSON).** `@SerializedName` tells Gson which JSON key maps to which Kotlin field, and Gson does zero fuzzy matching — a field annotated `@SerializedName("netPresentExemptionPercentage")` (correct English spelling) simply never matches a server response that actually contains `netPresentExcemptionPercentage` (the server's own typo). An unmatched key isn't an error to Gson at all; the Kotlin field just keeps its default value (`null`/`0`), silently, forever, unless someone diffs the annotation against a real captured response byte-for-byte.
+
+**Wrong field *type* (this one, notably, does throw).** A registration API returning course credits as decimals (`1.5`) into a Kotlin field declared `Int` produced an actual parsing exception on *every* record with a fractional credit — worth contrasting directly with the two failures above: a type mismatch on a still-recognized key throws, while an unmatched key or an entirely wrong response shape can silently default instead. Knowing which failure mode you're looking at changes where you go looking for the bug.
+
+**What this adds up to, generally:** never trust that a JSON model's field names or types match a third-party API from memory or from what the field name "ought" to be — always diff against a captured, real response, and be explicit that a silently-defaulted field and a thrown exception are two different failure classes that need two different debugging instincts.
+
+**Likely follow-up questions:**
+- What's the practical difference between Gson's default (lenient-ish) behavior on an unmatched key versus a type mismatch, and how would you make the unmatched-key case fail loudly instead?
+- How would you defensively detect "this response is HTML, not JSON" before handing it to Gson at all?
+- Why does `@SerializedName` need to match a server's typo exactly rather than the grammatically correct spelling?
+- If you owned this API, what would you change about the contract to make this class of bug impossible?
+
+---
+
+#### 9. Case-Sensitivity ACL Bypass (Authorized Security Research)
+
+**The mechanism, precisely.** The college's attendance API (`/sis/attendance/*`) began returning HTTP 403 on every request, while every other endpoint on the same server, using the exact same Bearer token, kept returning 200. A systematic probe — different HTTP verbs, trailing slashes, `?`/`#`/`;` path tricks, header-smuggling attempts (`X-Forwarded-For`, `X-Original-URL`, `X-Rewrite-URL`, `X-Forwarded-User`, `X-Bypass`, an admin-looking `Referer`) — ruled out a token or claims problem (the JWT's own payload, decoded manually, showed the same audience and role claims as the day before, when the endpoint worked). What actually worked: capitalizing a single letter in the path, `/sis/Attendance/*` instead of `/sis/attendance/*`, returned a full valid 200 with the identical data.
+
+This is a textbook **access-control-layer canonicalization mismatch**: whatever middleware enforces the deny rule (most plausibly a reverse-proxy or gateway-level ACL sitting in front of the actual application) matched the path as an exact, case-sensitive literal string against `sis/attendance/`. The web framework's own router underneath it, however, resolves routes case-insensitively (a common default for frameworks like Express or many NGINX-style configurations) — so a request for `/sis/Attendance/` fails the ACL's exact-string check but is still resolved by the router to the *identical* handler that `/sis/attendance/` would have hit. Two layers disagreeing about what "the same path" means is the whole vulnerability; neither layer is individually "wrong" by its own logic, they just don't agree with each other.
+
+**The ethical framing, at a professional level.** Using this bypass to keep reading your own account's data with your own token is a defensible, authorized security-testing action. Shipping the identical bypass into a public app update installed on 1,400+ other students' phones is a categorically different act: every refresh from every install now sends the college's access logs an identifiable, uniquely-fingerprinted (via User-Agent) request against a path that was explicitly denied — at scale, that's no longer "a researcher reading their own data," it's a developer distributing a live access-control bypass. That tradeoff (working attendance for 1,400+ students today, versus a bypass some of those installs will keep using even after the college eventually normalizes its case handling and the deny rule catches everyone at once) was made explicitly and documented, not stumbled into.
+
+**Likely follow-up questions:**
+- What's the correct server-side fix for this class of bug — normalize the path's case before the ACL check runs, or move the access-control decision into the router itself rather than a middleware layer in front of it?
+- How do you distinguish an authentication problem (bad/expired token) from an authorization problem (valid token, denied by policy) when both can return non-2xx codes — what did you check here to rule out the former?
+- What would responsible disclosure of this finding to the college have looked like, and why might a student in your position not take that path?
+- What logging or monitoring, if the college had it, would retroactively reveal that this path had been exploited at scale?
+
+---
+
+#### 10. EncryptedSharedPreferences and the Android Keystore: the `AEADBadTagException`
+
+**What `EncryptedSharedPreferences` actually is.** It's a wrapper (from Jetpack's Security library) around an ordinary `SharedPreferences` file that transparently encrypts both keys and values with AES, using a master key that is generated and held inside the **Android Keystore** — a system-level secure key store (hardware-backed on capable devices, software-backed otherwise) that is not part of the app's own private storage and is *scoped to the app's signing certificate*, not just its package name.
+
+**The bug.** Testing a debug-signed build and a release-signed build of the same package (same `applicationId`) on the same physical device, back to back: uninstalling the debug build and installing the release-signed one crashed instantly on launch, before even reaching the login screen:
+
+```
+java.lang.RuntimeException: Unable to start activity ... MainActivity
+javax.crypto.AEADBadTagException
+    at android.security.keystore2.AndroidKeyStoreCipherSpiBase.engineDoFinal
+```
+
+`AEADBadTagException` means the Authenticated-Encryption-with-Associated-Data tag verification failed on decrypt — in plain terms, the key being used to decrypt the stored preferences file is not the same key that encrypted it. The root cause: `pm uninstall` removes the APK, the app's private data directory, and its permissions — but it does **not** remove the package's associated entries in the Android Keystore. Those Keystore entries persist across install/uninstall cycles as long as the package name stays the same. So the debug-signed build's Keystore-backed master key was still present when the release-signed build (a different signing certificate, same package name) tried to open the same `EncryptedSharedPreferences` file — the file's encryption is tied to a key the new app's identity doesn't actually own, and decryption fails its integrity check outright rather than returning garbage data.
+
+**The fix, and the more durable one.** `adb shell pm clear <package>` (not just uninstall) wipes the encrypted-preferences XML file itself, so the next launch generates a fresh master key compatible with whichever signing certificate is currently installed. The more durable production practice is giving debug builds a distinct `applicationIdSuffix` (e.g., `.debug`) so a debug build is, from the OS's perspective, an entirely different package with its own Keystore namespace — it can never collide with the release build's encrypted storage in the first place.
+
+**Likely follow-up questions:**
+- Why doesn't `pm uninstall` remove Android Keystore entries, and what's actually left behind on the device after uninstalling an app?
+- What's the practical difference between a hardware-backed (StrongBox/TEE) Keystore key and a software-backed one, and does `EncryptedSharedPreferences` guarantee which one you get?
+- What does `applicationIdSuffix` isolate besides the Keystore namespace — what else would break (or not break) between a debug and release build sharing one device?
+- If you pulled the raw `EncryptedSharedPreferences` XML file off a rooted device, what would actually be readable in it without the Keystore key?
+
+---
+
+#### 11. R8/ProGuard and Reflection: Why Release Builds Break What Debug Builds Never Do
+
+**Why R8 targets reflection specifically.** R8 (Android's default shrinker/optimizer/obfuscator, which replaced ProGuard as the default in AGP) works by static reachability analysis: starting from declared entry points (Activities, Services, manifest components), it traces every class and method actually *called* from visible code, and strips anything it cannot prove is reachable. Reflection is, by construction, invisible to this analysis — a method invoked by name at runtime, or a class instantiated from a string, has no ordinary call site for R8 to trace, so R8's default behavior is to treat it as dead code and remove it.
+
+Three concrete cases from this project, each needing a different *shape* of keep rule:
+
+- **`@JavascriptInterface` methods** are called by the WebView's JavaScript engine, not by any Kotlin call site — R8 stripped them from the anonymous inner classes they lived in. A class-specific `-keep` rule wasn't the right fix, because the classes are anonymous and their generated names aren't stable; the working rule has to be a wildcard across every class in the app:
+  ```proguard
+  -keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }
+  ```
+- **Gson's `TypeToken`** relies on capturing generic type information at the bytecode level (via the class file's `Signature` attribute) to know, at runtime, that a `List<AbsentDay>` should deserialize element-by-element as `AbsentDay`, not just as a `List` of untyped objects — that's how Java's generics, normally erased at compile time, get reified for a library like Gson. R8's default settings strip that attribute along with unreachable generic metadata, so parsing broke specifically for list-shaped JSON responses; the fix needs `-keepattributes Signature` plus explicit keep rules for the `TypeToken` machinery itself.
+- **Apache POI** (Excel parsing for the exam-seat-finder feature) builds a large tree of schema objects via `Class.forName(name).newInstance()` — instantiation entirely by class-name-as-string, completely invisible to static analysis. The subtle part: even with `-keep class org.apache.poi.** { *; }`, R8 can keep a class's presence while still deciding its no-argument constructor is "unused" and stripping it — because nothing in the visible call graph *appears* to call that constructor. The rule that actually fixes it targets the constructor explicitly:
+  ```proguard
+  -keepclassmembers class org.apache.logging.log4j.** { <init>(...); }
+  ```
+  The `<init>(...)` pattern, not a bare `{ *; }`, is the critical detail — POI's runtime-reflective construction needs the constructor kept as a member, specifically, not just the class kept as a type.
+
+**When the fix was "stop fighting the shrinker" instead.** One recurring pattern — an anonymous `TypeToken` wrapping a `private` nested data class — kept losing its generic signature even with a keep rule that looked like it should match. The eventual fix wasn't a fourth attempt at the ProGuard rule; it was restructuring the code entirely: public top-level data classes, parsed one element at a time with `gson.fromJson(element, SyllabusSubject::class.java)` instead of a generic `TypeToken<List<T>>`. Removing the fragile generic-erasure pattern removed the R8 surface area it depended on, rather than trying to carve out a keep rule precise enough to save it.
+
+**The process lesson that mattered most.** All of the above are invisible in a debug build, because debug builds don't run R8 at all — they only surface after a release upload, often in production, with a stack trace that just says "null" or silently returns zero rows with no exception at all (POI's own error handling swallowed the stripped-constructor failure internally). The standing practice that came out of this: maintain a `minifiedDebug` build variant (debug-signed, but with `isMinifyEnabled = true`) and test it regularly during development, and always manually sideload and exercise a release-configured build before ever uploading anywhere.
+
+**Likely follow-up questions:**
+- Why is `-keep class Foo { *; }` sometimes insufficient to keep a constructor callable via reflection alive, and what does `<init>(...)` do differently?
+- What's the practical difference between `-keep`, `-keepclassmembers`, and `-keepattributes`, and when do you reach for each?
+- Given a release-only bug with no stack trace pointing at ProGuard at all (silently wrong output, not a crash), how would you even go about proving R8 stripped something?
+- Why maintain a separate `minifiedDebug` variant instead of just testing the real release build more often?
+
+---
+
+#### 12. Honours-Course Detection: Cross-Referencing Two Unreliable Data Sources
+
+Some students take extra "honours" elective courses beyond their department's standard curriculum, and no single college API flags which courses are honours versus regular — this is, underneath the beginner-friendly framing, a small **record-linkage** problem: reconciling two independently-maintained upstream datasets that don't share a fully reliable common key.
+
+**Source 1 — the registration API.** Lists a student's officially registered courses, but had two separate data-quality problems that each looked like a different bug until diagnosed: course credit values sometimes arrived as decimals (`1.5`) against a Kotlin field declared `Int`, which threw a parsing exception on *every* record with a fractional credit — silently zeroing out the entire registration fetch, not just the affected row (fixed by widening the field to `Double`). Separately, elective slots were represented by placeholder codes like `PE64__` rather than the actual course the student picked, which meant *every* elective looked indistinguishable from an honours addition until placeholder codes (detected by an underscore in the code) were explicitly filtered out.
+
+**Source 2 — the attendance API.** Lists every course code the student has *actually accrued attendance records for* — including electives, with the real course code, never a placeholder. This is treated as ground truth for enrollment: if a student has attendance rows for a course, they are, by definition, taking it, regardless of what the registration API says or fails to say.
+
+**The reconciliation.** Honours detection compares a student's real timetable slots against the *standard published curriculum* for their department; anything beyond what the standard curriculum accounts for is flagged as an honours addition — but only after cross-referencing both course-source APIs together closes the ambiguity neither one resolves alone (registration data alone is incomplete/placeholder-riddled; attendance data alone doesn't distinguish "additional honours course" from "normal course" without the curriculum baseline to diff against). A related consequence of the same ambiguity: the timetable API returns *every* possible elective option for a shared time slot, not just the one a given student picked, so filtering displayed timetable entries against the student's own attendance/registration records was necessary to avoid showing two different courses scheduled in the same slot — with an explicit fallback to show everything unfiltered if there's no attendance/registration data yet to filter against (e.g., the very start of a new semester, before any classes have happened).
+
+**Likely follow-up questions:**
+- What do you do at the very start of a semester, when the "ground truth" source (attendance records) has no data yet to cross-reference against?
+- Why treat attendance records as more authoritative than the registration API, given the registration API is nominally the "official" source?
+- How would you handle a course code that's genuinely ambiguous between two departments' published curricula?
+- This is a data-reconciliation problem across two APIs you don't control — what would you ask the college's IT team to change, if you could get one fix into their systems?
+
+---
+
 ## Interview Talking Points
 
 Short, rehearsable answers for the recurring engineering decisions in this project.
 
 1. **"Walk me through the authentication system."**
    A four-tier fallback ladder: a cached token via direct HTTP (fastest), a refresh-token exchange, a direct password-grant login, and a full embedded-browser (WebView) login as the last resort. Each tier only runs if every faster one fails, so the system degrades gracefully instead of falling over the moment any single mechanism (like a server-side policy change disabling password grants) stops working.
+   **If they dig deeper:**
+   - *"What exact signal decides whether Tier 3 falls through to Tier 4, versus failing outright?"* — The HTTP 400 response *body* is inspected, not just the status code: only a body containing `"invalid_grant"` (wrong password) fails loudly; anything else, like `"unauthorized_client"` (the college disabling the grant type server-side), falls through to the next tier.
+   - *"Where are the tokens actually stored, and what protects them?"* — `EncryptedSharedPreferences`, AES-encrypted with a master key held in the Android Keystore, scoped to the app's signing certificate (see the Keystore deep-dive for what that scoping costs you across debug/release builds).
+   - *"What made the refresh token effectively permanent?"* — Adding `scope=openid offline_access` to the password-grant request made Keycloak return `refresh_expires_in=0` — a refresh token that, by Keycloak's own protocol, never expires.
 
 2. **"How did you make a slow backend feel fast?"**
    I benchmarked before optimizing, and found that firing independent API calls **in parallel** cut load time by 75%, while switching HTTP libraries (to one with connection pooling) made things *slower* — because the college server's own processing time, not connection setup, was the actual bottleneck. The lesson: measure the real bottleneck before reaching for the "obviously better" tool.
+   **If they dig deeper:**
+   - *"Why didn't OkHttp's connection pooling help at all?"* — The server's own request-processing time (15–25s) dwarfs any TLS-handshake savings a pooled connection could offer; pooling only pays off when connection setup is a meaningful fraction of total request time, which it wasn't here.
+   - *"What's the actual Kotlin mechanism behind the parallelism?"* — `coroutineScope { async { ... } }` around each independent call, collecting `Deferred` handles and calling `.await()` on each — every call starts immediately and total time becomes "the slowest one," not the sum.
+   - *"What happens if one of the parallel calls throws?"* — Structured concurrency propagates the failure up through `coroutineScope` and can cancel sibling coroutines; if you wanted independent failures to not take down the others, you'd reach for `supervisorScope` instead.
 
 3. **"Tell me about a bug that took a long time to find, and why."**
    Attendance data always showed 0 despite a successful login, because the API URL loaded a JavaScript single-page app's HTML shell, not raw JSON — Gson silently parsed the wrong shape into all-default zero values instead of throwing an error. The lesson: silent type-mismatch failures are far more dangerous than loud crashes, because they masquerade as legitimate (if wrong) data.
+   **If they dig deeper:**
+   - *"Why didn't this throw an obvious parse exception?"* — The URL wasn't a REST endpoint at all; it was a client-side SPA route that returns the app's HTML shell, so the failure was a wrong *shape* problem (webpage instead of a data payload) rather than a same-shape type mismatch — those two failure classes need different debugging instincts (see the Gson deep-dive for the contrast with a case that genuinely does throw).
+   - *"How was it actually fixed?"* — Not by fixing the parser: by triggering Angular's own internal route change (`window.location.hash = '#!/attendanceStudentView'`) so the SPA fetched data the normal way, and catching that real request with the XHR interceptor.
+   - *"How do you defend against this class of bug in general?"* — Never assume a URL that *looks* REST-shaped returns JSON; check the actual response content-type/shape before parsing, and diff field names/types against a captured real response rather than typing them from memory.
 
 4. **"How do you handle a third-party server changing its behavior under you?"**
    By auto-detecting configuration from the same endpoint the browser client uses, rather than hardcoding values (a login server's internal name/ID changed three separate times over the project). Where hardcoding was unavoidable, I built fallback chains and treated unexpected error responses as "try the next tier," never as an automatic hard failure.
+   **If they dig deeper:**
+   - *"What exactly gets auto-detected?"* — The realm name, server URL, and client ID, fetched from the same `/sis/auth/config` endpoint the browser's own login page reads, with hardcoded values kept only as a last-resort fallback if that endpoint itself is unreachable.
+   - *"What's another example of a silent server-side change you had to react to?"* — The college disabling Keycloak's Direct Access Grants (password grant) mid-project, and, separately, an access-control change that started 403-ing the lowercase attendance path outright (see the case-sensitivity deep-dive) — both were detected by treating unexpected response codes/bodies as signals to probe, not as immediate hard failures.
+   - *"How do you avoid over-trusting an auto-detected value if the detection endpoint itself starts lying?"* — Always keep a hardcoded fallback path as the true last resort, and validate the detected token/config actually works against the real target API, not just that the config-fetch itself succeeded.
 
 5. **"Describe a performance bug that turned out not to be what it looked like."**
    A scrolling list felt laggy even after multiple rounds of Compose optimization (flattening layouts, removing shadows, precomputing strings) — the actual cause was testing a **debug** build, which disables essentially all of Compose's compiler optimizations. A release build was smooth with none of those "fixes" even applied. Lesson: always benchmark UI performance on a release configuration.
+   **If they dig deeper:**
+   - *"What specifically does a debug build disable in Compose?"* — Essentially all compiler-level skipping/memoization of unchanged composables — the same UI tree that would skip recomposing untouched parts in release re-runs far more of its recomposition logic in debug, which alone can be a 5–10x slowdown.
+   - *"What had already been tried before finding the real cause?"* — Flattening nested loops, replacing shadowed `Card`s with plain backgrounds, pre-computing date-formatting strings instead of doing it during rendering, and sharing shape objects instead of recreating them per frame — all genuinely good practice, none of which was the actual bottleneck here.
+   - *"How do you catch this earlier next time instead of chasing debug-build ghosts?"* — Maintain a `minifiedDebug`-style build variant (debug-signed but with release-like optimization flags) and use it as the default for any scrolling/animation performance check, not just the final release candidate.
 
 6. **"What's a subtle Compose/Android rendering bug you've hit?"**
    Placing a Canvas-drawn animation as a sibling inside a `Box` next to a GPU-blur-shader-based "glass" component caused the animation to smear across the entire screen — because the shader's compositing pipeline treated the new Canvas as part of the "backdrop" it should blur. The fix was drawing into the *existing* layout's own draw scope via `Modifier.drawBehind`, never adding a new Canvas/Box sibling near a blur-shader parent.
+   **If they dig deeper:**
+   - *"Mechanically, why did it smear vertically specifically?"* — `Modifier.graphicsLayer { renderEffect = RenderEffect.createBlurEffect(...) }` promotes content to its own RenderNode and samples the composited backdrop texture through a distortion/blur kernel; the sibling Canvas's pixels got baked into that same backdrop texture and were warped by the same distortion field built for a static background.
+   - *"What's the general fix pattern for this class of bug?"* — Never add a new `Canvas`/`Box` layer as a sibling inside a `graphicsLayer`-based blur parent's subtree — draw into the *existing* draw scope via `Modifier.drawBehind` instead, which shares the same draw pass and never becomes a separate compositing layer.
+   - *"How would you diagnose this if you hadn't already suspected the glass library?"* — The tell is content smearing/stretching in a shape that matches the blur/distortion field's geometry, not the content's own shape — that's the fingerprint of "this got sampled as backdrop," and the fix-by-elimination is to remove any new sibling layer near the blur parent first.
 
 7. **"How did you design an AI feature to be reliable on weak hardware?"**
    By strictly separating "does math" from "talks" — plain Kotlin code computes every number (attendance percentages, bunk-safety thresholds) and only hands the final, correct numbers to a small on-device language model, whose only job is generating the natural-language phrasing. This isn't a workaround for a small model's limitations; it's the right architecture at any model size, since language models are fundamentally unreliable at arithmetic.
+   **If they dig deeper:**
+   - *"What inference engine did you actually pick, and why not the alternatives?"* — Cactus, a Kotlin-friendly `llama.cpp` wrapper tuned for plain CPU inference, over Google's LiteRT-LM (best only with a capable NPU/GPU most mid-range student phones lack) and raw `llama.cpp` (too much C++/JNI integration cost for the payoff).
+   - *"Why not just fine-tune the model to be better at arithmetic instead?"* — Even large cloud models are unreliable at exact multi-step arithmetic; the architecture (deterministic code computes, model only phrases) is presented as correct at any model size, not a workaround specific to a weak on-device model.
+   - *"What's the actual measured cost this design avoided?"* — A model that's asked to also do the math risks silently wrong numbers reaching the user with no error signal at all — arguably worse than a slow answer, since it looks authoritative.
 
 8. **"What was your biggest on-device AI performance win, and why?"**
    Cutting the prompt from ~500 tokens to ~25–40 tokens using intent classification, which mattered more than every model/engine optimization combined — because every token of "prefill" (context the model must read before it can start replying) costs real wall-clock time on a phone CPU. The lesson: for on-device inference, sending less data usually beats a faster engine.
+   **If they dig deeper:**
+   - *"Prefill vs. decode — which one did this actually target?"* — Prefill (reading the input context before any output token appears), not decode (generating the reply token-by-token) — prefill happens on *every* message regardless of what's asked, which is why shrinking it had a larger, more consistent effect than trimming output tokens.
+   - *"How is a message actually classified into an intent?"* — Plain deterministic Kotlin keyword/string matching, deliberately not another LLM call, since that would mean paying for a second full inference pass just to route the first one.
+   - *"What happens when the keyword classifier picks the wrong intent?"* — The user gets a reply from a generic/less-specific template rather than a crash — a graceful degradation, not a hard failure, though it can read as a less personalized answer.
 
 9. **"Tell me about a real-time feature you had to re-architect for cost."**
    A Firestore-based chess lobby hit a scaling wall because "presence via a heartbeat document" bills reads proportional to the *square* of concurrent users (every heartbeat write notifies every other listener). I migrated the ephemeral lobby state to a Cloudflare Durable Object over a WebSocket, where presence *is* the connection itself — no heartbeat, no per-user read multiplication, and disconnects are detected via a closed socket instead of a staleness timeout.
+   **If they dig deeper:**
+   - *"Why is the cost specifically N-squared and not linear?"* — Every online player's heartbeat write triggers a live-update notification to every *other* connected client's Firestore listener, so with N concurrent players the daily read count scales roughly as `N² × (86400 / heartbeat_interval_seconds)`.
+   - *"What is WebSocket Hibernation and why does it matter for cost, not just correctness?"* — It lets Cloudflare detach the Durable Object's in-memory JS state while keeping the raw socket open, so an idle lobby connection costs essentially nothing until an actual message arrives — the mechanism that makes presence-as-connection genuinely free at rest.
+   - *"What did migrating off Firestore cost you architecturally?"* — A lingering "two ID systems" debt: the old system keyed players by a roll-number hash, the new one by a Firebase Authentication UID, requiring a display-name-based bridge as a stopgap until a proper unified identity migration.
 
 10. **"Describe a bug you couldn't reproduce locally, and how you found it anyway."**
     A production-only chess presence bug (two users online, neither saw the other) only happened after Cloudflare's WebSocket Hibernation cycle put a server object to sleep — hibernation preserves live socket connections but wipes ordinary in-memory class state, which a local dev server never actually hibernates under normal test conditions. I confirmed the theory using the platform's live log-tailing tool against the real deployed server, then fixed it by rebuilding in-memory state from the sockets' own attached metadata on wake-up, rather than trusting anything to survive across a sleep cycle.
+    **If they dig deeper:**
+    - *"Why doesn't `wrangler dev --local` reproduce this?"* — Hibernation only triggers under real, sustained-idle conditions at Cloudflare's actual edge runtime; a local dev server runs identical code without ever genuinely hibernating, so it looks correct by construction.
+    - *"What exactly survives hibernation, and what doesn't?"* — The raw WebSocket connections and anything explicitly stashed on them via `serializeAttachment` survive; ordinary in-memory class fields (like a `Map` of connected players) do not and must be rebuilt from the sockets on the next construction.
+    - *"How was it actually diagnosed in production?"* — By authenticating into the real deployed Worker and tailing its live logs (`wrangler tail`), watching an actual join sequence report `liveSockets=0 mapPlayers=0` — a symptom no local run could ever produce.
 
 11. **"What's your approach to feature flags / remote kill-switches?"**
     Ship them from day one, even dormant with a harmless default — retrofitting a kill-switch later means the exact users you'd most want to reach with it (people stuck on an old broken build) can never receive it, since they don't have the code that reads the flag at all. I also learned to deploy flag changes through a source-controlled config file via a CLI command rather than a manual edit or a web console click, after a careless find-and-replace briefly flipped every unrelated flag in the same file at once.
+    **If they dig deeper:**
+    - *"What actually went wrong in that find-and-replace incident?"* — A `sed` command meant to flip one flag's value matched the literal string `"value": "false"` across the whole config file, briefly flipping every other flag on the same value — including a sideload-block wall and a maintenance dialog — to `true` for about 30 seconds before being reverted.
+    - *"How do you prevent that specific mistake going forward?"* — Edit the config as structured data bound to a single key (e.g. a small script using a JSON parser) rather than a string-pattern replace, and always re-read the diff before deploying.
+    - *"What flags actually exist in this project, and what do they gate?"* — Among others: `min_version_code` (force-update wall), `ads_enabled`, `sideload_block_enabled`, `maintenance_enabled`, `class_compare_enabled` (the marks-comparison kill-switch), and `chess_backend_v2` (which backend a client connects to).
 
 12. **"Tell me about a privacy-sensitive design decision you made."**
     For a feature comparing a student's marks against their section's average, I enforced a hard server-side minimum of 15 participating students before showing any comparison data at all — a direct k-anonymity guard against a small group being able to reverse-engineer an individual's exact score. Enforcing it server-side (not just in the UI) matters because a client-side-only gate can be bypassed by anyone willing to inspect the raw network response.
+    **If they dig deeper:**
+    - *"Why 15 specifically, and not some other number?"* — It's a deliberate margin over an initially proposed floor of 5 — the goal is that even the smallest identifiable group ("one of fifteen") is still meaningfully anonymous, not just technically non-empty.
+    - *"Why does server-side enforcement matter more than a client-side check here?"* — A client-side-only gate is trivially bypassed by anyone willing to intercept and inspect the raw network response; the anonymity guarantee has to be enforced by the party that controls what data actually leaves the server.
+    - *"How do credentials stay out of this entirely?"* — Marks are uploaded only by the student's own device via the same background-worker pattern already used for attendance refresh, never fetched centrally with stored login credentials — avoiding a single point of failure where one server breach compromises every student's college password.
 
 13. **"What did you learn from R8/release-build bugs specifically?"**
     R8's aggressive optimization targets anything reached through reflection — JavaScript-interface bridges, generic type tokens, libraries that instantiate classes by name at runtime — and these bugs are invisible in debug builds, only surfacing after a release upload. My biggest process change was always sideloading and manually testing a release-configured build before ever publishing it, rather than trusting "it worked in debug."
+    **If they dig deeper:**
+    - *"Give a concrete keep-rule gotcha beyond 'add a keep rule.'"* — Apache POI's `Class.forName(...).newInstance()` reflective construction needed the constructor kept explicitly (`-keepclassmembers class org.apache.logging.log4j.** { <init>(...); }`) — even a `-keep class Foo { *; }` rule can still let R8 strip a constructor it decides looks unused.
+    - *"What are the three different reflection surfaces you actually hit?"* — `@JavascriptInterface` methods on anonymous inner classes (needed a wildcard `-keepclassmembers class *`), Gson `TypeToken`'s generic signature (needed `-keepattributes Signature`), and Apache POI's class-name-based instantiation (needed explicit `<init>(...)` keep rules).
+    - *"What's the standing process change, concretely?"* — A `minifiedDebug` build variant (debug-signed, `isMinifyEnabled = true`) tested regularly during development, plus always manually sideloading and exercising a release-configured build before any upload.
 
 14. **"How did you discover undocumented third-party APIs?"**
     By driving a real browser session (via browser-automation tooling) into the target web app, then reading the network requests its own JavaScript made — rather than guessing endpoint URLs or reading stale docs. For a JavaScript single-page app, "the API" is defined by whatever calls the app's own code actually makes; the network tab is more reliable than any documentation.
+    **If they dig deeper:**
+    - *"Walk through a concrete example."* — The semester results endpoint was found by reading the compiled JavaScript source for the "View All Results" page, spotting the internal function name (`viewAllResultsServices.getAllResults()`), then watching the actual network request that function produced when triggered live.
+    - *"Why wasn't reading the compiled source alone enough?"* — It got the function name and rough shape right but missed a required parameter that only became visible by watching the live, actual request the browser made — documentation and static source-reading alone produced a URL that didn't work.
+    - *"What's the failure mode of guessing an endpoint shape instead?"* — Silently wrong or incomplete requests (missing required parameters, wrong casing, wrong verb) that may return a plausible-looking but incorrect response rather than an obvious error.
 
 15. **"What's an example of you making an explicit ethical tradeoff during development?"**
     I found (and used) an access-control bypass on the college's own API using my own account, then had to decide whether to ship that same bypass to 1,400+ students via a public app update. I chose to ship it (the alternative was leaving all their attendance broken indefinitely) but documented the decision explicitly, because distributing a discovered access-control flaw at scale is a categorically different action from a single researcher checking their own data once.
+    **If they dig deeper:**
+    - *"What's the actual technical bypass, precisely?"* — A case-folding mismatch: the ACL middleware matched the deny rule against a case-sensitive lowercase literal string, while the underlying router resolved routes case-insensitively — capitalizing one letter (`/sis/Attendance/` vs `/sis/attendance/`) slipped past the deny check while the router still resolved to the identical working handler.
+    - *"How did you rule out a token-side cause before concluding it was an ACL bug?"* — Manually decoded the JWT's payload and confirmed it carried the same audience and role claims as the day before, when the endpoint had worked normally, and every other endpoint on the same server accepted the same token fine — isolating the problem to that one path's access-control layer specifically.
+    - *"What's the professional, defensive fix you'd recommend to the college?"* — Normalize the path's case before the ACL check runs, or better, move the access-control decision into the router itself rather than a separate middleware/gateway layer that can disagree with the router about canonical path form.
