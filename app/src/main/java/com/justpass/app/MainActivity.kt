@@ -214,31 +214,7 @@ fun AttendanceApp() {
     var isLoggingOut by remember { mutableStateOf(false) }
 
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
-    LaunchedEffect(Unit) {
-        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-        val currentVersion = packageInfo.versionName ?: "1.0"
-        updateInfo = UpdateChecker.checkForUpdate(currentVersion)
-    }
-
-    // Force update check via Firebase Remote Config
     var forceUpdate by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        try {
-            val remoteConfig = FirebaseRemoteConfig.getInstance()
-            remoteConfig.setConfigSettingsAsync(remoteConfigSettings { minimumFetchIntervalInSeconds = 3600 })
-            remoteConfig.setDefaultsAsync(mapOf("min_version_code" to 1L))
-            remoteConfig.fetchAndActivate().addOnCompleteListener {
-                val minVersion = remoteConfig.getLong("min_version_code")
-                val currentCode = try {
-                    context.packageManager.getPackageInfo(context.packageName, 0).let {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) it.longVersionCode
-                        else @Suppress("DEPRECATION") it.versionCode.toLong()
-                    }
-                } catch (_: Exception) { Long.MAX_VALUE }
-                if (currentCode < minVersion) forceUpdate = true
-            }
-        } catch (_: Exception) {}
-    }
 
     if (forceUpdate) {
         AlertDialog(

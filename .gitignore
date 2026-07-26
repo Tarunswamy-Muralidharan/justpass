@@ -35,3 +35,16 @@ chess-lobby/.wrangler/
 .playwright-mcp/
 .claude/scheduled_tasks.lock
 build_log.txt
+
+# auto-backup 2026-07-26
+debug_*.png
+screen_*.png
+phone_*.png
+check_*.png
+test_*.png
+benchmark_*.png
+exam_*.png
+final_*.png
+profile_*.png
+timetable_*.png
+.playwright-mcp/**
