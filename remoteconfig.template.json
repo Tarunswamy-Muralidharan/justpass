@@ -41,6 +41,34 @@
       },
       "valueType": "BOOLEAN",
       "description": "Master switch for the Previous Year Question Papers tile + flow. Gated to 2025+ batches client-side; admins always see the tile. Flip false for instant kill-switch (hides tile + blocks browse/upload)."
+    },
+    "announcement_active": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN",
+      "description": "Dashboard dismissable announcement dialog. When true and announcement_id/message are set, shows once per user until they tap Got it (tracked by announcement_id)."
+    },
+    "announcement_id": {
+      "defaultValue": {
+        "value": "placement-nov-2026"
+      },
+      "valueType": "STRING",
+      "description": "Unique id for the current announcement. Change this to re-prompt users who dismissed a previous announcement."
+    },
+    "announcement_title": {
+      "defaultValue": {
+        "value": "A quick note from the dev"
+      },
+      "valueType": "STRING",
+      "description": "Title of the dashboard announcement dialog."
+    },
+    "announcement_message": {
+      "defaultValue": {
+        "value": "Hi guys — I'm really happy so many of you are using JustPass and enjoying it.\n\nI've seen all the issue reports and feature requests — rest assured I'm reading them. Right now I'm in placement season, so I can't ship fixes as fast as usual.\n\nOnce I get placed, I'll come back and work through everything — tentatively around November.\n\nThank you, and happy using!"
+      },
+      "valueType": "STRING",
+      "description": "Body text of the dashboard announcement dialog."
     }
   }
 }

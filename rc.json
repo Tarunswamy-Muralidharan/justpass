@@ -1,5 +1,19 @@
 {
   "parameters": {
+    "maintenance_enabled": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "Flip to true to broadcast a blocking announcement dialog to every user on launch (outages, SIS down, API issues, emergency notice, etc). Pair with `maintenance_message` for the body text.",
+      "valueType": "BOOLEAN"
+    },
+    "qpapers_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "description": "Master switch for the Previous Year Question Papers tile + flow. Gated to 2025+ batches client-side; admins always see the tile. Flip false for instant kill-switch (hides tile + blocks browse/upload).",
+      "valueType": "BOOLEAN"
+    },
     "ads_enabled": {
       "defaultValue": {
         "value": "false"
@@ -14,11 +28,11 @@
       "description": "When true, non-Play-Store installs of v2.2+ are hard-blocked on launch with a dialog linking to the Play listing. Flip to true after the app is live on Play + AdMob is linked, to migrate sideloaded users to certified traffic. Debug builds always bypass.",
       "valueType": "BOOLEAN"
     },
-    "maintenance_enabled": {
+    "chess_backend_v2": {
       "defaultValue": {
-        "value": "false"
+        "value": "true"
       },
-      "description": "Flip to true to broadcast a blocking announcement dialog to every user on launch (outages, SIS down, API issues, emergency notice, etc). Pair with `maintenance_message` for the body text.",
+      "description": "Cloudflare Durable Objects chess lobby. Worker rehydrates the players map from state.getWebSockets() on wake (fixed 2026-05-05). Flip false for instant rollback to Firestore.",
       "valueType": "BOOLEAN"
     },
     "maintenance_message": {
@@ -28,12 +42,33 @@
       "description": "Body text shown in the maintenance dialog when `maintenance_enabled` is true. Empty defaults to a generic maintenance message. Edit freely to re-use as a generic announcement channel.",
       "valueType": "STRING"
     },
-    "chess_backend_v2": {
+    "announcement_active": {
       "defaultValue": {
-        "value": "false"
+        "value": "true"
       },
-      "description": "Cloudflare Durable Objects chess lobby. ROLLED BACK 2026-05-05: Worker is closing every WebSocket immediately after upgrade (close 1006). Flag flipped to false until the worker is fixed/redeployed; clients fall back to Firestore presence/challenges.",
+      "description": "Dashboard dismissable announcement dialog. When true and announcement_id/message are set, shows once per user until they tap Got it (tracked by announcement_id).",
       "valueType": "BOOLEAN"
+    },
+    "announcement_id": {
+      "defaultValue": {
+        "value": "placement-nov-2026"
+      },
+      "description": "Unique id for the current announcement. Change this to re-prompt users who dismissed a previous announcement.",
+      "valueType": "STRING"
+    },
+    "announcement_title": {
+      "defaultValue": {
+        "value": "A quick note from the dev"
+      },
+      "description": "Title of the dashboard announcement dialog.",
+      "valueType": "STRING"
+    },
+    "announcement_message": {
+      "defaultValue": {
+        "value": "Hi guys — I'm really happy so many of you are using JustPass and enjoying it.\n\nI've seen all the issue reports and feature requests — rest assured I'm reading them. Right now I'm in placement season, so I can't ship fixes as fast as usual.\n\nOnce I get placed, I'll come back and work through everything — tentatively around November.\n\nThank you, and happy using!"
+      },
+      "description": "Body text of the dashboard announcement dialog.",
+      "valueType": "STRING"
     }
   }
 }

@@ -50,3 +50,18 @@ build_log.txt
 /*.bmp
 /*.mp4
 /*.mov
+
+# auto-backup 2026-07-26
+node_modules/
+dist/
+build/
+.gradle/
+.env
+.env.*
+.idea/caches/
+.idea/workspace.xml
+__pycache__/
+*.pyc
+.next/
+out/
+coverage/
